@@ -2948,8 +2948,8 @@ function cotRenderSections(size,model){
     html+='<span style="font-size:.9rem;font-weight:700;color:#1a3a5c;">'+cotT(COT_SLBL[sk]||sk)+'</span>';
     html+='</div>';
     html+='<div style="display:flex;gap:6px;">';
-    html+='<button onclick="cotSelectAll(''+sk+'',true)" style="padding:4px 10px;font-size:.7rem;background:#e8f4fd;border:1px solid #2e86de;color:#2e86de;border-radius:4px;cursor:pointer;font-weight:600;">Seleccionar Todo</button>';
-    html+='<button onclick="cotSelectAll(''+sk+'',false)" style="padding:4px 10px;font-size:.7rem;background:#fde8e8;border:1px solid #cc3333;color:#cc3333;border-radius:4px;cursor:pointer;font-weight:600;">Deseleccionar Todo</button>';
+    html+='<button onclick="cotSelectAll(&quot;'+sk+'&quot;,true)" style="padding:4px 10px;font-size:.7rem;background:#e8f4fd;border:1px solid #2e86de;color:#2e86de;border-radius:4px;cursor:pointer;font-weight:600;">Seleccionar Todo</button>';
+    html+='<button onclick="cotSelectAll(&quot;'+sk+'&quot;,false)" style="padding:4px 10px;font-size:.7rem;background:#fde8e8;border:1px solid #cc3333;color:#cc3333;border-radius:4px;cursor:pointer;font-weight:600;">Deseleccionar Todo</button>';
     html+='</div></div>';
     // Items
     valid.forEach(function(n){

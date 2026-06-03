@@ -5249,7 +5249,11 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                 _origRenderProjects();
                 return;
             }
-            // Con SP: cargar desde SP y reemplazar localStorage
+            // Mostrar "Cargando..." mientras llega SP
+            var container = document.getElementById('projectsList');
+            if (container) {
+                container.innerHTML = '<div class="no-projects" style="color:#2e86de;">⏳ ' + (currentLang === 'en' ? 'Loading projects...' : 'Cargando proyectos...') + '</div>';
+            }
             _spCall('LOAD_PROJECTS', {}, function(err, spProjects) {
                 if (err || spProjects === null) {
                     // SP falló — mostrar lo que hay en localStorage

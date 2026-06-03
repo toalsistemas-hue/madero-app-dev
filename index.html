@@ -2711,6 +2711,59 @@ function doLogout() {
 }
 
 // ═══════════════════════════════════════════════════════
+// SP BRIDGE — responde peticiones del iframe cotizador
+// ═══════════════════════════════════════════════════════
+window.addEventListener('message', async function(e) {
+  if (!e.data || e.data.type !== 'MADERO_SP_REQUEST') return;
+  var callId  = e.data.callId;
+  var action  = e.data.action;
+  var payload = e.data.payload;
+  var iframe  = document.getElementById('cot-iframe');
+  if (!iframe) return;
+
+  function reply(error, result) {
+    iframe.contentWindow.postMessage({
+      type: 'MADERO_SP_RESPONSE', callId: callId,
+      error: error || null, result: result || null
+    }, '*');
+  }
+
+  if (!state.token || state.isDemoMode) { reply('no_token', null); return; }
+
+  try {
+    var sid = await getSiteId();
+    var base = 'https://graph.microsoft.com/v1.0/sites/' + sid + '/lists/CotizadorProyectos/items';
+
+    if (action === 'SAVE_PROJECT') {
+      // Verificar si ya existe
+      var qr = await graphGet('sites/' + sid + '/lists/CotizadorProyectos/items?$filter=fields/Title eq \'' + encodeURIComponent(payload.Title) + '\'&$select=id&$expand=fields');
+      if (qr.value && qr.value.length > 0) {
+        await graphPatch('sites/' + sid + '/lists/CotizadorProyectos/items/' + qr.value[0].id + '/fields', payload);
+      } else {
+        await graphPost('sites/' + sid + '/lists/CotizadorProyectos/items', { fields: payload });
+      }
+      reply(null, 'ok');
+
+    } else if (action === 'LOAD_PROJECTS') {
+      var res = await graphGet('sites/' + sid + '/lists/CotizadorProyectos/items?$expand=fields&$orderby=Created desc&$top=50');
+      var projects = (res.value || []).map(function(i) {
+        return {
+          code:             i.fields.Title,
+          clientName:       i.fields.ClienteNombre || '',
+          salesChannel:     i.fields.Canal || 'dealer',
+          selectedPlatform: i.fields.Modelo || '',
+          selectedSize:     parseInt(i.fields.Tamanio) || 0,
+          date:             i.fields.Created
+        };
+      });
+      reply(null, projects);
+    }
+  } catch(err) {
+    reply(err.message || 'sp_error', null);
+  }
+});
+
+// ═══════════════════════════════════════════════════════
 // INIT — esperar a que MSAL esté disponible
 // ═══════════════════════════════════════════════════════
 function waitForMsal(tries) {

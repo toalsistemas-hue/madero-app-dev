@@ -5150,121 +5150,94 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
         updateSummary();
 
         // ═══════════════════════════════════════════════════════
-        // INTEGRACIÓN CON PLATAFORMA MADERO — SharePoint
+        // INTEGRACIÓN CON PLATAFORMA MADERO — postMessage bridge
+        // El cotizador pide a la plataforma principal que haga
+        // las llamadas a SharePoint (tiene el token con scopes correctos)
         // ═══════════════════════════════════════════════════════
-        var _mToken     = null;
-        var _mUser      = '';
-        var _mDemo      = false;
-        var _mSiteCache = null;
+        var _mUser = '';
+        var _mDemo = false;
+        var _pendingSPCallbacks = {};
+        var _pendingSPId = 0;
 
-        // Recibir token desde la plataforma principal vía postMessage
+        // Recibir mensajes desde la plataforma principal
         window.addEventListener('message', function(e) {
-            if (e.data && e.data.type === 'MADERO_AUTH') {
-                _mToken = e.data.token  || null;
-                _mUser  = e.data.user   || '';
-                _mDemo  = e.data.isDemoMode || false;
+            if (!e.data) return;
+            // Recibir auth
+            if (e.data.type === 'MADERO_AUTH') {
+                _mUser = e.data.user   || '';
+                _mDemo = e.data.isDemoMode || false;
+            }
+            // Recibir respuestas SP
+            if (e.data.type === 'MADERO_SP_RESPONSE') {
+                var cb = _pendingSPCallbacks[e.data.callId];
+                if (cb) {
+                    cb(e.data.error || null, e.data.result || null);
+                    delete _pendingSPCallbacks[e.data.callId];
+                }
             }
         });
 
-        async function _spSiteId() {
-            if (_mSiteCache) return _mSiteCache;
-            var r = await fetch('https://graph.microsoft.com/v1.0/sites/maderoequipos.sharepoint.com:/sites/AutomatizacionMadero', {
-                headers: { Authorization: 'Bearer ' + _mToken }
-            });
-            var d = await r.json();
-            _mSiteCache = d.id;
-            return d.id;
+        // Función para pedir a la plataforma que ejecute una llamada SP
+        function _spCall(action, payload, callback) {
+            var callId = ++_pendingSPId;
+            _pendingSPCallbacks[callId] = callback;
+            window.parent.postMessage({
+                type:   'MADERO_SP_REQUEST',
+                callId: callId,
+                action: action,
+                payload: payload
+            }, '*');
+            // Timeout de 8 segundos
+            setTimeout(function() {
+                if (_pendingSPCallbacks[callId]) {
+                    _pendingSPCallbacks[callId]('timeout', null);
+                    delete _pendingSPCallbacks[callId];
+                }
+            }, 8000);
         }
 
-        // Guardar proyecto en SP (la función original ya llama saveProjectsToStorage)
-        // Extendemos saveProjectsToStorage para sincronizar también con SP
+        // Extender saveProjectsToStorage para sincronizar con SP
         var _origSaveProjects = saveProjectsToStorage;
-        saveProjectsToStorage = async function(projects) {
-            // 1. Siempre guardar en localStorage (fallback garantizado)
+        saveProjectsToStorage = function(projects) {
+            // 1. Siempre guardar en localStorage
             _origSaveProjects(projects);
-
-            // 2. Si hay token real, sincronizar el proyecto más reciente con SP
-            if (!_mToken || _mDemo) return;
-            try {
-                var p = projects[0]; if (!p) return;
-                var sid = await _spSiteId();
-                var url = 'https://graph.microsoft.com/v1.0/sites/' + sid + '/lists/CotizadorProyectos/items';
-                // Buscar si ya existe para actualizar en lugar de duplicar
-                var qurl = url + '?$filter=fields/Title eq \'' + encodeURIComponent(p.code) + '\'&$select=id';
-                var qr = await fetch(qurl, { headers: { Authorization: 'Bearer ' + _mToken } });
-                var qd = await qr.json();
-                var fields = {
-                    Title:              p.code,
-                    ClienteNombre:      p.clientName || '',
-                    ClienteEmpresa:     '',
-                    Canal:              p.salesChannel || 'dealer',
-                    Tamanio:            String(p.selectedSize || ''),
-                    Modelo:             p.selectedPlatform || '',
-                    ConfiguracionJSON:  JSON.stringify({ bail: p.selectedBail, bailSize: p.selectedBailSize, bailMaterial: p.selectedBailMaterial, selections: p.selections, finalDiscountPct: p.finalDiscountPct, installationCostPct: p.installationCostPct, localPurchasesAmount: p.localPurchasesAmount }),
-                    TotalDealer:        '',
-                    TotalSRP:           '',
-                    CreadoPor:          _mUser || 'Usuario'
-                };
-                if (qd.value && qd.value.length > 0) {
-                    // Actualizar existente
-                    await fetch(url + '/' + qd.value[0].id + '/fields', {
-                        method: 'PATCH',
-                        headers: { Authorization: 'Bearer ' + _mToken, 'Content-Type': 'application/json' },
-                        body: JSON.stringify(fields)
-                    });
-                } else {
-                    // Crear nuevo
-                    await fetch(url, {
-                        method: 'POST',
-                        headers: { Authorization: 'Bearer ' + _mToken, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ fields: fields })
-                    });
-                }
-            } catch(e) {
-                // SP falló — localStorage ya guardado, sin problema
-                console.warn('[Cotizador] SP sync error:', e);
-            }
+            // 2. Sincronizar proyecto más reciente con SP vía plataforma
+            if (_mDemo || !projects.length) return;
+            var p = projects[0];
+            _spCall('SAVE_PROJECT', {
+                Title:             p.code,
+                ClienteNombre:     p.clientName || '',
+                Canal:             p.salesChannel || 'dealer',
+                Tamanio:           String(p.selectedSize || ''),
+                Modelo:            p.selectedPlatform || '',
+                ConfiguracionJSON: JSON.stringify({
+                    bail:                p.selectedBail,
+                    bailSize:            p.selectedBailSize,
+                    bailMaterial:        p.selectedBailMaterial,
+                    finalDiscountPct:    p.finalDiscountPct,
+                    installationCostPct: p.installationCostPct,
+                    localPurchasesAmount:p.localPurchasesAmount
+                }),
+                CreadoPor: _mUser || 'Usuario'
+            }, function(err) {
+                if (err) console.warn('[Cotizador] SP save error:', err);
+            });
         };
 
-        // Cargar proyectos: primero SP, complementar con localStorage
-        var _origGetProjects = getProjectsFromStorage;
-        getProjectsFromStorage = function() {
-            // Retorna localStorage de forma síncrona (el cotizador lo llama síncronamente)
-            // La carga de SP se hace en renderProjectsList override abajo
-            return _origGetProjects();
-        };
-
-        // Override renderProjectsList para incluir proyectos de SP
+        // Extender renderProjectsList para incluir proyectos de SP
         var _origRenderProjects = renderProjectsList;
-        renderProjectsList = async function() {
-            // Mostrar locales primero (respuesta inmediata)
+        renderProjectsList = function() {
             _origRenderProjects();
-
-            // Si hay token real, cargar también desde SP
-            if (!_mToken || _mDemo) return;
-            try {
-                var sid = await _spSiteId();
-                var url = 'https://graph.microsoft.com/v1.0/sites/' + sid + '/lists/CotizadorProyectos/items?$expand=fields&$orderby=Created desc&$top=50';
-                var r = await fetch(url, { headers: { Authorization: 'Bearer ' + _mToken } });
-                var d = await r.json();
-                if (!d.value || !d.value.length) return;
-
-                // Merge: SP projects que no estén ya en localStorage
-                var local = _origGetProjects();
+            if (_mDemo) return;
+            _spCall('LOAD_PROJECTS', {}, function(err, spProjects) {
+                if (err || !spProjects || !spProjects.length) return;
+                var local = getProjectsFromStorage();
                 var localCodes = new Set(local.map(function(p){ return p.code; }));
-                var spProjects = d.value
-                    .map(function(i){ return { _spId: i.id, code: i.fields.Title, clientName: i.fields.ClienteNombre||'', salesChannel: i.fields.Canal||'dealer', selectedPlatform: i.fields.Modelo||'', selectedSize: parseInt(i.fields.Tamanio)||0, date: i.fields.Created }; })
-                    .filter(function(p){ return !localCodes.has(p.code); });
-
-                if (!spProjects.length) return;
-
-                // Agregar al localStorage y re-renderizar
-                var merged = spProjects.concat(local);
-                _origSaveProjects(merged);
+                var newOnes = spProjects.filter(function(p){ return !localCodes.has(p.code); });
+                if (!newOnes.length) return;
+                _origSaveProjects(newOnes.concat(local));
                 _origRenderProjects();
-            } catch(e) {
-                console.warn('[Cotizador] SP load error:', e);
-            }
+            });
         };
         // ═══════════════════════════════════════════════════════
     </script>

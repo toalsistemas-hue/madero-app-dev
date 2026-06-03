@@ -2750,13 +2750,28 @@ window.addEventListener('message', async function(e) {
     } else if (action === 'LOAD_PROJECTS') {
       var res = await graphGet('sites/' + sid + '/lists/CotizadorProyectos/items?$expand=fields&$top=50');
       var projects = (res.value || []).map(function(i) {
+        var cfg = {};
+        try { cfg = JSON.parse(i.fields.ConfiguracionJSON || '{}'); } catch(e) {}
         return {
-          code:             i.fields.Title,
-          clientName:       i.fields.ClienteNombre || '',
-          salesChannel:     i.fields.Canal || 'dealer',
-          selectedPlatform: i.fields.Modelo || '',
-          selectedSize:     parseInt(i.fields.Tamanio) || 0,
-          date:             i.fields.Created
+          code:                 i.fields.Title,
+          clientName:           i.fields.ClienteNombre || '',
+          lang:                 'es',
+          salesChannel:         i.fields.Canal || 'dealer',
+          selectedPlatform:     i.fields.Modelo || '',
+          selectedModel:        i.fields.Modelo || '',
+          selectedBail:         cfg.bail || null,
+          selectedBailSize:     cfg.bailSize || null,
+          selectedBailMaterial: cfg.bailMaterial || null,
+          selectedSize:         parseInt(i.fields.Tamanio) || 0,
+          finalDiscountPct:     cfg.finalDiscountPct || 0,
+          installationCostPct:  cfg.installationCostPct || 0,
+          localPurchasesAmount: cfg.localPurchasesAmount || 0,
+          selections:           {},
+          quantities:           {},
+          itemDiscounts:        {},
+          printPriceMode:       'dealer',
+          comparePriceMode:     'dealer',
+          date:                 i.fields.Created
         };
       });
       reply(null, projects);

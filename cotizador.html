@@ -5240,29 +5240,35 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
         };
 
         // ── Cargar proyectos ──────────────────────────────────
-        // Si hay SP: cargar SOLO desde SP (limpiar localStorage)
-        // Si no hay SP: usar localStorage
-        var _origRenderProjects = renderProjectsList;
-        renderProjectsList = function() {
+        // Interceptar openProjectsModal para controlar el flujo completo
+        var _origOpenProjects = openProjectsModal;
+        openProjectsModal = function() {
+            // Abrir modal primero
+            document.getElementById('projectsModal').classList.add('open');
+
             if (_mDemo) {
-                // Sin SP: mostrar localStorage normalmente
-                _origRenderProjects();
+                // Sin SP: renderizar localStorage
+                renderProjectsList();
                 return;
             }
-            // Mostrar "Cargando..." mientras llega SP
+
+            // Mostrar "Cargando..." inmediatamente
             var container = document.getElementById('projectsList');
             if (container) {
                 container.innerHTML = '<div class="no-projects" style="color:#2e86de;">⏳ ' + (currentLang === 'en' ? 'Loading projects...' : 'Cargando proyectos...') + '</div>';
             }
+
+            // Pedir proyectos a SP via plataforma
             _spCall('LOAD_PROJECTS', {}, function(err, spProjects) {
                 if (err || spProjects === null) {
-                    // SP falló — mostrar lo que hay en localStorage
-                    _origRenderProjects();
+                    console.warn('[Cotizador] SP load error:', err, '— usando localStorage');
+                    renderProjectsList();
                     return;
                 }
-                // Reemplazar localStorage con datos de SP (SP es la verdad)
+                // Reemplazar localStorage con datos de SP
                 try { localStorage.setItem('madero_projects', JSON.stringify(spProjects)); } catch(e) {}
-                _origRenderProjects();
+                // Renderizar con los datos actualizados
+                renderProjectsList();
             });
         };
         // ═══════════════════════════════════════════════════════

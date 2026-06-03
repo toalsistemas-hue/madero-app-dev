@@ -2718,8 +2718,9 @@ window.addEventListener('message', async function(e) {
   var callId  = e.data.callId;
   var action  = e.data.action;
   var payload = e.data.payload;
+  console.log('[SP Bridge] Recibido:', action, 'callId:', callId);
   var iframe  = document.getElementById('cot-iframe');
-  if (!iframe) return;
+  if (!iframe) { console.warn('[SP Bridge] iframe no encontrado'); return; }
 
   function reply(error, result) {
     iframe.contentWindow.postMessage({

@@ -2735,12 +2735,14 @@ window.addEventListener('message', async function(e) {
     var base = 'https://graph.microsoft.com/v1.0/sites/' + sid + '/lists/CotizadorProyectos/items';
 
     if (action === 'SAVE_PROJECT') {
-      // Verificar si ya existe
-      var qr = await graphGet('sites/' + sid + '/lists/CotizadorProyectos/items?$filter=fields/Title eq \'' + encodeURIComponent(payload.Title) + '\'&$select=id&$expand=fields');
-      if (qr.value && qr.value.length > 0) {
-        await graphPatch('sites/' + sid + '/lists/CotizadorProyectos/items/' + qr.value[0].id + '/fields', payload);
+      // Buscar si ya existe por Title
+      var listBase = 'sites/' + sid + '/lists/CotizadorProyectos';
+      var existing = await graphGet(listBase + '/items?$expand=fields&$top=500');
+      var found = (existing.value || []).find(function(i){ return i.fields.Title === payload.Title; });
+      if (found) {
+        await graphPatch(listBase + '/items/' + found.id + '/fields', payload);
       } else {
-        await graphPost('sites/' + sid + '/lists/CotizadorProyectos/items', { fields: payload });
+        await graphPost(listBase + '/items', { fields: payload });
       }
       reply(null, 'ok');
 

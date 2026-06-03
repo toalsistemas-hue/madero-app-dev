@@ -5204,9 +5204,15 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
             // 2. Sincronizar proyecto más reciente con SP vía plataforma
             if (_mDemo || !projects.length) return;
             var p = projects[0];
+            // Leer nombre cliente y totales directamente del DOM
+            var clienteNombre = (document.getElementById('clientName') ? document.getElementById('clientName').value : '') || p.clientName || '';
+            var totalEl       = document.getElementById('grandTotal');
+            var subtotalEl    = document.getElementById('grandSubtotal');
+            var totalDealer   = totalEl    ? totalEl.textContent.replace(/[^0-9.]/g,'')    : '';
+            var totalSRP      = subtotalEl ? subtotalEl.textContent.replace(/[^0-9.]/g,'') : '';
             _spCall('SAVE_PROJECT', {
                 Title:             p.code,
-                ClienteNombre:     p.clientName || '',
+                ClienteNombre:     clienteNombre,
                 Canal:             p.salesChannel || 'dealer',
                 Tamanio:           String(p.selectedSize || ''),
                 Modelo:            p.selectedPlatform || '',
@@ -5218,7 +5224,9 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                     installationCostPct: p.installationCostPct,
                     localPurchasesAmount:p.localPurchasesAmount
                 }),
-                CreadoPor: _mUser || 'Usuario'
+                TotalDealer: totalDealer,
+                TotalSRP:    totalSRP,
+                CreadoPor:   _mUser || 'Usuario'
             }, function(err) {
                 if (err) console.warn('[Cotizador] SP save error:', err);
             });

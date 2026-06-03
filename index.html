@@ -2748,7 +2748,7 @@ window.addEventListener('message', async function(e) {
       reply(null, 'ok');
 
     } else if (action === 'LOAD_PROJECTS') {
-      var res = await graphGet('sites/' + sid + '/lists/CotizadorProyectos/items?$expand=fields&$orderby=Created desc&$top=50');
+      var res = await graphGet('sites/' + sid + '/lists/CotizadorProyectos/items?$expand=fields&$top=50');
       var projects = (res.value || []).map(function(i) {
         return {
           code:             i.fields.Title,

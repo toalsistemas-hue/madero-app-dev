@@ -5196,20 +5196,22 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
             }, 8000);
         }
 
-        // Extender saveProjectsToStorage para sincronizar con SP
+        // ── Guardar proyecto ──────────────────────────────────
+        // Si hay SP: guardar SOLO en SP (SP es la fuente de verdad)
+        // Si no hay SP (demo / error): fallback a localStorage
         var _origSaveProjects = saveProjectsToStorage;
         saveProjectsToStorage = function(projects) {
-            // 1. Siempre guardar en localStorage
-            _origSaveProjects(projects);
-            // 2. Sincronizar proyecto más reciente con SP vía plataforma
-            if (_mDemo || !projects.length) return;
+            if (_mDemo || !projects.length) {
+                // Sin SP: usar localStorage normalmente
+                _origSaveProjects(projects);
+                return;
+            }
             var p = projects[0];
-            // Leer nombre cliente y totales directamente del DOM
             var clienteNombre = (document.getElementById('clientName') ? document.getElementById('clientName').value : '') || p.clientName || '';
-            var totalEl       = document.getElementById('grandTotal');
-            var subtotalEl    = document.getElementById('grandSubtotal');
-            var totalDealer   = totalEl    ? totalEl.textContent.replace(/[^0-9.]/g,'')    : '';
-            var totalSRP      = subtotalEl ? subtotalEl.textContent.replace(/[^0-9.]/g,'') : '';
+            var totalEl   = document.getElementById('grandTotal');
+            var subtotalEl= document.getElementById('grandSubtotal');
+            var totalDealer = totalEl    ? totalEl.textContent.replace(/[^0-9.]/g,'')    : '';
+            var totalSRP    = subtotalEl ? subtotalEl.textContent.replace(/[^0-9.]/g,'') : '';
             _spCall('SAVE_PROJECT', {
                 Title:             p.code,
                 ClienteNombre:     clienteNombre,
@@ -5228,22 +5230,34 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                 TotalSRP:    totalSRP,
                 CreadoPor:   _mUser || 'Usuario'
             }, function(err) {
-                if (err) console.warn('[Cotizador] SP save error:', err);
+                if (err) {
+                    // SP falló — guardar en localStorage como respaldo
+                    console.warn('[Cotizador] SP save error, usando localStorage:', err);
+                    _origSaveProjects(projects);
+                }
+                // Si SP OK: NO guardar en localStorage
             });
         };
 
-        // Extender renderProjectsList para incluir proyectos de SP
+        // ── Cargar proyectos ──────────────────────────────────
+        // Si hay SP: cargar SOLO desde SP (limpiar localStorage)
+        // Si no hay SP: usar localStorage
         var _origRenderProjects = renderProjectsList;
         renderProjectsList = function() {
-            _origRenderProjects();
-            if (_mDemo) return;
+            if (_mDemo) {
+                // Sin SP: mostrar localStorage normalmente
+                _origRenderProjects();
+                return;
+            }
+            // Con SP: cargar desde SP y reemplazar localStorage
             _spCall('LOAD_PROJECTS', {}, function(err, spProjects) {
-                if (err || !spProjects || !spProjects.length) return;
-                var local = getProjectsFromStorage();
-                var localCodes = new Set(local.map(function(p){ return p.code; }));
-                var newOnes = spProjects.filter(function(p){ return !localCodes.has(p.code); });
-                if (!newOnes.length) return;
-                _origSaveProjects(newOnes.concat(local));
+                if (err || spProjects === null) {
+                    // SP falló — mostrar lo que hay en localStorage
+                    _origRenderProjects();
+                    return;
+                }
+                // Reemplazar localStorage con datos de SP (SP es la verdad)
+                try { localStorage.setItem('madero_projects', JSON.stringify(spProjects)); } catch(e) {}
                 _origRenderProjects();
             });
         };

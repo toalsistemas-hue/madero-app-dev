@@ -2756,9 +2756,10 @@ window.addEventListener('message', async function(e) {
         var items = await graphGet('drives/' + drive.id + '/root/children');
         var excel = (items.value || []).find(function(f){ return f.name && f.name.endsWith('.xlsx'); });
         if (!excel) { reply('excel_not_found', null); return; }
-        // Obtener URL de descarga directa
-        var dlRes = await graphGet('drives/' + drive.id + '/items/' + excel.id + '/content');
-        reply(null, { downloadUrl: excel['@microsoft.graph.downloadUrl'] || null, id: excel.id, driveId: drive.id });
+        // @microsoft.graph.downloadUrl es una URL prefirmada que no requiere auth
+        var downloadUrl = excel['@microsoft.graph.downloadUrl'];
+        if (!downloadUrl) { reply('no_download_url', null); return; }
+        reply(null, { downloadUrl: downloadUrl, name: excel.name });
       } catch(ex) {
         reply(ex.message, null);
       }

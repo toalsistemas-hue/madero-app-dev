@@ -2753,28 +2753,30 @@ window.addEventListener('message', async function(e) {
         var cfg = {};
         try { cfg = JSON.parse(i.fields.ConfiguracionJSON || '{}'); } catch(e) {}
         // selectedModel debe ser 'Integra' o 'Premium' (clave de platformConfig)
-        var plataforma = i.fields.Modelo || '';
-        var modelo = plataforma.indexOf('Integra') >= 0 ? 'Integra' : 'Premium';
+        var modeloSP = i.fields.Modelo || '';
+        var modelo = modeloSP === 'Integra' ? 'Integra' : 'Premium';
+        // Reconstruir objeto exactamente como lo espera loadProject
         return {
           code:                 i.fields.Title,
+          date:                 i.fields.Created,
           clientName:           i.fields.ClienteNombre || '',
-          lang:                 'es',
-          salesChannel:         i.fields.Canal || 'dealer',
-          selectedPlatform:     plataforma,
+          lang:                 cfg.lang || 'es',
+          salesChannel:         cfg.salesChannel || i.fields.Canal || 'dealer',
           selectedModel:        modelo,
+          selectedPlatform:     cfg.selectedPlatform || modeloSP,
           selectedBail:         cfg.bail || (modelo === 'Integra' ? 'Estándar' : 'Premium'),
           selectedBailSize:     cfg.bailSize || (modelo === 'Premium' ? 'Largo' : null),
           selectedBailMaterial: cfg.bailMaterial || 'Acero Inoxidable',
           selectedSize:         parseInt(i.fields.Tamanio) || 0,
-          finalDiscountPct:     cfg.finalDiscountPct || 0,
-          installationCostPct:  cfg.installationCostPct || 0,
+          selections:           cfg.selections   || {},
+          quantities:           cfg.quantities   || {},
+          itemDiscounts:        cfg.itemDiscounts || {},
+          finalDiscountPct:     cfg.finalDiscountPct     || 0,
+          installationCostPct:  cfg.installationCostPct  || 0,
           localPurchasesAmount: cfg.localPurchasesAmount || 0,
-          selections:           {},
-          quantities:           {},
-          itemDiscounts:        {},
-          printPriceMode:       'dealer',
-          comparePriceMode:     'dealer',
-          date:                 i.fields.Created
+          printPriceMode:       cfg.printPriceMode  || 'dealer',
+          comparePriceMode:     cfg.comparePriceMode || 'dealer',
+          savedCompareSizes:    []
         };
       });
       reply(null, projects);

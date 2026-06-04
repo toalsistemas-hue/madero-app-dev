@@ -5271,29 +5271,28 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                 optionals:       scaleData(newOptionals)
             };
 
-            // Mutar propiedades internas (son const, no se pueden reasignar)
-            function _mutate(target, source) {
-                Object.keys(target).forEach(function(k){ delete target[k]; });
-                Object.keys(source).forEach(function(k){ target[k] = source[k]; });
+            // Estrategia: inyectar directamente en 'data' (la copia activa)
+            // dataDealer/dataDirect son const pero data es let y se puede reasignar
+            var srcDealer = newDataDealer;
+            var srcDirect = newDataDirect;
+
+            // Reasignar data directamente con los nuevos datos
+            if (salesChannel === 'dealer' || !salesChannel) {
+                data = JSON.parse(JSON.stringify(srcDealer));
+                partsData = JSON.parse(JSON.stringify(partsDealer));
+            } else {
+                data = JSON.parse(JSON.stringify(srcDirect));
+                partsData = JSON.parse(JSON.stringify(partsDirect));
             }
 
-            dataDealer.sizes = newDataDealer.sizes;
-            dataDirect.sizes = newDataDirect.sizes;
-            _mutate(dataDealer.platforms,       newDataDealer.platforms);
-            _mutate(dataDealer.essential,       newDataDealer.essential);
-            _mutate(dataDealer.ancillary,       newDataDealer.ancillary);
-            _mutate(dataDealer.herd_management, newDataDealer.herd_management);
-            _mutate(dataDealer.optionals,       newDataDealer.optionals);
-            _mutate(dataDirect.platforms,       newDataDirect.platforms);
-            _mutate(dataDirect.essential,       newDataDirect.essential);
-            _mutate(dataDirect.ancillary,       newDataDirect.ancillary);
-            _mutate(dataDirect.herd_management, newDataDirect.herd_management);
-            _mutate(dataDirect.optionals,       newDataDirect.optionals);
-
-            // Regenerar 'data' que es la copia activa que usa el cotizador
-            // data se inicializa como JSON.parse(JSON.stringify(dataDealer))
-            // y se recalcula en setSalesChannel — lo forzamos aquí
-            setSalesChannel(salesChannel || 'dealer');
+            // También actualizar dataDealer/dataDirect para futuras llamadas a setSalesChannel
+            // Usamos assign en los objetos anidados (son mutables aunque la ref sea const)
+            ['platforms','essential','ancillary','herd_management','optionals'].forEach(function(k) {
+                Object.assign(dataDealer[k], srcDealer[k]);
+                Object.assign(dataDirect[k], srcDirect[k]);
+            });
+            dataDealer.sizes = srcDealer.sizes;
+            dataDirect.sizes = srcDirect.sizes;
 
             console.log('[Cotizador] ✅ Datos actualizados desde Excel SP');
             console.log('[Cotizador] Integra R-32:', data.platforms['Integra'] ? data.platforms['Integra'].totals['32'] : 'no encontrado');

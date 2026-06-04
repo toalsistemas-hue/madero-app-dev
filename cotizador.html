@@ -5272,7 +5272,6 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
             };
 
             // Mutar propiedades internas (son const, no se pueden reasignar)
-            // Vaciar y repoblar cada sección
             function _mutate(target, source) {
                 Object.keys(target).forEach(function(k){ delete target[k]; });
                 Object.keys(source).forEach(function(k){ target[k] = source[k]; });
@@ -5291,8 +5290,13 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
             _mutate(dataDirect.herd_management, newDataDirect.herd_management);
             _mutate(dataDirect.optionals,       newDataDirect.optionals);
 
+            // Regenerar 'data' que es la copia activa que usa el cotizador
+            // data se inicializa como JSON.parse(JSON.stringify(dataDealer))
+            // y se recalcula en setSalesChannel — lo forzamos aquí
+            setSalesChannel(salesChannel || 'dealer');
+
             console.log('[Cotizador] ✅ Datos actualizados desde Excel SP');
-            console.log('[Cotizador] Integra R-32:', dataDealer.platforms['Integra'] ? dataDealer.platforms['Integra'].totals['32'] : 'no encontrado');
+            console.log('[Cotizador] Integra R-32:', data.platforms['Integra'] ? data.platforms['Integra'].totals['32'] : 'no encontrado');
             if (!selectedSize) initSizes();
         }
 

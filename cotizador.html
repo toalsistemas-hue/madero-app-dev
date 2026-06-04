@@ -5155,19 +5155,20 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
         function _loadExcelData() {
             if (_mDemo) return;
             _spCall('GET_EXCEL', {}, function(err, info) {
-                if (err || !info || !info.downloadUrl) {
+                if (err || !info || !info.base64) {
                     console.warn('[Cotizador] Excel no disponible, usando datos embebidos:', err);
                     return;
                 }
-                // Descargar el Excel via fetch con token
-                // Usamos downloadUrl directo de Graph (no requiere auth header)
-                fetch(info.downloadUrl)
-                .then(function(r){ return r.arrayBuffer(); })
-                .then(function(buf) {
-                    var wb = XLSX.read(buf, { type: 'array' });
+                try {
+                    // Convertir base64 a ArrayBuffer
+                    var binary = atob(info.base64);
+                    var bytes = new Uint8Array(binary.length);
+                    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                    var wb = XLSX.read(bytes.buffer, { type: 'array' });
                     _parseExcelData(wb);
-                })
-                .catch(function(e){ console.warn('[Cotizador] Error descargando Excel:', e); });
+                } catch(e) {
+                    console.warn('[Cotizador] Error parseando Excel:', e);
+                }
             });
         }
 

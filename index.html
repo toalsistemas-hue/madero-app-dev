@@ -2748,7 +2748,7 @@ window.addEventListener('message', async function(e) {
       reply(null, 'ok');
 
     } else if (action === 'GET_EXCEL') {
-      // Obtener URL de descarga del Excel en CotizadorDatos
+      // Descargar el Excel y enviarlo como base64 (evita CORS en el iframe)
       try {
         var driveRes = await graphGet('sites/' + sid + '/drives');
         var drive = (driveRes.value || []).find(function(d){ return d.name === 'CotizadorDatos'; });
@@ -2756,10 +2756,17 @@ window.addEventListener('message', async function(e) {
         var items = await graphGet('drives/' + drive.id + '/root/children');
         var excel = (items.value || []).find(function(f){ return f.name && f.name.endsWith('.xlsx'); });
         if (!excel) { reply('excel_not_found', null); return; }
-        // @microsoft.graph.downloadUrl es una URL prefirmada que no requiere auth
-        var downloadUrl = excel['@microsoft.graph.downloadUrl'];
-        if (!downloadUrl) { reply('no_download_url', null); return; }
-        reply(null, { downloadUrl: downloadUrl, name: excel.name });
+        // Descargar el binario desde la plataforma (no tiene CORS)
+        var dlUrl = excel['@microsoft.graph.downloadUrl'];
+        var dlRes = await fetch(dlUrl);
+        if (!dlRes.ok) { reply('download_failed_' + dlRes.status, null); return; }
+        var buf = await dlRes.arrayBuffer();
+        // Convertir a base64 para enviarlo via postMessage
+        var bytes = new Uint8Array(buf);
+        var binary = '';
+        for (var i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        var b64 = btoa(binary);
+        reply(null, { base64: b64, name: excel.name });
       } catch(ex) {
         reply(ex.message, null);
       }

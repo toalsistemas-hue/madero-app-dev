@@ -5271,24 +5271,28 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                 optionals:       scaleData(newOptionals)
             };
 
-            // Reemplazar datos en memoria propiedad por propiedad
-            dataDealer.sizes           = newDataDealer.sizes;
-            dataDealer.platforms       = newDataDealer.platforms;
-            dataDealer.essential       = newDataDealer.essential;
-            dataDealer.ancillary       = newDataDealer.ancillary;
-            dataDealer.herd_management = newDataDealer.herd_management;
-            dataDealer.optionals       = newDataDealer.optionals;
+            // Mutar propiedades internas (son const, no se pueden reasignar)
+            // Vaciar y repoblar cada sección
+            function _mutate(target, source) {
+                Object.keys(target).forEach(function(k){ delete target[k]; });
+                Object.keys(source).forEach(function(k){ target[k] = source[k]; });
+            }
 
-            dataDirect.sizes           = newDataDirect.sizes;
-            dataDirect.platforms       = newDataDirect.platforms;
-            dataDirect.essential       = newDataDirect.essential;
-            dataDirect.ancillary       = newDataDirect.ancillary;
-            dataDirect.herd_management = newDataDirect.herd_management;
-            dataDirect.optionals       = newDataDirect.optionals;
+            dataDealer.sizes = newDataDealer.sizes;
+            dataDirect.sizes = newDataDirect.sizes;
+            _mutate(dataDealer.platforms,       newDataDealer.platforms);
+            _mutate(dataDealer.essential,       newDataDealer.essential);
+            _mutate(dataDealer.ancillary,       newDataDealer.ancillary);
+            _mutate(dataDealer.herd_management, newDataDealer.herd_management);
+            _mutate(dataDealer.optionals,       newDataDealer.optionals);
+            _mutate(dataDirect.platforms,       newDataDirect.platforms);
+            _mutate(dataDirect.essential,       newDataDirect.essential);
+            _mutate(dataDirect.ancillary,       newDataDirect.ancillary);
+            _mutate(dataDirect.herd_management, newDataDirect.herd_management);
+            _mutate(dataDirect.optionals,       newDataDirect.optionals);
 
             console.log('[Cotizador] ✅ Datos actualizados desde Excel SP');
-            console.log('[Cotizador] Plataforma Integra R-32:', dataDealer.platforms['Integra'] && dataDealer.platforms['Integra'].totals ? dataDealer.platforms['Integra'].totals['32'] : 'no encontrado');
-            // Refrescar tamaños en UI si no hay selección activa
+            console.log('[Cotizador] Integra R-32:', dataDealer.platforms['Integra'] ? dataDealer.platforms['Integra'].totals['32'] : 'no encontrado');
             if (!selectedSize) initSizes();
         }
 

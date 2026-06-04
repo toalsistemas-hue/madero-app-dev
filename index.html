@@ -2754,19 +2754,21 @@ window.addEventListener('message', async function(e) {
         var drive = (driveRes.value || []).find(function(d){ return d.name === 'CotizadorDatos'; });
         if (!drive) { reply('drive_not_found', null); return; }
         var items = await graphGet('drives/' + drive.id + '/root/children');
+        console.log('[SP Bridge] Archivos en CotizadorDatos:', (items.value||[]).map(function(f){ return f.name + ' (' + f.size + ' bytes) id:' + f.id; }));
         var excel = (items.value || []).find(function(f){ return f.name && f.name.endsWith('.xlsx'); });
         if (!excel) { reply('excel_not_found', null); return; }
-        // Descargar el binario desde la plataforma (no tiene CORS)
+        console.log('[SP Bridge] Descargando:', excel.name, excel.size, 'bytes');
+        // Forzar descarga fresca sin caché usando el endpoint de contenido con token
         var dlUrl = excel['@microsoft.graph.downloadUrl'];
-        var dlRes = await fetch(dlUrl);
+        var dlRes = await fetch(dlUrl + '&nocache=' + Date.now());
         if (!dlRes.ok) { reply('download_failed_' + dlRes.status, null); return; }
         var buf = await dlRes.arrayBuffer();
-        // Convertir a base64 para enviarlo via postMessage
+        console.log('[SP Bridge] Buffer descargado:', buf.byteLength, 'bytes');
         var bytes = new Uint8Array(buf);
         var binary = '';
         for (var i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
         var b64 = btoa(binary);
-        reply(null, { base64: b64, name: excel.name });
+        reply(null, { base64: b64, name: excel.name, size: excel.size });
       } catch(ex) {
         reply(ex.message, null);
       }

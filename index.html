@@ -2767,6 +2767,22 @@ window.addEventListener('message', async function(e) {
         reply(ex.message, null);
       }
 
+    } else if (action === 'DELETE_PROJECT') {
+      try {
+        var listBase = 'sites/' + sid + '/lists/CotizadorProyectos';
+        var existing = await graphGet(listBase + '/items?$expand=fields&$top=500');
+        var found = (existing.value || []).find(function(i){ return i.fields.Title === payload.code; });
+        if (found) {
+          await fetch('https://graph.microsoft.com/v1.0/' + listBase + '/items/' + found.id, {
+            method: 'DELETE',
+            headers: { Authorization: 'Bearer ' + state.token }
+          });
+        }
+        reply(null, 'deleted');
+      } catch(ex) {
+        reply(ex.message, null);
+      }
+
     } else if (action === 'LOAD_PROJECTS') {
       var res = await graphGet('sites/' + sid + '/lists/CotizadorProyectos/items?$expand=fields&$top=50');
       var projects = (res.value || []).map(function(i) {

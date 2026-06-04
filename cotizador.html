@@ -5088,10 +5088,17 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
 
         function deleteProject(code) {
             if (!confirm(t('confirmDelete'))) return;
+            // Eliminar de localStorage
             const projects = getProjectsFromStorage().filter(p => p.code !== code);
-            saveProjectsToStorage(projects);
+            _origSaveProjects(projects);
             renderProjectsList();
             showToast(t('projectDeleted'));
+            // Eliminar de SP si hay conexión
+            if (!_mDemo) {
+                _spCall('DELETE_PROJECT', { code: code }, function(err) {
+                    if (err) console.warn('[Cotizador] Error eliminando de SP:', err);
+                });
+            }
         }
 
         function openProjectsModal() {

@@ -5232,6 +5232,11 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                         if (!newPlatforms[platKey]) newPlatforms[platKey] = { totals: {} };
                         Object.assign(newPlatforms[platKey].totals, totals);
                         newPlatforms[platKey].name = platKey;
+                        // TEST TEMPORAL — verificar que datos se aplican en UI
+                        if (platKey === 'Integra' && newPlatforms['Integra'].totals['32']) {
+                            console.log('[TEST] Integra R-32 leído del Excel:', newPlatforms['Integra'].totals['32']);
+                            newPlatforms['Integra'].totals['32'] += 1000;
+                        }
                     }
                 } else {
                     var target = null;

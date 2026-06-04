@@ -5164,7 +5164,8 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                     var binary = atob(info.base64);
                     var bytes = new Uint8Array(binary.length);
                     for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                    var wb = XLSX.read(bytes.buffer, { type: 'array' });
+                    // cellNF:false y raw:false para obtener valores numéricos calculados
+                    var wb = XLSX.read(bytes.buffer, { type: 'array', cellFormula: false, cellNF: false, raw: true });
                     _parseExcelData(wb);
                 } catch(e) {
                     console.warn('[Cotizador] Error parseando Excel:', e);
@@ -5184,6 +5185,11 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
             // Encontrar fila de encabezados (contiene R-32, R-40...)
             var hdrIdx = rows.findIndex(function(r){ return r && r[2] && String(r[2]).includes('32'); });
             if (hdrIdx < 0) { console.warn('[Cotizador] Encabezados no encontrados'); return; }
+            console.log('[Cotizador] Encabezado en fila:', hdrIdx, '| row[2]:', rows[hdrIdx][2]);
+            // Log de las primeras filas de datos para diagnóstico
+            for (var d = hdrIdx+1; d < Math.min(hdrIdx+5, rows.length); d++) {
+                console.log('[Cotizador] Fila', d, ':', rows[d] ? rows[d].slice(0,5) : 'vacía');
+            }
 
             // Mapeo categoría Excel → key del cotizador
             var catMap = {

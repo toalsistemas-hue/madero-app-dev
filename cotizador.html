@@ -5271,10 +5271,23 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                 optionals:       scaleData(newOptionals)
             };
 
-            // Reemplazar datos en memoria y refrescar UI
-            Object.assign(dataDealer, newDataDealer);
-            Object.assign(dataDirect, newDataDirect);
+            // Reemplazar datos en memoria propiedad por propiedad
+            dataDealer.sizes           = newDataDealer.sizes;
+            dataDealer.platforms       = newDataDealer.platforms;
+            dataDealer.essential       = newDataDealer.essential;
+            dataDealer.ancillary       = newDataDealer.ancillary;
+            dataDealer.herd_management = newDataDealer.herd_management;
+            dataDealer.optionals       = newDataDealer.optionals;
+
+            dataDirect.sizes           = newDataDirect.sizes;
+            dataDirect.platforms       = newDataDirect.platforms;
+            dataDirect.essential       = newDataDirect.essential;
+            dataDirect.ancillary       = newDataDirect.ancillary;
+            dataDirect.herd_management = newDataDirect.herd_management;
+            dataDirect.optionals       = newDataDirect.optionals;
+
             console.log('[Cotizador] ✅ Datos actualizados desde Excel SP');
+            console.log('[Cotizador] Plataforma Integra R-32:', dataDealer.platforms['Integra'] && dataDealer.platforms['Integra'].totals ? dataDealer.platforms['Integra'].totals['32'] : 'no encontrado');
             // Refrescar tamaños en UI si no hay selección activa
             if (!selectedSize) initSizes();
         }

@@ -5164,8 +5164,9 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                     var binary = atob(info.base64);
                     var bytes = new Uint8Array(binary.length);
                     for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                    // cellNF:false y raw:false para obtener valores numéricos calculados
+                    console.log('[Cotizador] Tamaño archivo recibido:', bytes.length, 'bytes');
                     var wb = XLSX.read(bytes.buffer, { type: 'array', cellFormula: false, cellNF: false, raw: true });
+                    console.log('[Cotizador] Hojas:', wb.SheetNames);
                     _parseExcelData(wb);
                 } catch(e) {
                     console.warn('[Cotizador] Error parseando Excel:', e);
@@ -5185,11 +5186,13 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
             // Encontrar fila de encabezados (contiene R-32, R-40...)
             var hdrIdx = rows.findIndex(function(r){ return r && r[2] && String(r[2]).includes('32'); });
             if (hdrIdx < 0) { console.warn('[Cotizador] Encabezados no encontrados'); return; }
-            console.log('[Cotizador] Encabezado en fila:', hdrIdx, '| row[2]:', rows[hdrIdx][2]);
-            // Log de las primeras filas de datos para diagnóstico
-            for (var d = hdrIdx+1; d < Math.min(hdrIdx+5, rows.length); d++) {
-                console.log('[Cotizador] Fila', d, ':', rows[d] ? rows[d].slice(0,5) : 'vacía');
-            }
+            // Log específico de Platform/Integra
+            rows.forEach(function(r, i) {
+                if (r && r[0] && String(r[0]).toLowerCase().includes('platform') && r[1] && String(r[1]).includes('Integra')) {
+                    console.log('[Cotizador] Platform/Integra fila', i, 'raw:', JSON.stringify(r));
+                    console.log('[Cotizador] Tipo col 2:', typeof r[2], '| valor:', r[2]);
+                }
+            });
 
             // Mapeo categoría Excel → key del cotizador
             var catMap = {

@@ -5164,9 +5164,7 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                     var binary = atob(info.base64);
                     var bytes = new Uint8Array(binary.length);
                     for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                    console.log('[Cotizador] Tamaño archivo recibido:', bytes.length, 'bytes');
                     var wb = XLSX.read(bytes.buffer, { type: 'array', cellFormula: false, cellNF: false, raw: true });
-                    console.log('[Cotizador] Hojas:', wb.SheetNames);
                     _parseExcelData(wb);
                 } catch(e) {
                     console.warn('[Cotizador] Error parseando Excel:', e);
@@ -5186,13 +5184,6 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
             // Encontrar fila de encabezados (contiene R-32, R-40...)
             var hdrIdx = rows.findIndex(function(r){ return r && r[2] && String(r[2]).includes('32'); });
             if (hdrIdx < 0) { console.warn('[Cotizador] Encabezados no encontrados'); return; }
-            // Log específico de Platform/Integra
-            rows.forEach(function(r, i) {
-                if (r && r[0] && String(r[0]).toLowerCase().includes('platform') && r[1] && String(r[1]).includes('Integra')) {
-                    console.log('[Cotizador] Platform/Integra fila', i, 'raw:', JSON.stringify(r));
-                    console.log('[Cotizador] Tipo col 2:', typeof r[2], '| valor:', r[2]);
-                }
-            });
 
             // Mapeo categoría Excel → key del cotizador
             var catMap = {
@@ -5232,11 +5223,6 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                         if (!newPlatforms[platKey]) newPlatforms[platKey] = { totals: {} };
                         Object.assign(newPlatforms[platKey].totals, totals);
                         newPlatforms[platKey].name = platKey;
-                        // TEST TEMPORAL — verificar que datos se aplican en UI
-                        if (platKey === 'Integra' && newPlatforms['Integra'].totals['32']) {
-                            console.log('[TEST] Integra R-32 leído del Excel:', newPlatforms['Integra'].totals['32']);
-                            newPlatforms['Integra'].totals['32'] += 1000;
-                        }
                     }
                 } else {
                     var target = null;

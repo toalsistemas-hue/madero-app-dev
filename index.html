@@ -2747,6 +2747,22 @@ window.addEventListener('message', async function(e) {
       }
       reply(null, 'ok');
 
+    } else if (action === 'GET_EXCEL') {
+      // Obtener URL de descarga del Excel en CotizadorDatos
+      try {
+        var driveRes = await graphGet('sites/' + sid + '/drives');
+        var drive = (driveRes.value || []).find(function(d){ return d.name === 'CotizadorDatos'; });
+        if (!drive) { reply('drive_not_found', null); return; }
+        var items = await graphGet('drives/' + drive.id + '/root/children');
+        var excel = (items.value || []).find(function(f){ return f.name && f.name.endsWith('.xlsx'); });
+        if (!excel) { reply('excel_not_found', null); return; }
+        // Obtener URL de descarga directa
+        var dlRes = await graphGet('drives/' + drive.id + '/items/' + excel.id + '/content');
+        reply(null, { downloadUrl: excel['@microsoft.graph.downloadUrl'] || null, id: excel.id, driveId: drive.id });
+      } catch(ex) {
+        reply(ex.message, null);
+      }
+
     } else if (action === 'LOAD_PROJECTS') {
       var res = await graphGet('sites/' + sid + '/lists/CotizadorProyectos/items?$expand=fields&$top=50');
       var projects = (res.value || []).map(function(i) {

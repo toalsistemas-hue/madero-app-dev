@@ -337,6 +337,7 @@
             .summary-panel { position:static; }
         }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
     <header>
@@ -5149,6 +5150,135 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
         initSizes();
         updateSummary();
 
+        // ── Cargar datos actualizados desde Excel en SharePoint ──────
+        // Se ejecuta después de recibir el token (MADERO_AUTH)
+        function _loadExcelData() {
+            if (_mDemo) return;
+            _spCall('GET_EXCEL', {}, function(err, info) {
+                if (err || !info || !info.downloadUrl) {
+                    console.warn('[Cotizador] Excel no disponible, usando datos embebidos:', err);
+                    return;
+                }
+                // Descargar el Excel via fetch con token
+                // Usamos downloadUrl directo de Graph (no requiere auth header)
+                fetch(info.downloadUrl)
+                .then(function(r){ return r.arrayBuffer(); })
+                .then(function(buf) {
+                    var wb = XLSX.read(buf, { type: 'array' });
+                    _parseExcelData(wb);
+                })
+                .catch(function(e){ console.warn('[Cotizador] Error descargando Excel:', e); });
+            });
+        }
+
+        function _parseExcelData(wb) {
+            var SIZES = [32, 40, 48, 50, 60, 72, 80, 86, 100, 130];
+            var MARGEN = 0.6; // Factor margen para calcular SRP
+
+            // ── Hoja "Resumen Precios" → precios dealer por sistema ──
+            var ws = wb.Sheets['Resumen Precios'];
+            if (!ws) { console.warn('[Cotizador] Hoja Resumen Precios no encontrada'); return; }
+            var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+            // Encontrar fila de encabezados (contiene R-32, R-40...)
+            var hdrIdx = rows.findIndex(function(r){ return r && r[2] && String(r[2]).includes('32'); });
+            if (hdrIdx < 0) { console.warn('[Cotizador] Encabezados no encontrados'); return; }
+
+            // Mapeo categoría Excel → key del cotizador
+            var catMap = {
+                'Essential':       'essential',
+                'Ancillary':       'ancillary',
+                'Herd Management': 'herd_management',
+                'Optionals':       'optionals'
+            };
+
+            // Construir nuevos objetos de datos (dealer)
+            var newEssential = {}, newAncillary = {}, newHerd = {}, newOptionals = {};
+            var newPlatforms = {};
+
+            for (var i = hdrIdx + 1; i < rows.length; i++) {
+                var row = rows[i];
+                if (!row || !row[0]) continue;
+                var cat = String(row[0]).trim();
+                var sis = row[1] ? String(row[1]).trim() : null;
+                if (!sis) continue;
+
+                // Precios por tamaño (columnas 2-11 = R-32 a R-130)
+                var totals = {};
+                for (var s = 0; s < SIZES.length; s++) {
+                    var price = row[2 + s];
+                    if (price && price > 0) totals[String(SIZES[s])] = price;
+                }
+
+                if (cat === 'Platform') {
+                    // Plataformas — mapear a keys del cotizador
+                    var platKey = null;
+                    if (sis === 'Integra') platKey = 'Integra';
+                    else if (sis.includes('Premium Stainless Steel Short')) platKey = 'Premium Stainless Steel Short Bail';
+                    else if (sis.includes('Premium Stainless Steel'))       platKey = 'Premium Stainless Steel';
+                    else if (sis.includes('Premium Galvanized Short'))      platKey = 'Premium Galvanized Short Bail';
+                    else if (sis.includes('Premium Galvanized'))            platKey = 'Premium Galvanized';
+                    if (platKey) {
+                        if (!newPlatforms[platKey]) newPlatforms[platKey] = { totals: {} };
+                        Object.assign(newPlatforms[platKey].totals, totals);
+                        newPlatforms[platKey].name = platKey;
+                    }
+                } else {
+                    var target = null;
+                    if (cat === 'Essential')       target = newEssential;
+                    else if (cat === 'Ancillary')  target = newAncillary;
+                    else if (cat === 'Herd Management') target = newHerd;
+                    else if (cat === 'Optionals')  target = newOptionals;
+                    if (target) target[sis] = { totals: totals };
+                }
+            }
+
+            // Construir sizes desde plataformas disponibles
+            var sizesSet = new Set();
+            Object.values(newPlatforms).forEach(function(p){
+                Object.keys(p.totals).forEach(function(s){ if(p.totals[s]>0) sizesSet.add(parseInt(s)); });
+            });
+            var newSizes = Array.from(sizesSet).sort(function(a,b){return a-b;});
+
+            // Actualizar datos dealer
+            var newDataDealer = {
+                sizes:           newSizes,
+                platforms:       newPlatforms,
+                essential:       newEssential,
+                ancillary:       newAncillary,
+                herd_management: newHerd,
+                optionals:       newOptionals
+            };
+
+            // Calcular datos direct (SRP = dealer / margen)
+            function scaleData(src) {
+                var out = {};
+                Object.keys(src).forEach(function(k) {
+                    out[k] = { totals: {} };
+                    if (src[k].name) out[k].name = src[k].name;
+                    Object.keys(src[k].totals).forEach(function(s){
+                        out[k].totals[s] = src[k].totals[s] / MARGEN;
+                    });
+                });
+                return out;
+            }
+            var newDataDirect = {
+                sizes:           newSizes,
+                platforms:       scaleData(newPlatforms),
+                essential:       scaleData(newEssential),
+                ancillary:       scaleData(newAncillary),
+                herd_management: scaleData(newHerd),
+                optionals:       scaleData(newOptionals)
+            };
+
+            // Reemplazar datos en memoria y refrescar UI
+            Object.assign(dataDealer, newDataDealer);
+            Object.assign(dataDirect, newDataDirect);
+            console.log('[Cotizador] ✅ Datos actualizados desde Excel SP');
+            // Refrescar tamaños en UI si no hay selección activa
+            if (!selectedSize) initSizes();
+        }
+
         // ═══════════════════════════════════════════════════════
         // INTEGRACIÓN CON PLATAFORMA MADERO — postMessage bridge
         // El cotizador pide a la plataforma principal que haga
@@ -5166,6 +5296,8 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
             if (e.data.type === 'MADERO_AUTH') {
                 _mUser = e.data.user   || '';
                 _mDemo = e.data.isDemoMode || false;
+                // Cargar datos actualizados desde Excel SP
+                setTimeout(_loadExcelData, 500);
             }
             // Recibir respuestas SP
             if (e.data.type === 'MADERO_SP_RESPONSE') {

@@ -4313,6 +4313,8 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
             document.getElementById('clientName').value = '';
             document.getElementById('finalDiscountInput').value = 0;
             document.getElementById('installationCostInput').value = 0;
+            document.getElementById('localPurchasesInput').value = 0;
+            localPurchasesAmount = 0;
             document.getElementById('printModeDealer').classList.add('active');
             document.getElementById('printModeSRP').classList.remove('active');
 
@@ -5376,6 +5378,7 @@ body { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; color:#333; ba
                 Canal:             p.salesChannel || 'dealer',
                 Tamanio:           String(p.selectedSize || ''),
                 Modelo:            p.selectedModel || '',
+                FechaRegistro:     p.date,
                 ConfiguracionJSON: JSON.stringify({
                     bail:                p.selectedBail,
                     bailSize:            p.selectedBailSize,

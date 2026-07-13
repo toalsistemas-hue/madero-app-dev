@@ -2095,10 +2095,39 @@ function hideLoadingModal(){var m=document.getElementById('modal-cargando');if(m
 // ═══════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════
+// ENTORNO (dev / prod) — detección automática por ruta
+//   dev  → .../madero-app-dev/...  → SharePoint "Madero-app.dev"           (+ flujos dev)
+//   prod → automatizaciones.maderoequipos.com o .../madero-app/...
+//          → SharePoint "Automatizacion Madero"                            (+ flujos prod)
+// NOTA: ambos repos se publican en github.io, por eso se detecta por la RUTA
+// (/madero-app-dev/) y NO por el hostname. El MISMO archivo sirve para los dos
+// repos; no se edita nada al promover a producción.
+// ════════════════════════════════════════════════════
+const ENV = (location.pathname.indexOf('madero-app-dev') !== -1) ? 'dev' : 'prod';
+const ENVIRONMENTS = {
+  prod: {
+    siteHost:     'maderoequipos.sharepoint.com',
+    sitePath:     '/sites/AutomatizacionMadero',
+    flowLeer:     'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ff456972635f448e9211ec7d122bcad2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=OkfQkYFiSXAEPTwx938LhF9btNEEkG4dhcfyvNUszEU',
+    flowEscribir: 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ab0a69af3fc94891b5ca5ffe71fe30d5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=5FfFE5fv70ysBpljWpBqUQcmEMe1drp6OKtfySgBOPQ',
+  },
+  dev: {
+    siteHost:     'maderoequipos.sharepoint.com',
+    // Sitio de prueba confirmado (URL: .../sites/Madero-app.dev/SitePages/CollabHome.aspx)
+    sitePath:     '/sites/Madero-app.dev',
+    // Flujos duplicados apuntando al sitio Madero-app.dev (SP Leer v2 dev / SP Escribir dev)
+    flowLeer:     'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/23/workflows/70cad9dba9b94b688e1da9e22640a5c8/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=D3kjlE6bV--rWtcOB6VYOa-Px9cUJO6I3ZDioKF-lXo',
+    flowEscribir: 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/15/workflows/95a8131106e548d78e6bc1425b1e27ec/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=YtsiuezXw78lL7snUVZiY3j8BpVO9A_M3IrQF5MXQIg',
+  },
+};
+const ACTIVE = ENVIRONMENTS[ENV];
+try { console.info('[ENV] Entorno activo:', ENV, '→ sitio', ACTIVE.sitePath); } catch(e){}
+
 const CONFIG = {
   clientId:       '55be1c75-c28f-4659-80f6-a07a08c69bcc',
   tenantId:       '5ec2356c-a46e-47ae-8c02-15e82b6d317d',
-  sharepointSite: 'https://maderoequipos.sharepoint.com/sites/AutomatizacionMadero',
+  sharepointSite: 'https://' + ACTIVE.siteHost + ACTIVE.sitePath,
   scopes: [
     'https://graph.microsoft.com/User.Read',
     'https://graph.microsoft.com/Sites.ReadWrite.All',
@@ -2482,8 +2511,8 @@ function loadUserDemo(email) {
 let cachedSiteId = null;
 async function getSiteId() {
   if (cachedSiteId) { window._cachedSiteId = cachedSiteId; return cachedSiteId; }
-  const host = 'maderoequipos.sharepoint.com';
-  const path = '/sites/AutomatizacionMadero';
+  const host = ACTIVE.siteHost;
+  const path = ACTIVE.sitePath;
   const res  = await graphGet(`sites/${host}:${path}`);
   cachedSiteId = res.id;
   return cachedSiteId;
@@ -5638,8 +5667,8 @@ async function graphPost(endpoint, body, retry) {
 // Estas funciones usan Flows en lugar de Graph API directa
 // para que los usuarios no requieran permisos directos en SP
 // ═══════════════════════════════════════════════════════════════════
-const FLOW_URL_LEER    = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ff456972635f448e9211ec7d122bcad2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=OkfQkYFiSXAEPTwx938LhF9btNEEkG4dhcfyvNUszEU';
-const FLOW_URL_ESCRIBIR = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ab0a69af3fc94891b5ca5ffe71fe30d5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=5FfFE5fv70ysBpljWpBqUQcmEMe1drp6OKtfySgBOPQ';
+const FLOW_URL_LEER    = ACTIVE.flowLeer;
+const FLOW_URL_ESCRIBIR = ACTIVE.flowEscribir;
 
 // Listas que se leen/escriben via Flow (permisos restringidos en SP)
 const LISTAS_PROTEGIDAS = [

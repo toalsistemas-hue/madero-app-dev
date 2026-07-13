@@ -758,6 +758,14 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 .prog-of-row{display:grid;grid-template-columns:40px 1fr auto auto auto;gap:8px;align-items:start;padding:8px 13px;border-bottom:1px solid var(--border);}
 .prog-of-row:last-child{border-bottom:none;}
 .prog-chk{width:16px;height:16px;cursor:pointer;accent-color:var(--accent-l);}
+/* Expandir / comprimir OFs por pedido */
+.prog-card.collapsed .prog-of-row{display:none;}
+.prog-toggle{background:none;border:none;cursor:pointer;color:var(--dim);font-size:.78rem;line-height:1;padding:2px 4px;transition:transform .18s;flex-shrink:0;}
+.prog-toggle:hover{color:var(--text);}
+.prog-card.collapsed .prog-toggle{transform:rotate(-90deg);}
+/* Spinner de carga de Programación */
+.fab-spinner{display:inline-block;width:26px;height:26px;border:3px solid var(--border);border-top-color:var(--accent-l);border-radius:50%;animation:fabspin .8s linear infinite;vertical-align:middle;}
+@keyframes fabspin{to{transform:rotate(360deg);}}
 
 /* Plantillas */
 .tpl-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin-bottom:9px;overflow:hidden;transition:border-color .3s;}
@@ -3291,6 +3299,17 @@ function buildCard(p) {
 }
 
 function toggleCard(h) { h.parentElement.classList.toggle('expanded'); }
+// Expandir / comprimir las OFs de un pedido en Programación (estado persistente entre re-renders)
+function toggleProgCard(btn){
+  var card = btn.closest ? btn.closest('.prog-card') : null;
+  if(!card){ var p=btn.parentElement; while(p && !(p.classList&&p.classList.contains('prog-card'))) p=p.parentElement; card=p; }
+  if(!card) return;
+  card.classList.toggle('collapsed');
+  var ped = card.getAttribute('data-pedido') || '';
+  window._progCollapsed = window._progCollapsed || {};
+  if(card.classList.contains('collapsed')) window._progCollapsed[ped] = true;
+  else delete window._progCollapsed[ped];
+}
 
 // ═══════════════════════════════════════════════════════
 // MODAL & ACCIONES
@@ -5930,6 +5949,8 @@ async function ftLoadDataFromSP() {
     console.info('ftLoadDataFromSP: omitido (modo demo o sin token)');
     return;
   }
+  window._fabLoading = true;
+  if (C && C.currentPage === 'programacion') { try { (window.renderProg||renderProg)(); } catch(_e){} }
   try {
     const siteId = await getSiteId();
     FT_SITE_ID = siteId;
@@ -6875,6 +6896,9 @@ async function ftLoadDataFromSP() {
   });
   } catch(e) {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);
+  } finally {
+    window._fabLoading = false;
+    if (C && C.currentPage === 'programacion') { try { (window.renderProg||renderProg)(); } catch(_e){} }
   }
 }
 
@@ -7808,7 +7832,9 @@ function renderProg(){
     });
     h+="</div>";
   });
-  if(!h) h="<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
+  if(!h) h = window._fabLoading
+    ? "<div style='text-align:center;padding:34px 20px;color:var(--dim);font-size:.85rem'><span class='fab-spinner'></span><div style='margin-top:12px'>Cargando programación…</div></div>"
+    : "<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
   document.getElementById("prog-list").innerHTML = h;
   // KPIs — excluir cerrados y cancelados
   var _ofsActivas = DB.ofs.filter(function(o){return o.status!=='Pedido Cancelado'&&o.status!=='Cerrado'&&!o.pedidoCerrado;});
@@ -10193,10 +10219,11 @@ function renderProg(){
     var completed = pedidoIsComplete(g.pedido);
     var grpStyle = completed ? "border-color:var(--green);background:rgba(46,160,67,.04);"
                  : cancelado ? "border-color:var(--red);background:rgba(239,68,68,.04);opacity:.7;" : "";
-    h+="<div class='prog-card' style='"+grpStyle+"'>";
+    var _colP = (window._progCollapsed && window._progCollapsed[g.pedido]) ? " collapsed" : "";
+    h+="<div class='prog-card"+_colP+"' data-pedido='"+esc(g.pedido)+"' style='"+grpStyle+"'>";
     h+="<div class='prog-ped-hdr' style='"+(completed?"background:rgba(46,160,67,.08);":cancelado?"background:rgba(239,68,68,.06);":"")+"'>";
-    h+="<div><div class='prog-ped-num' style='"+(completed?"color:var(--green)":cancelado?"color:var(--red)":"")+"'>Pedido "+esc(g.pedido)+"</div>";
-    h+="<div class='prog-ped-cliente'>"+esc(g.cliente)+(g.ofv?" <span style='color:var(--dim);font-size:.72rem'>· "+esc(g.ofv)+"</span>":"")+(completed?" <span class='chip c-done' style='margin-left:6px'>✓ Completado</span>":cancelado?" <span class='chip' style='background:rgba(239,68,68,.15);color:var(--red);margin-left:6px;'>✗ Cancelado</span>":"")+"</div></div>";
+    h+="<div style='display:flex;align-items:center;gap:6px;min-width:0;'><button type='button' class='prog-toggle' title='Expandir / comprimir órdenes' onclick='toggleProgCard(this)'>▾</button><div style='min-width:0;'><div class='prog-ped-num' style='"+(completed?"color:var(--green)":cancelado?"color:var(--red)":"")+"'>Pedido "+esc(g.pedido)+"</div>";
+    h+="<div class='prog-ped-cliente'>"+esc(g.cliente)+(g.ofv?" <span style='color:var(--dim);font-size:.72rem'>· "+esc(g.ofv)+"</span>":"")+(completed?" <span class='chip c-done' style='margin-left:6px'>✓ Completado</span>":cancelado?" <span class='chip' style='background:rgba(239,68,68,.15);color:var(--red);margin-left:6px;'>✗ Cancelado</span>":"")+"</div></div></div>";
     h+="<div style='display:flex;align-items:center;gap:8px'>";
     h+="<span class='"+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span>";
     if(C.editingMode) h+="<select class='form-select-sm' onchange='updatePedidoPrio(\""+g.pedido+"\",this.value)'><option value='alta'"+(g.prioridad==="alta"?" selected":"")+">🔴 Alta</option><option value='media'"+(g.prioridad==="media"?" selected":"")+">🟡 Media</option><option value='normal'"+(g.prioridad==="normal"?" selected":"")+">⬜ Normal</option></select>";
@@ -10274,7 +10301,9 @@ function renderProg(){
     });
     h+="</div>";
   });
-  if(!h) h="<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
+  if(!h) h = window._fabLoading
+    ? "<div style='text-align:center;padding:34px 20px;color:var(--dim);font-size:.85rem'><span class='fab-spinner'></span><div style='margin-top:12px'>Cargando programación…</div></div>"
+    : "<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
   document.getElementById("prog-list").innerHTML = h;
 
   // ── Sección pedidos cancelados ──

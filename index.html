@@ -2124,6 +2124,32 @@ const ENVIRONMENTS = {
 const ACTIVE = ENVIRONMENTS[ENV];
 try { console.info('[ENV] Entorno activo:', ENV, '→ sitio', ACTIVE.sitePath); } catch(e){}
 
+// ── Distintivo visual del ambiente de PRUEBA (solo en dev) ──────────
+// Etiqueta fija visible en login y ya dentro de la plataforma. No bloquea clics.
+if (ENV === 'dev') {
+  (function(){
+    function addEnvBadge(){
+      if (document.getElementById('env-badge-prueba')) return;
+      var host = document.body || document.documentElement;
+      if (!host) return;
+      var b = document.createElement('div');
+      b.id = 'env-badge-prueba';
+      b.textContent = 'VERSIÓN PRUEBA';
+      b.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%);'
+        + 'z-index:2147483647;background:#d9822b;color:#fff;'
+        + 'font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;'
+        + 'letter-spacing:.08em;padding:6px 16px;border-radius:0 0 8px 8px;'
+        + 'box-shadow:0 2px 6px rgba(0,0,0,.25);pointer-events:none;'
+        + 'white-space:nowrap;user-select:none;';
+      host.appendChild(b);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addEnvBadge);
+    else addEnvBadge();
+    // Reponer la etiqueta si alguna pantalla re-renderiza y la elimina
+    setInterval(addEnvBadge, 3000);
+  })();
+}
+
 const CONFIG = {
   clientId:       '55be1c75-c28f-4659-80f6-a07a08c69bcc',
   tenantId:       '5ec2356c-a46e-47ae-8c02-15e82b6d317d',

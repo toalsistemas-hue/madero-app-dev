@@ -982,6 +982,14 @@ const ParentData = {
 //   • Standalone sin configurar  → MockData   (demo)
 const Data = EMBEBIDO ? ParentData : (CONFIG.USE_SHAREPOINT ? GraphData : MockData);
 
+// La plataforma (padre) envía COT_REFRESH al navegar a esta pantalla, para
+// recargar datos ya con la sesión del padre iniciada.
+window.addEventListener('message', function(e){
+  if (e.data && e.data.type === 'COT_REFRESH' && typeof cargarCotizaciones === 'function') {
+    cargarCotizaciones();
+  }
+});
+
 async function conectarSharePoint(){
   if (!CONFIG.USE_SHAREPOINT){
     toast("Primero configura el bloque CONFIG (tenantId, clientId, siteId) y cambia USE_SHAREPOINT a true. Revisa Analisis_BaseDatos_Cotizaciones_SharePoint.md", "error");

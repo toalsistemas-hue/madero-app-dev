@@ -2074,6 +2074,16 @@ tr:last-child td{border-bottom:none;}
   </iframe>
 </div>
 
+<!-- PAGE: COTIZACIONES · MANO DE OBRA -->
+<div class="page" id="page-Cotizaciones" style="padding:0;margin:0;position:relative;">
+  <iframe
+    id="cotz-iframe"
+    src="Cotizaciones.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:block;z-index:10;"
+    title="Cotizaciones Mano de Obra">
+  </iframe>
+</div>
+
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
@@ -3043,6 +3053,20 @@ function navigateToPantalla(pantallaID) {
     // Ocultar iframe si se navega a otra pantalla
     var ifrm = document.getElementById('cot-iframe');
     if (ifrm) ifrm.style.display = 'none';
+    var cotzIfrm = document.getElementById('cotz-iframe');
+    if (cotzIfrm) cotzIfrm.style.display = 'none';
+
+    if (pantallaID==='Cotizaciones') {
+      if (cotzIfrm) {
+        cotzIfrm.style.display = 'block';
+        // Pedir a Cotizaciones que recargue datos ya con la sesión del padre activa
+        setTimeout(function() {
+          if (cotzIfrm && cotzIfrm.contentWindow) {
+            cotzIfrm.contentWindow.postMessage({ type: 'COT_REFRESH' }, '*');
+          }
+        }, 300);
+      }
+    }
 
     if (pantallaID==='Cotizador') {
       if (ifrm) ifrm.style.display = 'block';
@@ -3336,6 +3360,8 @@ function doLogout() {
   if (ifrm) ifrm.style.display = 'none';
   var bpmIfrm = document.getElementById('bpm-iframe');
   if (bpmIfrm) bpmIfrm.style.display = 'none';
+  var cotzIfrm = document.getElementById('cotz-iframe');
+  if (cotzIfrm) cotzIfrm.style.display = 'none';
   document.getElementById('login-email').value='';
   document.getElementById('login-pass').value='';
   document.getElementById('login-error').style.display='none';

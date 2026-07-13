@@ -7455,13 +7455,40 @@ setInterval(function(){
 // ═══════════════════════════════════════════════════════
 // FABTRACKER APP MÓVIL — Capa SharePoint + MSAL propio
 // ═══════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════
+// ENTORNO (dev / prod) — detección automática por ruta (igual que el portal)
+//   dev  → .../madero-app-dev/...  → SharePoint "Madero-app.dev"  (+ flujos dev)
+//   prod → netlify / automatizaciones.maderoequipos.com / .../madero-app/...
+//          → SharePoint "Automatizacion Madero"                   (+ flujos prod)
+// Se detecta por la RUTA (/madero-app-dev/), no por el hostname, porque tanto dev
+// como prod se publican en github.io. El MISMO archivo sirve para ambos repos.
+// ════════════════════════════════════════════════════
+const ENV = (location.pathname.indexOf('madero-app-dev') !== -1) ? 'dev' : 'prod';
+const ENVIRONMENTS = {
+  prod: {
+    siteHost:     'maderoequipos.sharepoint.com',
+    sitePath:     '/sites/AutomatizacionMadero',
+    flowLeer:     'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ff456972635f448e9211ec7d122bcad2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=OkfQkYFiSXAEPTwx938LhF9btNEEkG4dhcfyvNUszEU',
+    flowEscribir: 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ab0a69af3fc94891b5ca5ffe71fe30d5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=5FfFE5fv70ysBpljWpBqUQcmEMe1drp6OKtfySgBOPQ',
+  },
+  dev: {
+    siteHost:     'maderoequipos.sharepoint.com',
+    sitePath:     '/sites/Madero-app.dev',
+    // Flujos duplicados apuntando al sitio Madero-app.dev (SP Leer v2 dev / SP Escribir dev)
+    flowLeer:     'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/23/workflows/70cad9dba9b94b688e1da9e22640a5c8/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=D3kjlE6bV--rWtcOB6VYOa-Px9cUJO6I3ZDioKF-lXo',
+    flowEscribir: 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/15/workflows/95a8131106e548d78e6bc1425b1e27ec/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=YtsiuezXw78lL7snUVZiY3j8BpVO9A_M3IrQF5MXQIg',
+  },
+};
+const ACTIVE = ENVIRONMENTS[ENV];
+try { console.info('[ENV] App móvil — entorno:', ENV, '→ sitio', ACTIVE.sitePath); } catch(e){}
+
 const APP_CONFIG = {
   // Same Azure AD app registration as the coordinator portal (same tenant + clientId)
   clientId: '55be1c75-c28f-4659-80f6-a07a08c69bcc',
   tenantId: '5ec2356c-a46e-47ae-8c02-15e82b6d317d',
   scopes: ['https://graph.microsoft.com/User.Read','https://graph.microsoft.com/Sites.ReadWrite.All'],
-  siteHost: 'maderoequipos.sharepoint.com',
-  sitePath: '/sites/AutomatizacionMadero',
+  siteHost: ACTIVE.siteHost,
+  sitePath: ACTIVE.sitePath,
 };
 
 var appMsalInstance = null;
@@ -7583,7 +7610,12 @@ var APP_IS_LOCAL_IP = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(win
 // Exact registered redirect URIs in Azure AD
 function appGetRedirectUri() {
   var h = window.location.hostname;
-  if (h === 'toalsistemas-hue.github.io') return 'https://toalsistemas-hue.github.io/madero-app/app.html';
+  if (h === 'toalsistemas-hue.github.io') {
+    // dev y prod se publican en github.io bajo distinta ruta
+    return (location.pathname.indexOf('madero-app-dev') !== -1)
+      ? 'https://toalsistemas-hue.github.io/madero-app-dev/app.html'
+      : 'https://toalsistemas-hue.github.io/madero-app/app.html';
+  }
   if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3000/';
   if (h.indexOf('netlify') >= 0) return 'https://automatizaciones-madero-app.netlify.app/app.html';
   if (h === 'automatizaciones.maderoequipos.com') return 'https://automatizaciones.maderoequipos.com/app.html';
@@ -7903,8 +7935,8 @@ async function appGetSiteId() {
 // PROXY VIA POWER AUTOMATE — App Móvil
 // Mismas URLs que el portal — los Flows son genéricos por lista
 // ═══════════════════════════════════════════════════════════════════
-var APP_FLOW_URL_LEER    = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ff456972635f448e9211ec7d122bcad2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=OkfQkYFiSXAEPTwx938LhF9btNEEkG4dhcfyvNUszEU';
-var APP_FLOW_URL_ESCRIBIR = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ab0a69af3fc94891b5ca5ffe71fe30d5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=5FfFE5fv70ysBpljWpBqUQcmEMe1drp6OKtfySgBOPQ';
+var APP_FLOW_URL_LEER    = ACTIVE.flowLeer;
+var APP_FLOW_URL_ESCRIBIR = ACTIVE.flowEscribir;
 // URL de Flow exclusivo para FT_Timers (copia del Flow Escribir con diferente trigger URL)
 // Configurar con la URL del Flow duplicado para evitar throttling 502
 // Si está vacío, se usa APP_FLOW_URL_ESCRIBIR con delay de 5s

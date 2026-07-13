@@ -1,0 +1,1650 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cotizaciones · Mano de Obra</title>
+
+<!-- ============================================================
+     Librerías externas (mismas que usaba el módulo original)
+     ============================================================ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<!-- MSAL.js: solo se usa si se activa el modo SharePoint (ver bloque CONFIG) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/msal/2.38.3/msal-browser.min.js"></script>
+
+<style>
+  :root{
+    --primary:#00528b;
+    --primary-dark:#003d68;
+    --primary-light:#e8f1f8;
+    --bg:#f3f5f7;
+    --card:#ffffff;
+    --border:#dfe3e8;
+    --text:#22303f;
+    --muted:#6b7684;
+    --danger:#d64545;
+    --danger-bg:#fdeaea;
+    --warn:#c98a00;
+    --warn-bg:#fff4e0;
+    --ok:#1f8a4c;
+    --ok-bg:#e7f6ec;
+    --radius:10px;
+    --shadow:0 1px 3px rgba(20,30,40,.08), 0 1px 2px rgba(20,30,40,.06);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Segoe UI", Roboto, Arial, sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--primary);}
+
+  /* ---------- Barra superior ---------- */
+  .topbar{
+    background:linear-gradient(90deg,var(--primary-dark),var(--primary));
+    color:#fff;
+    padding:14px 22px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+    box-shadow:var(--shadow);
+    position:sticky;
+    top:0;
+    z-index:50;
+  }
+  .topbar h1{
+    font-size:18px;
+    margin:0;
+    font-weight:600;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .topbar h1 .tag{
+    font-size:11px;
+    font-weight:700;
+    padding:3px 8px;
+    border-radius:20px;
+    background:rgba(255,255,255,.18);
+  }
+  .session-bar{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+    font-size:13px;
+  }
+  .session-bar input, .session-bar select{
+    padding:6px 8px;
+    border-radius:6px;
+    border:1px solid rgba(255,255,255,.4);
+    background:rgba(255,255,255,.12);
+    color:#fff;
+    font-size:12.5px;
+  }
+  .session-bar input::placeholder{color:rgba(255,255,255,.75);}
+  .session-bar option{color:#000;}
+  .btn-sp{
+    background:#ffb703;
+    color:#3a2900;
+    border:none;
+    font-weight:700;
+    font-size:12px;
+    padding:7px 12px;
+    border-radius:6px;
+    cursor:pointer;
+  }
+  .btn-sp:hover{filter:brightness(0.95);}
+
+  /* ---------- Contenedor general ---------- */
+  .container{
+    max-width:1400px;
+    margin:20px auto;
+    padding:0 18px 60px;
+  }
+  .card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+  }
+
+  /* ---------- Toolbar / filtros ---------- */
+  .toolbar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+    padding:16px 18px;
+    border-bottom:1px solid var(--border);
+  }
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    border:none;
+    border-radius:7px;
+    padding:9px 14px;
+    font-size:13.5px;
+    font-weight:600;
+    cursor:pointer;
+    transition:filter .15s;
+  }
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .btn:hover:not(:disabled){filter:brightness(0.95);}
+  .btn-primary{background:var(--primary);color:#fff;}
+  .btn-secondary{background:#eef1f4;color:var(--text);}
+  .btn-danger{background:var(--danger-bg);color:var(--danger);}
+  .btn-ghost{background:transparent;color:var(--primary);border:1px solid var(--primary);}
+  .btn-full{width:100%;justify-content:center;padding:11px;}
+
+  .toolbar input[type="text"], .toolbar select{
+    padding:9px 10px;
+    border:1px solid var(--border);
+    border-radius:7px;
+    font-size:13.5px;
+    min-width:170px;
+    background:#fff;
+  }
+  .toolbar .spacer{flex:1;}
+
+  /* ---------- Tabla ---------- */
+  .table-wrap{overflow-x:auto;}
+  table.grid{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  table.grid thead th{
+    background:#f7f9fb;
+    text-align:left;
+    padding:10px 12px;
+    font-weight:700;
+    color:var(--muted);
+    text-transform:uppercase;
+    font-size:11px;
+    letter-spacing:.03em;
+    border-bottom:1px solid var(--border);
+    white-space:nowrap;
+  }
+  table.grid tbody td{
+    padding:10px 12px;
+    border-bottom:1px solid var(--border);
+    vertical-align:middle;
+  }
+  table.grid tbody tr:hover{background:#f8fbfd;}
+  .icon-btn{
+    border:none;background:var(--primary-light);color:var(--primary);
+    width:30px;height:30px;border-radius:7px;cursor:pointer;font-size:15px;
+    display:inline-flex;align-items:center;justify-content:center;
+  }
+  .icon-btn:hover{background:var(--primary);color:#fff;}
+
+  .badge{
+    display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;
+    white-space:nowrap;
+  }
+  .badge-normal{background:var(--ok-bg);color:var(--ok);}
+  .badge-urgente{background:var(--warn-bg);color:var(--warn);}
+  .badge-extra{background:var(--danger-bg);color:var(--danger);}
+  .estatus-pill{
+    display:inline-block;padding:4px 10px;border-radius:6px;font-size:11.5px;font-weight:700;
+  }
+  .estatus-CAPTURA, .estatus-EN-CAPTURA\.\.{background:#eef1f4;color:#555;}
+  .estatus-EN-REVISION-INSTALACIONES{background:var(--warn-bg);color:var(--warn);}
+  .estatus-COTIZACION-ELABORADA{background:var(--ok-bg);color:var(--ok);}
+  .estatus-INFORMACION-PENDIENTE{background:#fde8e8;color:#b23434;}
+  .estatus-CANCELADO{background:#eee;color:#888;text-decoration:line-through;}
+
+  .empty-row td{text-align:center;color:var(--muted);padding:30px;font-style:italic;}
+
+  /* ---------- Modal ---------- */
+  .modal-overlay{
+    display:none;position:fixed;inset:0;background:rgba(15,25,35,.55);
+    z-index:200;align-items:flex-start;justify-content:center;padding:30px 12px;
+    overflow-y:auto;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal-box{
+    background:#fff;border-radius:12px;max-width:980px;width:100%;
+    box-shadow:0 20px 60px rgba(0,0,0,.3);
+    max-height:calc(100vh - 60px);
+    display:flex;flex-direction:column;
+  }
+  .modal-head{
+    padding:16px 22px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .modal-head h2{margin:0;font-size:17px;}
+  .modal-close{border:none;background:none;font-size:22px;cursor:pointer;color:var(--muted);}
+  .modal-body{padding:20px 22px;overflow-y:auto;}
+  .modal-foot{padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;}
+
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px 24px;}
+  @media (max-width:760px){.form-grid{grid-template-columns:1fr;}}
+  .form-group{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}
+  .form-group.full{grid-column:1/-1;}
+  .form-group label{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;}
+  .form-group input, .form-group select, .form-group textarea{
+    padding:9px 10px;border:1px solid var(--border);border-radius:7px;font-size:13.5px;font-family:inherit;
+    background:#fff;
+  }
+  .form-group input:read-only, .form-group textarea:read-only{background:#f5f6f8;color:#555;}
+  .form-group input.invalid, .form-group select.invalid{border-color:var(--danger);background:var(--danger-bg);}
+  .form-group textarea{resize:vertical;min-height:56px;}
+  .section-title{
+    font-size:13px;font-weight:700;color:var(--primary);margin:22px 0 10px;
+    padding-bottom:6px;border-bottom:2px solid var(--primary-light);
+  }
+
+  .zona-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+  .zona-row select{min-width:200px;}
+
+  table.conceptos{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px;}
+  table.conceptos th{background:#f7f9fb;padding:8px;border:1px solid var(--border);font-size:11px;text-transform:uppercase;color:var(--muted);}
+  table.conceptos td{padding:6px 8px;border:1px solid var(--border);}
+  table.conceptos input{width:100%;padding:5px 6px;border:1px solid var(--border);border-radius:5px;font-size:12.5px;}
+  table.conceptos tfoot td{font-weight:700;text-align:right;background:#f7f9fb;}
+  .btn-del-row{border:none;background:var(--danger-bg);color:var(--danger);border-radius:5px;cursor:pointer;padding:4px 8px;}
+
+  .toast-container{position:fixed;bottom:20px;right:20px;z-index:400;display:flex;flex-direction:column;gap:8px;}
+  .toast{
+    background:#25313d;color:#fff;padding:12px 16px;border-radius:8px;font-size:13.5px;
+    box-shadow:var(--shadow);min-width:260px;max-width:360px;
+    animation:slideIn .2s ease-out;
+  }
+  .toast.error{background:#7a2222;}
+  .toast.success{background:#1f5c37;}
+  @keyframes slideIn{from{transform:translateY(10px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+
+  .inline-error{color:var(--danger);font-size:12.5px;margin:6px 0 0;}
+  .file-hint{font-size:11.5px;color:var(--muted);}
+  .attach-list{list-style:none;padding:0;margin:6px 0 0;font-size:12.5px;}
+  .attach-list li{padding:3px 0;color:var(--muted);}
+  .loading-overlay{
+    display:none;position:fixed;inset:0;background:rgba(255,255,255,.6);z-index:500;
+    align-items:center;justify-content:center;font-weight:700;color:var(--primary);
+  }
+  .loading-overlay.open{display:flex;}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     BARRA SUPERIOR / SESIÓN
+     Si este archivo se integra dentro de la plataforma (index.html)
+     y ya existen #usernameDisplay / #deptoDisplay / #sucursalDisplay,
+     esos valores se usan automáticamente y esta mini barra de sesión
+     de prueba se oculta sola (ver initSesion() al final del script).
+     ============================================================ -->
+<div class="topbar">
+  <h1>📋 Cotizaciones · Mano de Obra <span class="tag" id="modoTag">MODO DEMO</span></h1>
+  <div class="session-bar" id="sesionDemoBar">
+    <input type="text" id="demoUsuario" placeholder="Tu nombre" value="Usuario Demo">
+    <select id="demoDepto">
+      <option value="COMERCIALIZACION">COMERCIALIZACION</option>
+      <option value="AFI">AFI</option>
+      <option value="INSTALACIONES">INSTALACIONES</option>
+    </select>
+    <select id="demoSucursal">
+      <option value="TORREON">TORREON</option>
+      <option value="HOUSTON">HOUSTON</option>
+    </select>
+    <button class="btn-sp" onclick="conectarSharePoint()">Conectar con SharePoint</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card">
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="abrirModalAlta()">➕ Agregar</button>
+      <button class="btn btn-secondary" onclick="cargarCotizaciones()">🔄 Buscar / actualizar</button>
+
+      <select id="filtroTipo" onchange="cargarCotizaciones()">
+        <option value="" disabled selected>-- Tipo de cotización --</option>
+        <option value="COTIZACION ELABORADA">COTIZACION ELABORADA</option>
+        <option value="EN REVISION INSTALACIONES">EN REVISION INSTALACIONES</option>
+        <option value="INFORMACION PENDIENTE">INFORMACION PENDIENTE</option>
+        <option value="CANCELADO">CANCELADO</option>
+        <option value="TODAS" selected>TODAS</option>
+      </select>
+
+      <input type="text" id="filtroFolio" placeholder="Buscar por # folio..." oninput="renderTabla()">
+      <input type="text" id="filtroProyecto" placeholder="Buscar por proyecto..." oninput="renderTabla()">
+      <input type="text" id="filtroCliente" placeholder="Buscar por cliente..." oninput="renderTabla()">
+      <div class="spacer"></div>
+      <span class="file-hint" id="contadorResultados"></span>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th>Detalles</th>
+            <th>#Cotización</th>
+            <th>Cotización SAP</th>
+            <th>Prioridad</th>
+            <th>Proyecto</th>
+            <th>Cliente</th>
+            <th>Establo</th>
+            <th>Fecha alta</th>
+            <th>Estatus</th>
+            <th>Días sin resolución</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyCotizaciones">
+          <tr class="empty-row"><td colspan="10">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL ALTA / DETALLE
+     ============================================================ -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="modalTitulo">✅ Nueva cotización</h2>
+      <button class="modal-close" onclick="cerrarModal()">&times;</button>
+    </div>
+
+    <div class="modal-body">
+      <div id="errorGeneral" class="inline-error"></div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>#Cotización de SAP</label>
+          <input type="text" id="fCotizaSAP" maxlength="15" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label>Estatus</label>
+          <input type="text" id="fEstatus" readonly>
+        </div>
+
+        <div class="form-group">
+          <label>Proyecto</label>
+          <input type="text" id="fProyecto" maxlength="45" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group" id="grpPrioridad">
+          <label>Prioridad</label>
+          <select id="fPrioridad">
+            <option value="" disabled selected></option>
+            <option value="NORMAL">NORMAL — 1 a 5 días</option>
+            <option value="URGENTE">URGENTE — 1 a 2 días</option>
+            <option value="EXTRA URGENTE">EXTRA URGENTE — inmediato</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Cliente</label>
+          <input type="text" id="fCliente" maxlength="45" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label>Alta cotización — Comercialización</label>
+          <input type="text" id="fElabora" readonly>
+        </div>
+
+        <div class="form-group">
+          <label>Establo</label>
+          <input type="text" id="fEstablo" maxlength="45" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group" id="grpElaboraInstalaciones">
+          <label>Elabora cotización — Instalaciones</label>
+          <input type="text" id="fElaboraInstalaciones" readonly>
+        </div>
+
+        <div class="form-group">
+          <label>Ubicación establo</label>
+          <input type="text" id="fUbicacion" maxlength="45" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label>Fecha alta</label>
+          <input type="text" id="fFecha" readonly>
+        </div>
+
+        <div class="form-group">
+          <label>Horas disponibles entre ordeños</label>
+          <input type="text" id="fHoras" maxlength="45" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label>Fecha entrega solicitada por cliente</label>
+          <input type="date" id="fFechaComCliente">
+          <input type="text" id="fFechaComClienteTxt" readonly style="display:none;">
+        </div>
+
+        <div class="form-group" id="grpEnviarCotiza">
+          <label>Enviar cotización a</label>
+          <select id="fEnviarCotiza"></select>
+          <input type="text" id="fEnviarCotizaTxt" readonly style="display:none;">
+        </div>
+        <div class="form-group full">
+          <label>Fechas compromiso de pago del cliente</label>
+          <textarea id="fFechasPagos" maxlength="200" oninput="this.value=this.value.toUpperCase()"></textarea>
+        </div>
+
+        <div class="form-group" id="grpFechaInstalaciones">
+          <label>Fecha tentativa de inicio de instalación</label>
+          <input type="date" id="fFechaComInstalaciones">
+          <input type="text" id="fFechaComInstalacionesTxt" readonly style="display:none;">
+        </div>
+        <div class="form-group" id="grpDiasSinResolucion" style="display:none;">
+          <label>Total días sin resolución</label>
+          <input type="text" id="fDiasSinResolucion" readonly>
+        </div>
+
+        <div class="form-group full" id="grpDuplicadoDe" style="display:none;">
+          <label>Cotización duplicada de…</label>
+          <input type="text" id="fDuplicadoDe" readonly>
+        </div>
+
+        <div class="form-group full">
+          <label>Detalles del proyecto</label>
+          <textarea id="fDescripcion" maxlength="200" oninput="this.value=this.value.toUpperCase()"></textarea>
+        </div>
+      </div>
+
+      <!-- ---------- Tabla de conceptos ---------- -->
+      <div id="bloqueConceptos">
+        <div class="section-title">Conceptos de la cotización</div>
+
+        <div class="zona-row" id="filaZona">
+          <select id="fZona" onchange="onZonaChange()">
+            <option value="">-- Selecciona una zona --</option>
+            <option value="LOCAL">LOCAL</option>
+            <option value="NACIONAL">NACIONAL</option>
+            <option value="EXTRANJERO">EXTRANJERO</option>
+          </select>
+          <select id="fConceptoCatalogo" disabled></select>
+          <button type="button" class="btn btn-secondary" id="btnAgregarConcepto" disabled onclick="onAgregarConcepto()">➕ Agregar concepto</button>
+          <button type="button" class="btn btn-secondary" id="btnLimpiarTabla" disabled onclick="limpiarTablaConceptos()">📋 Limpiar tabla</button>
+        </div>
+
+        <table class="conceptos">
+          <thead>
+            <tr>
+              <th>Concepto</th><th>Cantidad</th><th>Días</th>
+              <th>Costo base MXN/día</th><th>Total base MXN</th>
+              <th>Precio venta USD</th><th>Total USD</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="tbodyConceptos"></tbody>
+          <tfoot>
+            <tr><td colspan="6">TOTAL $</td><td id="totalGeneralUSD" colspan="2">$0.00 USD</td></tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="form-grid" style="margin-top:18px;">
+        <div class="form-group full">
+          <label>📎 Adjuntar archivos (PDF, Word, Excel)</label>
+          <input type="file" id="fArchivos" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm">
+          <span class="file-hint">Máximo 25 MB combinando documentos e imágenes.</span>
+        </div>
+        <div class="form-group full">
+          <label>🌄 Adjuntar imágenes (JPG, PNG)</label>
+          <input type="file" id="fImagenes" multiple accept="image/*">
+        </div>
+        <div class="form-group full" id="grpComentariosCorreo">
+          <label>Comentarios adjuntos en correo</label>
+          <textarea id="fComentariosCorreo" maxlength="200" oninput="this.value=this.value.toUpperCase()"></textarea>
+        </div>
+        <div class="form-group full" id="grpInfoIncompleta" style="display:none;">
+          <label>Información incompleta</label>
+          <textarea id="fInfoIncompleta" maxlength="200" oninput="this.value=this.value.toUpperCase()"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btnExportarPDF" style="display:none;" onclick="exportarPDF()">📄 Exportar PDF</button>
+      <button class="btn btn-secondary" id="btnDuplicar" style="display:none;" onclick="habilitarDuplicado()">📝 Duplicar cotización</button>
+      <div class="spacer"></div>
+      <button class="btn btn-danger" id="btnRechazarInfo" style="display:none;" onclick="rechazarPorInfo()">Rechazar por falta de información</button>
+      <button class="btn btn-danger" id="btnCancelar" style="display:none;" onclick="cancelarCotizacionUI()">Cancelar cotización</button>
+      <button class="btn btn-primary" id="btnRegistrar" style="display:none;" onclick="registrar()">Registrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loadingOverlay">Cargando…</div>
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+/* ============================================================================
+   1. CONFIGURACIÓN — llenar estos valores cuando SharePoint esté listo.
+   Mientras USE_SHAREPOINT sea false, la app corre en modo demo con datos
+   de muestra en memoria (no se pierde nada real, no hay riesgo de romper
+   la plataforma actual).
+
+   IMPORTANTE sobre las columnas de las listas (ver también el análisis en
+   Analisis_BaseDatos_Cotizaciones_SharePoint.md, sección 3): el nombre
+   interno de una columna de SharePoint se fija al crearla y NO cambia
+   aunque luego le rebauticen el nombre para mostrar. Por eso:
+     - NO renombren la columna "Title" de fábrica pensando en reutilizarla
+       como "Proyecto"; internamente seguiría llamándose "Title" y todo
+       este código (que lee/escribe fields.Proyecto) no la encontraría.
+       Dejen "Title" oculta y no obligatoria, y listo.
+     - Al crear cada columna nueva (Proyecto, Cliente, Estatus, etc.)
+       escriban directamente el nombre final; no la renombren después.
+   Los nombres usados en GraphData de abajo (fields.Proyecto, fields.Cliente,
+   fields.IDCotizacion, ...) deben coincidir tal cual con esos nombres
+   internos.
+   ============================================================================ */
+/* Pasos rápidos para llenar este bloque (detallados en la respuesta / en el
+   análisis .md):
+     1. tenantId / clientId: se obtienen del App Registration en Microsoft
+        Entra ID (portal.azure.com > Microsoft Entra ID > Registros de
+        aplicaciones > tu app > página "Overview": "Application (client) ID"
+        y "Directory (tenant) ID").
+     2. siteId: con Graph Explorer (developer.microsoft.com/graph/graph-explorer),
+        sesión iniciada, ejecutar
+        GET https://graph.microsoft.com/v1.0/sites/tudominio.sharepoint.com:/sites/NombreDelSitio
+        y copiar el campo "id" completo de la respuesta (formato
+        "tudominio.sharepoint.com,GUID1,GUID2").
+     3. lists.*: MEJOR usar el GUID de cada lista y no su nombre para mostrar
+        (mismo motivo que con la columna Title: el nombre se puede cambiar
+        después, el GUID no). Se obtiene con, en Graph Explorer:
+        GET https://graph.microsoft.com/v1.0/sites/{siteId}/lists
+        y localizando cada lista por "displayName" para copiar su "id".
+     4. IMPORTANTE: este archivo debe abrirse desde una URL http(s) real
+        (el mismo dominio que registraste como "URI de redirección" tipo SPA
+        en el App Registration), NO abriéndolo con doble clic (file://) —
+        MSAL no puede completar el login si el origen es file://.
+   ============================================================================ */
+const CONFIG = {
+  USE_SHAREPOINT: false,          // TODO: cambiar a true cuando existan las credenciales de abajo
+  tenantId: "TODO-tenant-id",     // TODO: "Directory (tenant) ID" del App Registration
+  clientId: "TODO-client-id",     // TODO: "Application (client) ID" del App Registration
+  siteId:  "TODO-site-id",        // TODO: campo "id" que devuelve Graph para tu sitio (ver paso 2 arriba)
+  lists: {
+    cotizaciones:        "TODO-guid-lista-Cotizaciones",         // TODO: GUID de la lista (ver paso 3)
+    conceptos:           "TODO-guid-lista-CotizacionesConceptos",
+    catalogoConceptos:   "TODO-guid-lista-CatalogoConceptosCotizacion",
+    directorio:          "TODO-guid-lista-DirectorioCotizaciones"
+  },
+  driveLibraryPath: "AdjuntosCotizaciones", // carpeta raíz en la biblioteca de documentos para adjuntos
+  scopes: ["Sites.ReadWrite.All", "Files.ReadWrite.All", "Mail.Send", "User.Read"]
+};
+
+/* ============================================================================
+   2. UTILIDADES GENERALES
+   ============================================================================ */
+function $(id){ return document.getElementById(id); }
+function showLoading(on){ $('loadingOverlay').classList.toggle('open', !!on); }
+function toast(msg, type){
+  const c = $('toastContainer');
+  const el = document.createElement('div');
+  el.className = 'toast' + (type ? ' ' + type : '');
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(()=> el.remove(), 4500);
+}
+function fmtMoneda(n, moneda){
+  const v = Number(n) || 0;
+  return `$${v.toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2})} ${moneda}`;
+}
+function fmtFechaDDMMAAAA(d){
+  const f = (d instanceof Date) ? d : new Date(d);
+  if (isNaN(f)) return "";
+  const dd = String(f.getDate()).padStart(2,'0');
+  const mm = String(f.getMonth()+1).padStart(2,'0');
+  return `${dd}-${mm}-${f.getFullYear()}`;
+}
+function parseFechaFlexible(txt){
+  if (!txt) return new Date("invalid");
+  if (/^\d{4}-\d{2}-\d{2}/.test(txt)) return new Date(txt);
+  const partes = txt.split(/[\/\-]/);
+  if (partes.length === 3){
+    const [dd, mm, yyyy] = partes.map(Number);
+    return new Date(yyyy, mm-1, dd);
+  }
+  return new Date("invalid");
+}
+function diasEntre(fechaBase){
+  const base = parseFechaFlexible(fechaBase);
+  if (isNaN(base)) return "";
+  const diff = Math.floor((new Date() - base) / 86400000);
+  return diff >= 0 ? diff : "";
+}
+
+/* ============================================================================
+   3. SESIÓN (usuario / departamento / sucursal)
+   Si esta página se integra dentro de la plataforma real y ya existen
+   #usernameDisplay / #deptoDisplay / #sucursalDisplay, se usan esos valores
+   y se oculta la barra de sesión de prueba.
+   ============================================================================ */
+const Sesion = { nombre:"", depto:"", sucursal:"" };
+
+function initSesion(){
+  const hostUser = document.getElementById('usernameDisplay');
+  const hostDepto = document.getElementById('deptoDisplay');
+  const hostSucursal = document.getElementById('sucursalDisplay');
+
+  if (hostUser && hostDepto && hostSucursal){
+    $('sesionDemoBar').style.display = 'none';
+    Sesion.nombre = hostUser.innerText.trim();
+    Sesion.depto = hostDepto.innerText.trim();
+    Sesion.sucursal = hostSucursal.innerText.trim();
+    return;
+  }
+
+  // Modo standalone / demo: leer de la mini barra y mantenerla sincronizada
+  const sync = () => {
+    Sesion.nombre = $('demoUsuario').value.trim() || "Usuario Demo";
+    Sesion.depto = $('demoDepto').value;
+    Sesion.sucursal = $('demoSucursal').value;
+  };
+  ['demoUsuario','demoDepto','demoSucursal'].forEach(id=>{
+    $(id).addEventListener('change', () => { sync(); renderTabla(); });
+    $(id).addEventListener('input', sync);
+  });
+  sync();
+}
+
+/* ============================================================================
+   4. DATOS DE MUESTRA (modo demo)
+   Solo se usan mientras CONFIG.USE_SHAREPOINT === false. Representan la
+   misma estructura que hoy tienen CotiManObra / DescCotManObra /
+   DBCotizacionesDesglose, incluyendo folios "legado" (sin desglose MXN/USD)
+   y folios "nuevos" (con desglose), tal como ocurre a partir del folio 135.
+   ============================================================================ */
+let _mockAutoId = 4;
+const MOCK = {
+  cotizaciones: [
+    {
+      id:1, cotizaSAP:"24601", proyecto:"PESADORES 2X9", cliente:"PAJARO AZUL", establo:"PAJARO AZUL",
+      ubicacion:"VALLE DE JARAL DE BERRIOS, GTO", horas:"N/A", fecha:"15-08-2025",
+      elabora:"LEONEL ALARCON TABARES", descripcion:"GASTOS DE INSTALACIÓN DE LAS COTIZACIONES ADJUNTAS.",
+      estatus:"COTIZACION ELABORADA", elaboraInstalaciones:"CESAR OMAR RUELAS HERNANDEZ",
+      fechaCompromiso:"2025-11-15", enviarA:"CESAR OMAR RUELAS HERNANDEZ", prioridad:"EXTRA URGENTE",
+      fechasPagos:"", fechaCompromisoInstalaciones:"2025-09-01", fechaInformacionPendiente:"", informacionIncompleta:"", editadoDe:null
+    },
+    {
+      id:2, cotizaSAP:"24932", proyecto:"PESADORES Y LICENCIA ESPINA DE PEZ 2X8", cliente:"DESARROLLO AGROPECUARIO MODELO",
+      establo:"DESARROLLO AGROPECUARIO MODELO", ubicacion:"LAGOS DE MORENO, JAL.", horas:"N/A", fecha:"25-08-2025",
+      elabora:"LEONEL ALARCON TABARES", descripcion:"SALA ESPINA DE PEZ 2X8.",
+      estatus:"EN REVISION INSTALACIONES", elaboraInstalaciones:"", fechaCompromiso:"2025-09-01",
+      enviarA:"CESAR OMAR RUELAS HERNANDEZ", prioridad:"NORMAL", fechasPagos:"", fechaCompromisoInstalaciones:"",
+      fechaInformacionPendiente:"", informacionIncompleta:"", editadoDe:null
+    },
+    {
+      id:3, cotizaSAP:"25040", proyecto:"SISTEMA DE PESADORES CON RETIRADORES", cliente:"ESTABLO EL PILAR",
+      establo:"ESTABLO EL PILAR", ubicacion:"TLAHUALILO, DGO.", horas:"N/A", fecha:"09-07-2026",
+      elabora:"DIEGO FERRIÑO", descripcion:"PARALELO 2X18.",
+      estatus:"INFORMACION PENDIENTE", elaboraInstalaciones:"", fechaCompromiso:"2026-07-14",
+      enviarA:"CESAR OMAR RUELAS HERNANDEZ", prioridad:"URGENTE", fechasPagos:"",
+      fechaCompromisoInstalaciones:"", fechaInformacionPendiente: fmtFechaDDMMAAAA(new Date(Date.now()-3*86400000)),
+      informacionIncompleta:"FALTA CROQUIS DE UBICACIÓN Y CONFIRMAR VOLTAJE DISPONIBLE.", editadoDe:null
+    }
+  ],
+  // formato NUEVO (>= folio 135): 8 columnas -> incluye costoBaseMXN/totalBaseMXN
+  conceptos: {
+    1: [
+      {descripcion:"JUAN SIFUENTES ALONSO", cantidad:1, dias:3, costoBaseMXN:7055.34, totalBaseMXN:21166.02, precioVentaUSD:405.94, totalUSD:1217.82},
+      {descripcion:"HOSPEDAJE PARA TECNICOS FORANEOS", cantidad:1, dias:3, costoBaseMXN:0, totalBaseMXN:0, precioVentaUSD:90.70, totalUSD:272.10}
+    ]
+  },
+  catalogo: {
+    LOCAL: [
+      {concepto:"TRASLADO TECNICOS (KILOMETROS)", cantidad:"", costoMXN:12.5},
+      {concepto:"HOSPEDAJE PARA TECNICOS FORANEOS", cantidad:1, costoMXN:125.44},
+      {concepto:"ALIMENTACION PARA TECNICOS FORANEOS", cantidad:1, costoMXN:70.56},
+      {concepto:"MANO DE OBRA - TECNICO INSTALADOR", cantidad:1, costoMXN:830.0}
+    ],
+    NACIONAL: [
+      {concepto:"TRASLADO NACIONAL A LUGAR DESTINO", cantidad:"", costoMXN:18.0},
+      {concepto:"VIATICOS NACIONALES", cantidad:1, costoMXN:950.0}
+    ],
+    EXTRANJERO: [
+      {concepto:"TRASLADO INTERNACIONAL", cantidad:"", costoMXN:0},
+      {concepto:"VIATICOS EXTRANJERO (USD)", cantidad:1, costoMXN:0}
+    ]
+  },
+  directorio: {
+    ENVIAR_COTIZACION: [
+      {nombre:"CESAR OMAR RUELAS HERNANDEZ", correo:"cotizaciones.demo1@ejemplo.com"},
+      {nombre:"LEONEL ALARCON TABARES", correo:"cotizaciones.demo2@ejemplo.com"},
+      {nombre:"DULCE BARAJAS", correo:"cotizaciones.demo3@ejemplo.com"}
+    ]
+  }
+};
+
+/* ============================================================================
+   5. CAPA DE DATOS — interfaz común para modo demo y modo SharePoint.
+   Toda la UI llama SIEMPRE a "Data.xxx(...)"; el detalle de si los datos
+   vienen de un arreglo en memoria o de Microsoft Graph queda encapsulado
+   aquí, para que un día cambiar CONFIG.USE_SHAREPOINT a true no requiera
+   tocar el resto del archivo.
+   ============================================================================ */
+const MockData = {
+  async listCotizaciones(){ return JSON.parse(JSON.stringify(MOCK.cotizaciones)); },
+  async getCotizacion(id){ return MOCK.cotizaciones.find(c => c.id === Number(id)); },
+  async getConceptos(id){ return MOCK.conceptos[id] || []; },
+  async getCatalogoPorZona(zona){ return MOCK.catalogo[zona] || []; },
+  async getDirectorio(){ return JSON.parse(JSON.stringify(MOCK.directorio.ENVIAR_COTIZACION)); },
+  async crearCotizacion(data){
+    const id = _mockAutoId++;
+    MOCK.cotizaciones.push({ id, ...data });
+    return id;
+  },
+  async actualizarCotizacion(id, cambios){
+    const c = MOCK.cotizaciones.find(c => c.id === Number(id));
+    if (c) Object.assign(c, cambios);
+  },
+  async guardarConceptos(id, lista){ MOCK.conceptos[id] = lista; },
+  async subirAdjunto(id, file){ return { nombre:file.name, urlDemo:true }; },
+  async enviarNotificacion({asunto}){ console.log("[demo] correo simulado:", asunto); }
+};
+
+/* --- Implementación real contra Microsoft Graph / SharePoint --- */
+let msalInstance = null;
+let graphAccount = null;
+
+async function graphLogin(){
+  msalInstance = new msal.PublicClientApplication({
+    auth: { clientId: CONFIG.clientId, authority:`https://login.microsoftonline.com/${CONFIG.tenantId}`, redirectUri: window.location.origin }
+  });
+  const resp = await msalInstance.loginPopup({ scopes: CONFIG.scopes });
+  graphAccount = resp.account;
+  return resp;
+}
+async function graphToken(){
+  if (!msalInstance) await graphLogin();
+  try{
+    const r = await msalInstance.acquireTokenSilent({ scopes: CONFIG.scopes, account: graphAccount });
+    return r.accessToken;
+  }catch(e){
+    const r = await msalInstance.acquireTokenPopup({ scopes: CONFIG.scopes });
+    return r.accessToken;
+  }
+}
+async function graphFetch(path, options={}){
+  const token = await graphToken();
+  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    ...options,
+    headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json', ...(options.headers||{}) }
+  });
+  if (!res.ok) throw new Error(`Graph ${path} → HTTP ${res.status}: ${await res.text()}`);
+  return res.status === 204 ? null : res.json();
+}
+
+/* ----------------------------------------------------------------------------
+   Mapeo centralizado camelCase (JS) <-> nombre interno de columna (SharePoint).
+   Todas las columnas de "Cotizaciones" quedaron como Texto de una línea /
+   Selección / Número (ver Analisis_BaseDatos_Cotizaciones_SharePoint.md,
+   sección 3) precisamente para que este mapeo sea un simple 1:1 de nombres,
+   sin resolución de LookupId ni formato ISO de fecha. Si algún día cambian
+   el nombre interno de una columna, este es el ÚNICO lugar que hay que tocar.
+   ---------------------------------------------------------------------------- */
+const FIELD_MAP_COTIZACION = {
+  proyecto:'Proyecto', cliente:'Cliente', establo:'Establo', ubicacion:'Ubicacion', horas:'Horas',
+  fecha:'Fecha', elabora:'Elabora', descripcion:'Descripcion', estatus:'Estatus',
+  elaboraInstalaciones:'ElaboraInstalaciones', fechaCompromiso:'FechaCompromiso', enviarA:'EnviarA',
+  cotizaSAP:'CotizacionSAP', prioridad:'Prioridad', fechasPagos:'FechasPagosCliente',
+  fechaCompromisoInstalaciones:'FechaCompromisoInstalaciones', fechaInformacionPendiente:'FechaInformacionPendiente',
+  informacionIncompleta:'InformacionIncompleta', editadoDe:'EditadoDe'
+};
+
+function jsToFields(objetoCamelCase){
+  const fields = {};
+  Object.entries(objetoCamelCase).forEach(([key, val])=>{
+    const nombreInterno = FIELD_MAP_COTIZACION[key];
+    if (nombreInterno && val !== undefined) fields[nombreInterno] = val;
+  });
+  return fields;
+}
+function fieldsToJs(fields){
+  const obj = {};
+  Object.entries(FIELD_MAP_COTIZACION).forEach(([key, nombreInterno])=>{
+    if (fields[nombreInterno] !== undefined) obj[key] = fields[nombreInterno];
+  });
+  return obj;
+}
+
+const GraphData = {
+  async listCotizaciones(){
+    const res = await graphFetch(`/sites/${CONFIG.siteId}/lists/${CONFIG.lists.cotizaciones}/items?expand=fields&$top=500`);
+    return res.value.map(it => ({ id: Number(it.id), ...fieldsToJs(it.fields) }));
+  },
+  async getCotizacion(id){
+    const it = await graphFetch(`/sites/${CONFIG.siteId}/lists/${CONFIG.lists.cotizaciones}/items/${id}?expand=fields`);
+    return { id: Number(it.id), ...fieldsToJs(it.fields) };
+  },
+  async getConceptos(id){
+    const res = await graphFetch(`/sites/${CONFIG.siteId}/lists/${CONFIG.lists.conceptos}/items?expand=fields&$filter=fields/IDCotizacion eq ${id}`);
+    return res.value.map(it => ({
+      descripcion: it.fields.Concepto, cantidad: it.fields.Cantidad, dias: it.fields.Dias,
+      costoBaseMXN: it.fields.CostoBaseMXN, totalBaseMXN: it.fields.TotalBaseMXN,
+      precioVentaUSD: it.fields.PrecioVentaUSD, totalUSD: it.fields.TotalUSD
+    }));
+  },
+  async getCatalogoPorZona(zona){
+    const res = await graphFetch(`/sites/${CONFIG.siteId}/lists/${CONFIG.lists.catalogoConceptos}/items?expand=fields&$filter=fields/Zona eq '${zona}'`);
+    return res.value.map(it => ({ concepto: it.fields.Concepto, cantidad: it.fields.CantidadDefault, costoMXN: it.fields.CostoDefaultMXN }));
+  },
+  async getDirectorio(){
+    // Nombre/Correo son Texto de una línea (ver nota de tipos en el análisis),
+    // no columna Persona, así que se leen directo sin resolver LookupId.
+    const res = await graphFetch(`/sites/${CONFIG.siteId}/lists/${CONFIG.lists.directorio}/items?expand=fields&$filter=fields/Rol eq 'ENVIAR_COTIZACION'`);
+    return res.value.map(it => ({ nombre: it.fields.Nombre, correo: it.fields.Correo }));
+  },
+  async crearCotizacion(data){
+    // jsToFields ya incluye elabora/enviarA/editadoDe si vienen en "data";
+    // antes se armaba el objeto "fields" a mano y se quedaban fuera por error.
+    const fields = jsToFields(data);
+    const it = await graphFetch(`/sites/${CONFIG.siteId}/lists/${CONFIG.lists.cotizaciones}/items`, { method:'POST', body: JSON.stringify({ fields }) });
+    return Number(it.id);
+  },
+  async actualizarCotizacion(id, cambios){
+    // "cambios" llega en camelCase (mismo shape que usa MockData.actualizarCotizacion);
+    // aquí se traduce a nombres internos de SharePoint antes de mandarlo.
+    const fields = jsToFields(cambios);
+    await graphFetch(`/sites/${CONFIG.siteId}/lists/${CONFIG.lists.cotizaciones}/items/${id}/fields`, { method:'PATCH', body: JSON.stringify(fields) });
+  },
+  async guardarConceptos(id, lista){
+    for (const c of lista){
+      await graphFetch(`/sites/${CONFIG.siteId}/lists/${CONFIG.lists.conceptos}/items`, {
+        method:'POST',
+        body: JSON.stringify({ fields:{
+          IDCotizacion:id, Concepto:c.descripcion, Cantidad:c.cantidad, Dias:c.dias,
+          CostoBaseMXN:c.costoBaseMXN, TotalBaseMXN:c.totalBaseMXN, PrecioVentaUSD:c.precioVentaUSD, TotalUSD:c.totalUSD
+        }})
+      });
+    }
+  },
+  async subirAdjunto(id, file){
+    const token = await graphToken();
+    const buffer = await file.arrayBuffer();
+    const path = `${CONFIG.driveLibraryPath}/${id}/${encodeURIComponent(file.name)}`;
+    const res = await fetch(`https://graph.microsoft.com/v1.0/sites/${CONFIG.siteId}/drive/root:/${path}:/content`, {
+      method:'PUT', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/octet-stream' }, body:buffer
+    });
+    if (!res.ok) throw new Error("No se pudo subir el adjunto: " + file.name);
+    return res.json();
+  },
+  async enviarNotificacion({ to, cc, asunto, html }){
+    await graphFetch(`/me/sendMail`, { method:'POST', body: JSON.stringify({
+      message: {
+        subject: asunto, body:{ contentType:'HTML', content: html },
+        toRecipients: (to||[]).map(a=>({emailAddress:{address:a}})),
+        ccRecipients: (cc||[]).map(a=>({emailAddress:{address:a}}))
+      }
+    })});
+  }
+};
+
+/* ----------------------------------------------------------------------------
+   Implementación EMBEBIDA — pide todo al padre (la plataforma index.html).
+   Cuando esta pantalla corre dentro de un iframe de la plataforma, NO usa
+   MSAL, ni siteId, ni GUIDs, ni flujos propios: le pide cada operación al
+   padre vía postMessage. El padre las resuelve con su entorno activo (dev/
+   prod), así que Cotizaciones apunta automáticamente al sitio correcto.
+   Las listas se referencian por NOMBRE (no por GUID), igual que el resto de
+   la plataforma. El mapeo de columnas (FIELD_MAP) sigue aplicándose aquí.
+   ---------------------------------------------------------------------------- */
+const EMBEBIDO = (window.parent && window.parent !== window);
+
+const LISTS = {
+  cotizaciones:      'Cotizaciones',
+  conceptos:         'CotizacionesConceptos',
+  catalogoConceptos: 'CatalogoConceptosCotizacion',
+  directorio:        'DirectorioCotizaciones'
+};
+const ADJUNTOS_CARPETA = 'AdjuntosCotizaciones';
+
+const _spBridgeCbs = {}; let _spBridgeId = 0;
+window.addEventListener('message', function(e){
+  const d = e.data;
+  if (!d || d.type !== 'SP_BRIDGE_RESPONSE') return;
+  const cb = _spBridgeCbs[d.callId];
+  if (!cb) return;
+  delete _spBridgeCbs[d.callId];
+  if (d.error) cb.reject(new Error(d.error)); else cb.resolve(d.result);
+});
+function spBridge(op, args){
+  return new Promise((resolve, reject)=>{
+    const callId = ++_spBridgeId;
+    _spBridgeCbs[callId] = { resolve, reject };
+    window.parent.postMessage({ type:'SP_BRIDGE_REQUEST', callId, op, args: args||{} }, '*');
+    setTimeout(()=>{
+      if (_spBridgeCbs[callId]) { delete _spBridgeCbs[callId]; reject(new Error('Timeout del puente SP ('+op+')')); }
+    }, 30000);
+  });
+}
+function _fileToBase64(file){
+  return new Promise((resolve, reject)=>{
+    const r = new FileReader();
+    r.onload  = ()=> resolve(String(r.result).split(',')[1] || '');
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+const ParentData = {
+  async listCotizaciones(){
+    const res = await spBridge('list', { lista:LISTS.cotizaciones, queryParams:'$expand=fields&$top=500' });
+    return (res.value||[]).map(it => ({ id:Number(it.id), ...fieldsToJs(it.fields) }));
+  },
+  async getCotizacion(id){
+    const it = await spBridge('get', { lista:LISTS.cotizaciones, itemId:id });
+    return { id:Number(it.id), ...fieldsToJs(it.fields) };
+  },
+  async getConceptos(id){
+    const res = await spBridge('list', { lista:LISTS.conceptos, queryParams:'$expand=fields&$filter=fields/IDCotizacion eq '+id });
+    return (res.value||[]).map(it => ({
+      descripcion: it.fields.Concepto, cantidad: it.fields.Cantidad, dias: it.fields.Dias,
+      costoBaseMXN: it.fields.CostoBaseMXN, totalBaseMXN: it.fields.TotalBaseMXN,
+      precioVentaUSD: it.fields.PrecioVentaUSD, totalUSD: it.fields.TotalUSD
+    }));
+  },
+  async getCatalogoPorZona(zona){
+    const res = await spBridge('list', { lista:LISTS.catalogoConceptos, queryParams:"$expand=fields&$filter=fields/Zona eq '"+zona+"'" });
+    return (res.value||[]).map(it => ({ concepto: it.fields.Concepto, cantidad: it.fields.CantidadDefault, costoMXN: it.fields.CostoDefaultMXN }));
+  },
+  async getDirectorio(){
+    const res = await spBridge('list', { lista:LISTS.directorio, queryParams:"$expand=fields&$filter=fields/Rol eq 'ENVIAR_COTIZACION'" });
+    return (res.value||[]).map(it => ({ nombre: it.fields.Nombre, correo: it.fields.Correo }));
+  },
+  async crearCotizacion(data){
+    const r = await spBridge('create', { lista:LISTS.cotizaciones, fields: jsToFields(data) });
+    return Number(r.id);
+  },
+  async actualizarCotizacion(id, cambios){
+    await spBridge('update', { lista:LISTS.cotizaciones, itemId:id, fields: jsToFields(cambios) });
+  },
+  async guardarConceptos(id, lista){
+    for (const c of lista){
+      await spBridge('create', { lista:LISTS.conceptos, fields:{
+        IDCotizacion:id, Concepto:c.descripcion, Cantidad:c.cantidad, Dias:c.dias,
+        CostoBaseMXN:c.costoBaseMXN, TotalBaseMXN:c.totalBaseMXN, PrecioVentaUSD:c.precioVentaUSD, TotalUSD:c.totalUSD
+      }});
+    }
+  },
+  async subirAdjunto(id, file){
+    const contentBase64 = await _fileToBase64(file);
+    return spBridge('uploadAttachment', { carpeta:ADJUNTOS_CARPETA, itemId:id, fileName:file.name, contentBase64 });
+  },
+  async enviarNotificacion({ to, cc, asunto, html }){
+    return spBridge('sendMail', { to, cc, asunto, html });
+  }
+};
+
+// Selección de capa de datos:
+//   • Embebido en la plataforma  → ParentData (pide todo al padre)
+//   • Standalone con SharePoint  → GraphData  (MSAL propio, requiere CONFIG)
+//   • Standalone sin configurar  → MockData   (demo)
+const Data = EMBEBIDO ? ParentData : (CONFIG.USE_SHAREPOINT ? GraphData : MockData);
+
+async function conectarSharePoint(){
+  if (!CONFIG.USE_SHAREPOINT){
+    toast("Primero configura el bloque CONFIG (tenantId, clientId, siteId) y cambia USE_SHAREPOINT a true. Revisa Analisis_BaseDatos_Cotizaciones_SharePoint.md", "error");
+    return;
+  }
+  try{
+    showLoading(true);
+    await graphLogin();
+    $('modoTag').textContent = "CONECTADO A SHAREPOINT";
+    await cargarCotizaciones();
+    toast("Conectado a SharePoint correctamente.", "success");
+  }catch(e){
+    toast("No se pudo conectar: " + e.message, "error");
+  }finally{
+    showLoading(false);
+  }
+}
+
+/* ============================================================================
+   6. TABLA PRINCIPAL
+   ============================================================================ */
+let cotizacionesCache = [];
+
+async function cargarCotizaciones(){
+  showLoading(true);
+  try{
+    const todas = await Data.listCotizaciones();
+    const tipo = $('filtroTipo').value || "TODAS";
+
+    const visibles = todas.filter(c => {
+      if (tipo !== "TODAS" && c.estatus !== tipo) return false;
+      return true;
+    });
+
+    // Prioriza EN REVISION INSTALACIONES / INFORMACION PENDIENTE por prioridad + antigüedad
+    const orden = {"EXTRA URGENTE":1, "URGENTE":2, "NORMAL":3};
+    const especiales = visibles.filter(c => ["EN REVISION INSTALACIONES","INFORMACION PENDIENTE"].includes(c.estatus));
+    const resto = visibles.filter(c => !["EN REVISION INSTALACIONES","INFORMACION PENDIENTE"].includes(c.estatus));
+
+    especiales.sort((a,b)=>{
+      const pa = orden[a.prioridad]||4, pb = orden[b.prioridad]||4;
+      if (pa!==pb) return pa-pb;
+      return parseFechaFlexible(a.fecha) - parseFechaFlexible(b.fecha);
+    });
+    resto.sort((a,b)=> parseFechaFlexible(b.fecha) - parseFechaFlexible(a.fecha));
+
+    cotizacionesCache = [...especiales, ...resto];
+    renderTabla();
+  }catch(e){
+    toast("Error al cargar cotizaciones: " + e.message, "error");
+  }finally{
+    showLoading(false);
+  }
+}
+
+function badgePrioridad(p){
+  const cls = p==="EXTRA URGENTE" ? "badge-extra" : p==="URGENTE" ? "badge-urgente" : "badge-normal";
+  return p ? `<span class="badge ${cls}">${p}</span>` : "";
+}
+function pillEstatus(e){
+  const cls = "estatus-" + (e||"").replace(/\s+/g,'-');
+  return `<span class="estatus-pill ${cls}">${e||""}</span>`;
+}
+
+function renderTabla(){
+  const folio = ($('filtroFolio').value||"").toUpperCase();
+  const proyecto = ($('filtroProyecto').value||"").toUpperCase();
+  const cliente = ($('filtroCliente').value||"").toUpperCase();
+
+  const filtradas = cotizacionesCache.filter(c=>{
+    if (folio && !String(c.id).includes(folio)) return false;
+    if (proyecto && !(c.proyecto||"").toUpperCase().includes(proyecto)) return false;
+    if (cliente && !(c.cliente||"").toUpperCase().includes(cliente)) return false;
+    return true;
+  });
+
+  const tbody = $('tbodyCotizaciones');
+  tbody.innerHTML = "";
+  $('contadorResultados').textContent = `${filtradas.length} resultado(s)`;
+
+  if (!filtradas.length){
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="10">No se encontraron registros.</td></tr>`;
+    return;
+  }
+
+  filtradas.forEach(c=>{
+    let dias = "";
+    if (c.estatus === "EN REVISION INSTALACIONES") dias = diasEntre(c.fecha);
+    if (c.estatus === "INFORMACION PENDIENTE") dias = diasEntre(c.fechaInformacionPendiente);
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><button class="icon-btn" title="Ver / editar" onclick="abrirDetalle(${c.id})">📄</button></td>
+      <td>${c.id}</td>
+      <td>${c.cotizaSAP||""}</td>
+      <td>${badgePrioridad(c.prioridad)}</td>
+      <td>${c.proyecto||""}</td>
+      <td>${c.cliente||""}</td>
+      <td>${c.establo||""}</td>
+      <td>${c.fecha||""}</td>
+      <td>${pillEstatus(c.estatus)}</td>
+      <td>${dias}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+/* ============================================================================
+   7. MODAL — apertura / cierre / estado del formulario
+   ============================================================================ */
+let modoModal = "NUEVO"; // NUEVO | INSTALACIONES | INFO_PENDIENTE | SOLO_LECTURA
+let cotizacionActualId = null;
+let adjuntosSeleccionados = [];
+
+function cerrarModal(){ $('modalOverlay').classList.remove('open'); }
+
+function resetFormulario(){
+  ['fCotizaSAP','fProyecto','fCliente','fEstablo','fUbicacion','fHoras','fDescripcion',
+   'fFechasPagos','fComentariosCorreo','fInfoIncompleta','fDuplicadoDe','fDiasSinResolucion'
+  ].forEach(id => { $(id).value=""; $(id).classList.remove('invalid'); });
+  $('fPrioridad').selectedIndex = 0;
+  $('fZona').selectedIndex = 0;
+  $('fConceptoCatalogo').innerHTML = "";
+  $('fConceptoCatalogo').disabled = true;
+  $('btnAgregarConcepto').disabled = true;
+  $('btnLimpiarTabla').disabled = true;
+  $('tbodyConceptos').innerHTML = "";
+  $('fArchivos').value = "";
+  $('fImagenes').value = "";
+  adjuntosSeleccionados = [];
+  actualizarTotalGeneral();
+  $('errorGeneral').textContent = "";
+}
+
+async function poblarSelectEnviarA(){
+  const sel = $('fEnviarCotiza');
+  sel.innerHTML = `<option value="" disabled selected></option>`;
+  const directorio = await Data.getDirectorio(); // [{nombre, correo}, ...]
+  directorio.forEach(persona=>{
+    const opt = document.createElement('option');
+    opt.value = persona.nombre; opt.textContent = persona.nombre; opt.dataset.correo = persona.correo || "";
+    sel.appendChild(opt);
+  });
+}
+
+function setDisplay(ids, show){ ids.forEach(id => $(id).style.display = show ? "" : "none"); }
+function setGroupDisplay(ids, show){ ids.forEach(id => $(id).style.display = show ? "flex" : "none"); }
+
+async function abrirModalAlta(){
+  modoModal = "NUEVO";
+  cotizacionActualId = null;
+  resetFormulario();
+  await poblarSelectEnviarA();
+
+  $('modalTitulo').textContent = "✅ Nueva cotización";
+  $('fEstatus').value = "EN CAPTURA…";
+  $('fElabora').value = Sesion.nombre;
+  $('fFecha').value = fmtFechaDDMMAAAA(new Date());
+
+  // Campos habilitados para Comercialización / AFI
+  ['fCotizaSAP','fProyecto','fCliente','fEstablo','fUbicacion','fHoras','fDescripcion','fFechasPagos'].forEach(id=>$(id).readOnly=false);
+  $('fPrioridad').disabled = false;
+  $('fFechaComCliente').disabled = false;
+  $('fEnviarCotiza').disabled = false;
+
+  setGroupDisplay(['grpEnviarCotiza','grpComentariosCorreo'], true);
+  setGroupDisplay(['grpElaboraInstalaciones','grpDiasSinResolucion','grpDuplicadoDe','grpInfoIncompleta'], false);
+  setDisplay(['fFechaComCliente'], true); setDisplay(['fFechaComClienteTxt'], false);
+  setDisplay(['fFechaComInstalaciones'], true); setDisplay(['fFechaComInstalacionesTxt'], false);
+  setDisplay(['fEnviarCotiza'], true); setDisplay(['fEnviarCotizaTxt'], false);
+  $('bloqueConceptos').style.display = "none"; // se agrega hasta que Instalaciones cotice
+  $('fArchivos').closest('.form-group').style.display = "";
+  $('fImagenes').closest('.form-group').style.display = "";
+
+  $('btnExportarPDF').style.display = "none";
+  $('btnDuplicar').style.display = "none";
+  $('btnRechazarInfo').style.display = "none";
+  $('btnCancelar').style.display = "none";
+  $('btnRegistrar').style.display = "";
+
+  $('modalOverlay').classList.add('open');
+}
+
+async function abrirDetalle(id){
+  showLoading(true);
+  try{
+    const c = await Data.getCotizacion(id);
+    if (!c){ toast("No se encontró la cotización.", "error"); return; }
+    cotizacionActualId = id;
+    resetFormulario();
+    await poblarSelectEnviarA();
+
+    $('modalTitulo').textContent = `Cotización #${id}`;
+    $('fCotizaSAP').value = c.cotizaSAP||"";
+    $('fProyecto').value = c.proyecto||"";
+    $('fCliente').value = c.cliente||"";
+    $('fEstablo').value = c.establo||"";
+    $('fUbicacion').value = c.ubicacion||"";
+    $('fHoras').value = c.horas||"";
+    $('fDescripcion').value = c.descripcion||"";
+    $('fEstatus').value = c.estatus||"";
+    $('fElabora').value = c.elabora||"";
+    $('fElaboraInstalaciones').value = c.elaboraInstalaciones||"";
+    $('fFecha').value = c.fecha||"";
+    $('fFechasPagos').value = c.fechasPagos||"";
+    $('fPrioridad').value = c.prioridad||"";
+    $('fEnviarCotizaTxt').value = c.enviarA||"";
+    $('fFechaComClienteTxt').value = c.fechaCompromiso||"";
+    $('fFechaComInstalacionesTxt').value = c.fechaCompromisoInstalaciones||"";
+    $('fDuplicadoDe').value = c.editadoDe||"";
+    $('fInfoIncompleta').value = c.informacionIncompleta||"";
+    $('fDiasSinResolucion').value = c.estatus==="EN REVISION INSTALACIONES" ? diasEntre(c.fecha) : "";
+
+    // Todo bloqueado por default; cada rama de abajo habilita lo que corresponda
+    ['fCotizaSAP','fProyecto','fCliente','fEstablo','fUbicacion','fHoras','fDescripcion','fFechasPagos'].forEach(id=>$(id).readOnly=true);
+    $('fPrioridad').disabled = true;
+
+    setGroupDisplay(['grpDuplicadoDe'], !!c.editadoDe);
+    setDisplay(['fEnviarCotiza'], false); setDisplay(['fEnviarCotizaTxt'], true);
+    setDisplay(['fFechaComCliente'], false); setDisplay(['fFechaComClienteTxt'], true);
+    setDisplay(['fFechaComInstalaciones'], false); setDisplay(['fFechaComInstalacionesTxt'], true);
+    $('fArchivos').closest('.form-group').style.display = "none";
+    $('fImagenes').closest('.form-group').style.display = "none";
+    setGroupDisplay(['grpComentariosCorreo'], false);
+
+    const conceptos = await Data.getConceptos(id);
+    $('bloqueConceptos').style.display = "";
+    $('filaZona').style.display = "none";
+    renderConceptosSoloLectura(conceptos);
+
+    $('btnExportarPDF').style.display = "";
+    $('btnDuplicar').style.display = "none";
+    $('btnRechazarInfo').style.display = "none";
+    $('btnCancelar').style.display = "none";
+    $('btnRegistrar').style.display = "none";
+
+    const esComercial = Sesion.depto === "COMERCIALIZACION" || Sesion.depto === "AFI";
+    const esInstalaciones = Sesion.depto === "INSTALACIONES";
+
+    if (esComercial && c.estatus === "COTIZACION ELABORADA"){
+      $('btnDuplicar').style.display = "";
+    }
+    if (esComercial && c.estatus === "EN REVISION INSTALACIONES"){
+      setGroupDisplay(['grpDiasSinResolucion'], true);
+      $('btnCancelar').style.display = "";
+    }
+    if (esComercial && c.estatus === "INFORMACION PENDIENTE"){
+      modoModal = "INFO_PENDIENTE";
+      setGroupDisplay(['grpDiasSinResolucion','grpInfoIncompleta','grpComentariosCorreo','grpEnviarCotiza'], true);
+      ['fCotizaSAP','fProyecto','fCliente','fEstablo','fUbicacion','fHoras','fDescripcion','fFechasPagos'].forEach(id=>$(id).readOnly=false);
+      setDisplay(['fEnviarCotiza'], true); setDisplay(['fEnviarCotizaTxt'], false);
+      setDisplay(['fFechaComCliente'], true); setDisplay(['fFechaComClienteTxt'], false);
+      $('fArchivos').closest('.form-group').style.display = "";
+      $('fImagenes').closest('.form-group').style.display = "";
+      $('btnRegistrar').style.display = "";
+      $('btnCancelar').style.display = "";
+    }
+    if (esInstalaciones && c.estatus === "EN REVISION INSTALACIONES"){
+      modoModal = "INSTALACIONES";
+      $('fElaboraInstalaciones').value = Sesion.nombre;
+      setGroupDisplay(['grpDiasSinResolucion','grpComentariosCorreo'], true);
+      $('filaZona').style.display = "";
+      $('fZona').disabled = false;
+      $('fFechaComInstalaciones').disabled = false;
+      setDisplay(['fFechaComInstalaciones'], true); setDisplay(['fFechaComInstalacionesTxt'], false);
+      renderConceptosEditables([]);
+      $('fArchivos').closest('.form-group').style.display = "";
+      $('fImagenes').closest('.form-group').style.display = "";
+      $('btnRegistrar').style.display = "";
+      $('btnRechazarInfo').style.display = "";
+    }
+
+    $('modalOverlay').classList.add('open');
+  }catch(e){
+    toast("Error al abrir la cotización: " + e.message, "error");
+  }finally{
+    showLoading(false);
+  }
+}
+
+/* ============================================================================
+   8. TABLA DE CONCEPTOS (zona / catálogo / MXN-USD)
+   ============================================================================ */
+function celdaConceptoSoloLectura(c){
+  return `
+    <tr>
+      <td>${c.descripcion}</td>
+      <td>${c.cantidad}</td>
+      <td>${c.dias}</td>
+      <td>${fmtMoneda(c.costoBaseMXN,'MXN')}</td>
+      <td>${fmtMoneda(c.totalBaseMXN,'MXN')}</td>
+      <td>${fmtMoneda(c.precioVentaUSD,'USD')}</td>
+      <td>${fmtMoneda(c.totalUSD,'USD')}</td>
+      <td></td>
+    </tr>`;
+}
+function renderConceptosSoloLectura(lista){
+  const tbody = $('tbodyConceptos');
+  tbody.innerHTML = lista.map(celdaConceptoSoloLectura).join("");
+  actualizarTotalGeneral();
+}
+function renderConceptosEditables(lista){
+  $('tbodyConceptos').innerHTML = "";
+  lista.forEach(c => insertarFilaConcepto(c.descripcion, c.cantidad, c.costoBaseMXN, true));
+}
+
+async function onZonaChange(){
+  const zona = $('fZona').value;
+  const sel = $('fConceptoCatalogo');
+  sel.innerHTML = "";
+  if (!zona){ sel.disabled = true; $('btnAgregarConcepto').disabled = true; $('btnLimpiarTabla').disabled = true; return; }
+
+  showLoading(true);
+  try{
+    const catalogo = await Data.getCatalogoPorZona(zona);
+    sel.innerHTML = `<option value="" disabled selected>-- Selecciona una descripción --</option>`;
+    catalogo.forEach(item=>{
+      const opt = document.createElement('option');
+      opt.value = item.concepto; opt.dataset.cantidad = item.cantidad ?? ""; opt.dataset.costo = item.costoMXN ?? "";
+      opt.textContent = item.concepto;
+      sel.appendChild(opt);
+    });
+    sel.disabled = false;
+    $('btnAgregarConcepto').disabled = false;
+    $('btnLimpiarTabla').disabled = false;
+  }finally{
+    showLoading(false);
+  }
+}
+
+function onAgregarConcepto(){
+  const sel = $('fConceptoCatalogo');
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value){ mostrarErrorModal("No se ha seleccionado una descripción."); return; }
+
+  const existe = [...document.querySelectorAll('#tbodyConceptos tr td:first-child')].some(td => td.textContent.trim() === opt.value);
+  if (existe){ mostrarErrorModal("Esta descripción ya fue agregada."); return; }
+
+  insertarFilaConcepto(opt.value, opt.dataset.cantidad, opt.dataset.costo, false);
+  $('errorGeneral').textContent = "";
+}
+
+function insertarFilaConcepto(descripcion, cantidadDefault, costoDefaultMXN, cantidadReadonly){
+  const tbody = $('tbodyConceptos');
+  const tr = document.createElement('tr');
+  const costoDia = (costoDefaultMXN !== "" && costoDefaultMXN != null) ? Number(costoDefaultMXN) * 8.5 : 0;
+  const cantReadonly = cantidadDefault !== "" && cantidadDefault != null;
+
+  tr.innerHTML = `
+    <td>${descripcion}</td>
+    <td><input type="number" min="0" class="in-cant" value="${cantidadDefault || 0}" ${cantReadonly ? 'readonly' : ''}></td>
+    <td><input type="number" min="0" class="in-dias" value="0"></td>
+    <td><input type="number" min="0" step="0.01" class="in-costo" value="${costoDia.toFixed(2)}" readonly></td>
+    <td class="td-total-mxn">$0.00 MXN</td>
+    <td><input type="number" min="0" step="0.01" class="in-precio-usd" value="0"></td>
+    <td class="td-total-usd">$0.00 USD</td>
+    <td><button type="button" class="btn-del-row" onclick="this.closest('tr').remove(); actualizarTotalGeneral();">❌</button></td>
+  `;
+  tbody.appendChild(tr);
+  tr.querySelectorAll('input').forEach(inp => inp.addEventListener('input', actualizarTotalGeneral));
+  actualizarTotalGeneral();
+}
+
+function limpiarTablaConceptos(){
+  $('tbodyConceptos').innerHTML = "";
+  actualizarTotalGeneral();
+  $('errorGeneral').textContent = "";
+}
+
+function actualizarTotalGeneral(){
+  let totalUSD = 0;
+  document.querySelectorAll('#tbodyConceptos tr').forEach(tr=>{
+    const cant = parseFloat(tr.querySelector('.in-cant')?.value) || 0;
+    const dias = parseFloat(tr.querySelector('.in-dias')?.value) || 0;
+    const costoMXN = parseFloat(tr.querySelector('.in-costo')?.value) || 0;
+    const precioUSD = parseFloat(tr.querySelector('.in-precio-usd')?.value) || 0;
+    const totalMXN = cant*dias*costoMXN;
+    const totalRowUSD = cant*dias*precioUSD;
+    const tdMXN = tr.querySelector('.td-total-mxn'); if (tdMXN) tdMXN.textContent = fmtMoneda(totalMXN,'MXN');
+    const tdUSD = tr.querySelector('.td-total-usd'); if (tdUSD) tdUSD.textContent = fmtMoneda(totalRowUSD,'USD');
+    totalUSD += totalRowUSD;
+  });
+  $('totalGeneralUSD').textContent = fmtMoneda(totalUSD,'USD');
+}
+
+function leerConceptosDesdeTabla(){
+  return [...document.querySelectorAll('#tbodyConceptos tr')].map(tr=>{
+    const cantidad = parseFloat(tr.querySelector('.in-cant')?.value) || 0;
+    const dias = parseFloat(tr.querySelector('.in-dias')?.value) || 0;
+    const costoBaseMXN = parseFloat(tr.querySelector('.in-costo')?.value) || 0;
+    const precioVentaUSD = parseFloat(tr.querySelector('.in-precio-usd')?.value) || 0;
+    return {
+      descripcion: tr.children[0].textContent.trim(),
+      cantidad, dias, costoBaseMXN,
+      totalBaseMXN: cantidad*dias*costoBaseMXN,
+      precioVentaUSD,
+      totalUSD: cantidad*dias*precioVentaUSD
+    };
+  });
+}
+
+/* ============================================================================
+   9. VALIDACIÓN / ERRORES
+   ============================================================================ */
+function mostrarErrorModal(msg){ $('errorGeneral').textContent = msg; }
+function validarCampos(ids){
+  let ok = true;
+  ids.forEach(id=>{
+    const el = $(id);
+    const vacio = !el.value || !el.value.trim();
+    el.classList.toggle('invalid', vacio);
+    if (vacio) ok = false;
+  });
+  return ok;
+}
+
+/* ============================================================================
+   10. ADJUNTOS
+   ============================================================================ */
+function recolectarArchivos(){
+  const docs = Array.from($('fArchivos').files || []);
+  const imgs = Array.from($('fImagenes').files || []);
+  return [...docs, ...imgs];
+}
+function validarTamanoAdjuntos(archivos){
+  const total = archivos.reduce((s,f)=>s+f.size, 0);
+  return total <= 25*1024*1024;
+}
+
+/* ============================================================================
+   11. REGISTRAR — flujo principal (equivalente a registrar() del original)
+   ============================================================================ */
+async function registrar(){
+  const depto = Sesion.depto;
+  $('errorGeneral').textContent = "";
+
+  /* ---- BLOQUE 1: Comercialización/AFI + nuevo registro ---- */
+  if ((depto === "COMERCIALIZACION" || depto === "AFI") && modoModal === "NUEVO"){
+    const requeridos = ['fCotizaSAP','fProyecto','fCliente','fEstablo','fUbicacion','fHoras','fDescripcion','fFechaComCliente','fPrioridad'];
+    if (!validarCampos(requeridos) || !$('fEnviarCotiza').value){
+      mostrarErrorModal("Por favor completa todos los campos obligatorios antes de registrar.");
+      return;
+    }
+    const archivos = recolectarArchivos();
+    if (!validarTamanoAdjuntos(archivos)){ mostrarErrorModal("Los archivos adjuntos exceden 25 MB."); return; }
+
+    showLoading(true);
+    try{
+      const data = {
+        proyecto: $('fProyecto').value.trim(), cliente: $('fCliente').value.trim(), establo: $('fEstablo').value.trim(),
+        ubicacion: $('fUbicacion').value.trim(), horas: $('fHoras').value.trim(), fecha: $('fFecha').value,
+        elabora: Sesion.nombre, descripcion: $('fDescripcion').value.trim(), prioridad: $('fPrioridad').value,
+        estatus: "EN REVISION INSTALACIONES", elaboraInstalaciones: "", fechaCompromiso: $('fFechaComCliente').value,
+        enviarA: $('fEnviarCotiza').value, cotizaSAP: $('fCotizaSAP').value.trim(), fechasPagos: $('fFechasPagos').value.trim(),
+        editadoDe: $('fDuplicadoDe').value ? Number($('fDuplicadoDe').value) : null
+      };
+      const id = await Data.crearCotizacion(data);
+      for (const f of archivos) await Data.subirAdjunto(id, f);
+      await Data.enviarNotificacion({ asunto:`Nueva solicitud de cotización – ${data.proyecto}`, to:[], cc:[] });
+
+      toast(`Cotización #${id} registrada y enviada a Instalaciones.`, "success");
+      cerrarModal();
+      await cargarCotizaciones();
+    }catch(e){
+      mostrarErrorModal("Ocurrió un error al registrar: " + e.message);
+    }finally{
+      showLoading(false);
+    }
+    return;
+  }
+
+  /* ---- BLOQUE 2: Instalaciones completa la cotización ---- */
+  if (depto === "INSTALACIONES" && modoModal === "INSTALACIONES"){
+    if (!validarCampos(['fFechaComInstalaciones'])){ mostrarErrorModal("Completa la fecha tentativa de instalación."); return; }
+    const conceptos = leerConceptosDesdeTabla();
+    if (!conceptos.length){ mostrarErrorModal("Debe agregar al menos un concepto antes de registrar."); return; }
+
+    const archivos = recolectarArchivos();
+    if (!validarTamanoAdjuntos(archivos)){ mostrarErrorModal("Los archivos adjuntos exceden 25 MB."); return; }
+
+    showLoading(true);
+    try{
+      await Data.actualizarCotizacion(cotizacionActualId, {
+        estatus: "COTIZACION ELABORADA", elaboraInstalaciones: Sesion.nombre,
+        fechaCompromisoInstalaciones: $('fFechaComInstalaciones').value
+      });
+      await Data.guardarConceptos(cotizacionActualId, conceptos);
+      for (const f of archivos) await Data.subirAdjunto(cotizacionActualId, f);
+      await Data.enviarNotificacion({ asunto:`Cotización elaborada – Folio ${cotizacionActualId}`, to:[], cc:[] });
+
+      toast(`Cotización #${cotizacionActualId} marcada como elaborada.`, "success");
+      cerrarModal();
+      await cargarCotizaciones();
+    }catch(e){
+      mostrarErrorModal("Error al registrar: " + e.message);
+    }finally{
+      showLoading(false);
+    }
+    return;
+  }
+
+  /* ---- BLOQUE 3: Comercialización/AFI actualiza información pendiente ---- */
+  if ((depto === "COMERCIALIZACION" || depto === "AFI") && modoModal === "INFO_PENDIENTE"){
+    const requeridos = ['fCotizaSAP','fProyecto','fCliente','fEstablo','fUbicacion','fHoras','fDescripcion','fFechaComCliente','fPrioridad'];
+    if (!validarCampos(requeridos) || !$('fEnviarCotiza').value){
+      mostrarErrorModal("Por favor completa todos los campos obligatorios antes de registrar la actualización.");
+      return;
+    }
+    showLoading(true);
+    try{
+      await Data.actualizarCotizacion(cotizacionActualId, {
+        proyecto: $('fProyecto').value.trim(), cliente: $('fCliente').value.trim(), establo: $('fEstablo').value.trim(),
+        ubicacion: $('fUbicacion').value.trim(), horas: $('fHoras').value.trim(), descripcion: $('fDescripcion').value.trim(),
+        prioridad: $('fPrioridad').value, estatus: "EN REVISION INSTALACIONES",
+        fechaCompromiso: $('fFechaComCliente').value, enviarA: $('fEnviarCotiza').value,
+        cotizaSAP: $('fCotizaSAP').value.trim(), fechasPagos: $('fFechasPagos').value.trim()
+      });
+      await Data.enviarNotificacion({ asunto:`Actualización de datos – Folio ${cotizacionActualId}`, to:[], cc:[] });
+      toast(`Cotización #${cotizacionActualId} actualizada y reenviada a Instalaciones.`, "success");
+      cerrarModal();
+      await cargarCotizaciones();
+    }catch(e){
+      mostrarErrorModal("Error al actualizar: " + e.message);
+    }finally{
+      showLoading(false);
+    }
+    return;
+  }
+
+  mostrarErrorModal("Combinación de departamento y estado de cotización no válida.");
+}
+
+async function cancelarCotizacionUI(){
+  if (!cotizacionActualId) return;
+  if (!confirm(`¿Cancelar la cotización #${cotizacionActualId}?`)) return;
+  showLoading(true);
+  try{
+    await Data.actualizarCotizacion(cotizacionActualId, { estatus:"CANCELADO" });
+    toast(`Cotización #${cotizacionActualId} cancelada.`, "success");
+    cerrarModal();
+    await cargarCotizaciones();
+  }catch(e){
+    toast("Error al cancelar: " + e.message, "error");
+  }finally{
+    showLoading(false);
+  }
+}
+
+async function rechazarPorInfo(){
+  if (!validarCampos(['fComentariosCorreo'])){ mostrarErrorModal("Describe qué información falta antes de rechazar."); return; }
+  showLoading(true);
+  try{
+    await Data.actualizarCotizacion(cotizacionActualId, {
+      estatus:"INFORMACION PENDIENTE",
+      informacionIncompleta: $('fComentariosCorreo').value.trim(),
+      fechaInformacionPendiente: fmtFechaDDMMAAAA(new Date())
+    });
+    await Data.enviarNotificacion({ asunto:`Información faltante – Folio ${cotizacionActualId}`, to:[], cc:[] });
+    toast(`Cotización #${cotizacionActualId} regresada por falta de información.`, "success");
+    cerrarModal();
+    await cargarCotizaciones();
+  }catch(e){
+    toast("Error: " + e.message, "error");
+  }finally{
+    showLoading(false);
+  }
+}
+
+async function habilitarDuplicado(){
+  if (!confirm("Se creará un nuevo folio con estos datos. ¿Continuar?")) return;
+  const folioOrigen = cotizacionActualId;
+  modoModal = "NUEVO";
+  cotizacionActualId = null;
+
+  $('fEstatus').value = "EN CAPTURA…";
+  $('fElabora').value = Sesion.nombre;
+  $('fFecha').value = fmtFechaDDMMAAAA(new Date());
+  $('fDuplicadoDe').value = folioOrigen;
+  setGroupDisplay(['grpDuplicadoDe','grpEnviarCotiza','grpComentariosCorreo'], true);
+  setGroupDisplay(['grpDiasSinResolucion','grpInfoIncompleta'], false);
+  setDisplay(['fEnviarCotiza'], true); setDisplay(['fEnviarCotizaTxt'], false);
+  setDisplay(['fFechaComCliente'], true); setDisplay(['fFechaComClienteTxt'], false);
+  ['fCotizaSAP','fProyecto','fCliente','fEstablo','fUbicacion','fHoras','fDescripcion','fFechasPagos'].forEach(id=>$(id).readOnly=false);
+  $('fPrioridad').disabled = false;
+  $('bloqueConceptos').style.display = "none";
+  $('fArchivos').closest('.form-group').style.display = "";
+  $('fImagenes').closest('.form-group').style.display = "";
+
+  await poblarSelectEnviarA();
+
+  $('btnExportarPDF').style.display = "none";
+  $('btnDuplicar').style.display = "none";
+  $('btnRechazarInfo').style.display = "none";
+  $('btnCancelar').style.display = "none";
+  $('btnRegistrar').style.display = "";
+  toast("Edita los campos necesarios y presiona Registrar para crear el nuevo folio.", "success");
+}
+
+/* ============================================================================
+   12. EXPORTAR PDF (jsPDF + autotable)
+   ============================================================================ */
+async function exportarPDF(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  // TODO: sustituir por el logo real de Madero Equipos (base64 o URL accesible públicamente)
+  doc.setFontSize(9).setTextColor(150).text("[ LOGO ]", pageWidth-30, 16);
+  doc.setTextColor(0);
+
+  doc.setFontSize(16).text("Cotización Mano de Obra", 14, 22);
+  doc.setFontSize(11);
+  doc.text(`Folio: ${cotizacionActualId || ''}`, 14, 30);
+  doc.text(`Fecha: ${new Date().toLocaleDateString('es-MX')}`, 14, 36);
+  doc.text(`#Cotización SAP: ${$('fCotizaSAP').value}`, 14, 42);
+  doc.text(`Proyecto: ${$('fProyecto').value}`, 14, 48);
+  doc.text(`Cliente: ${$('fCliente').value}`, 14, 54);
+  doc.text(`Establo: ${$('fEstablo').value}`, 14, 60);
+  doc.text(`Ubicación: ${$('fUbicacion').value}`, 14, 66);
+  doc.text(`Detalles: ${$('fDescripcion').value}`, 14, 72, { maxWidth: 180 });
+
+  const filas = [...document.querySelectorAll('#tbodyConceptos tr')].map(tr=>{
+    const celdas = tr.querySelectorAll('td');
+    const val = (td) => td.querySelector('input') ? td.querySelector('input').value : td.textContent.trim();
+    return [celdas[0].textContent.trim(), val(celdas[1]), val(celdas[2]), val(celdas[3]), val(celdas[4]), val(celdas[5]), val(celdas[6])];
+  });
+
+  doc.autoTable({
+    head: [["Concepto","Cantidad","Días","Costo MXN/día","Total MXN","Precio USD","Total USD"]],
+    body: filas,
+    startY: 82
+  });
+
+  const finalY = doc.lastAutoTable.finalY || 90;
+  doc.setFontSize(12).text(`Total general: ${$('totalGeneralUSD').textContent}`, 14, finalY+10);
+
+  const firmaY = finalY + 35;
+  doc.line(20, firmaY, 80, firmaY);
+  doc.line(120, firmaY, 180, firmaY);
+  doc.setFontSize(10);
+  doc.text($('fElabora').value || "", 50 - doc.getTextWidth($('fElabora').value||"")/2, firmaY-3, {align:'left'});
+  doc.text("Elabora", 50 - doc.getTextWidth("Elabora")/2, firmaY+5);
+  doc.text($('fCliente').value || "", 150 - doc.getTextWidth($('fCliente').value||"")/2, firmaY-3);
+  doc.text("Cliente", 150 - doc.getTextWidth("Cliente")/2, firmaY+5);
+
+  doc.save(`cotizacion-folio-${cotizacionActualId || 'nueva'}.pdf`);
+}
+
+/* ============================================================================
+   13. INICIO
+   ============================================================================ */
+document.addEventListener('DOMContentLoaded', async () => {
+  initSesion();
+  if (EMBEBIDO) {
+    // Corriendo dentro de la plataforma: auth y entorno los maneja el padre.
+    $('modoTag').textContent = "CONECTADO (PLATAFORMA)";
+    const btnSP = document.querySelector('.btn-sp');
+    if (btnSP) btnSP.style.display = 'none';  // el login lo hace la plataforma
+  } else if (!CONFIG.USE_SHAREPOINT) {
+    $('modoTag').textContent = "MODO DEMO";
+  }
+  await cargarCotizaciones();
+});
+</script>
+</body>
+</html>

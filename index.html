@@ -5810,6 +5810,88 @@ async function spEscribir(lista, datos, itemId) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// PUENTE GENÉRICO SP PARA PANTALLAS EMBEBIDAS (Cotizaciones, Garantías, …)
+// Cualquier iframe hijo pide operaciones de SharePoint al padre por
+// postMessage; el padre las ejecuta con sus accesores env-aware
+// (spGet/spEscribir/graphGet/graphPost/getToken/getSiteId) y responde.
+// Así las pantallas embebidas NO llevan sitio, listas, flujos ni token
+// propios: heredan automáticamente el entorno (dev/prod) del padre.
+// Protocolo:  { type:'SP_BRIDGE_REQUEST',  callId, op, args }
+//          →  { type:'SP_BRIDGE_RESPONSE', callId, error, result }
+// ═══════════════════════════════════════════════════════════════════
+window.addEventListener('message', async function(e) {
+  if (!e.data || e.data.type !== 'SP_BRIDGE_REQUEST') return;
+  var callId = e.data.callId;
+  var op     = e.data.op;
+  var args   = e.data.args || {};
+  function reply(error, result) {
+    try {
+      if (e.source) e.source.postMessage({
+        type: 'SP_BRIDGE_RESPONSE', callId: callId,
+        error: error || null, result: (result !== undefined ? result : null)
+      }, '*');
+    } catch (_) {}
+  }
+  if (!state.token || state.isDemoMode) { reply('no_token', null); return; }
+  try {
+    if (op === 'list') {
+      var r = await spGet(args.lista, args.queryParams);
+      reply(null, { value: (r && r.value) ? r.value : [] });
+
+    } else if (op === 'get') {
+      var sidG = await getSiteId();
+      var qp = args.queryParams || '$expand=fields';
+      var it = await graphGet('sites/'+sidG+'/lists/'+args.lista+'/items/'+args.itemId+'?'+qp);
+      reply(null, it);
+
+    } else if (op === 'create') {
+      var cr = await spEscribir(args.lista, args.fields, 0);
+      var newId = (cr && cr.id !== undefined) ? cr.id
+                : (cr && cr.ID !== undefined) ? cr.ID : null;
+      reply(null, { id: newId, raw: cr });
+
+    } else if (op === 'update') {
+      await spEscribir(args.lista, args.fields, args.itemId);
+      reply(null, { ok: true });
+
+    } else if (op === 'uploadAttachment') {
+      var sidU  = await getSiteId();
+      var tokU  = await getToken();
+      var bytes = Uint8Array.from(atob(args.contentBase64 || ''), function(c){ return c.charCodeAt(0); });
+      var path  = args.carpeta + '/' + args.itemId + '/' + encodeURIComponent(args.fileName);
+      var up = await fetch('https://graph.microsoft.com/v1.0/sites/'+sidU+'/drive/root:/'+path+':/content', {
+        method: 'PUT',
+        headers: { Authorization: 'Bearer ' + tokU, 'Content-Type': 'application/octet-stream' },
+        body: bytes
+      });
+      if (!up.ok) { reply('upload_' + up.status, null); return; }
+      reply(null, await up.json());
+
+    } else if (op === 'sendMail') {
+      // NOTA: requiere el scope Mail.Send en CONFIG.scopes del portal (ver TODO).
+      var tokM = await getToken();
+      var mr = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + tokM, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: {
+          subject: args.asunto,
+          body: { contentType: 'HTML', content: args.html },
+          toRecipients: (args.to || []).map(function(a){ return { emailAddress: { address: a } }; }),
+          ccRecipients: (args.cc || []).map(function(a){ return { emailAddress: { address: a } }; })
+        }})
+      });
+      if (!mr.ok && mr.status !== 202) { reply('mail_' + mr.status, null); return; }
+      reply(null, { ok: true });
+
+    } else {
+      reply('op_desconocida:' + op, null);
+    }
+  } catch (err) {
+    reply(String(err && err.message ? err.message : err), null);
+  }
+});
+
 // -- SP Data Layer — Load FabTracker data --------------
 var FT_SITE_ID = null;
 // Reset SP column maps on each load to avoid stale cache

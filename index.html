@@ -5078,15 +5078,20 @@ async function ftDiagnosticColumnNames() {
 window.ftDiagnosticColumnNames = ftDiagnosticColumnNames;
 
 // -- SP Persistence: Save Programado_Hoy + Status -------------------------
-async function ftSaveProgramacionToSP() {
+async function ftSaveProgramacionToSP(sapsFilter) {
   // Used for standalone saves (e.g. prioridad changes outside confirmProgMain).
   // Uses Flow (spEscribir) to work for all users regardless of direct Graph access.
+  // Si se pasa sapsFilter (arreglo de OF_SAP), solo persiste esas OFs — evita
+  // reescribir las ~1227 órdenes en cada actualización de programación.
   try {
     var _ofRes = await flowGet('FT_OrdenesFabricacion', '', 2000).catch(function(){return {value:[]};});
     var itemMap = {};
     (_ofRes.value||[]).forEach(function(i){ var f=i.fields||{}; itemMap[f.OF_SAP||f.Title||'']=i.id; });
-    for (var _fi=0; _fi<DB.ofs.length; _fi++) {
-      var of_ = DB.ofs[_fi];
+    var _lista = (sapsFilter && sapsFilter.length)
+      ? sapsFilter.map(function(s){ return DB.ofs.find(function(o){return o.of_sap===s;}); }).filter(Boolean)
+      : DB.ofs;
+    for (var _fi=0; _fi<_lista.length; _fi++) {
+      var of_ = _lista[_fi];
       var spId = itemMap[of_.of_sap];
       if (!spId) continue;
       var newStatus = of_.programadoHoy ? 'En Fabricacion' : 'Sin programar';
@@ -5102,7 +5107,7 @@ async function ftSaveProgramacionToSP() {
       }
       await spEscribir('FT_OrdenesFabricacion', fieldsToSave, parseInt(spId))
         .catch(function(e){ console.warn('SP save Programado_Hoy error:', of_.of_sap, e); });
-      if (_fi < DB.ofs.length-1) await new Promise(function(r){setTimeout(r,200);});
+      if (_fi < _lista.length-1) await new Promise(function(r){setTimeout(r,200);});
     }
     console.log('✅ Programación guardada en SharePoint');
   } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); }
@@ -9772,11 +9777,14 @@ function confirmProgMain() {
     if (!confirm(_warnMsg)) return;
   }
 
+  // OFs cuyo estado/fecha/cantidad cambió en esta sesión — se persisten SOLO estas
+  // (evita reescribir las ~1227 órdenes en el Paso 3).
+  var _changedOfsForSP = {};
   DB.ofs.forEach(function(of){
     var feEl = document.getElementById('fe-'+of.of_sap);
     var cantEl = document.getElementById('cant-'+of.of_sap);
-    if(feEl) of.fecha_entrega = feEl.value || of.fecha_entrega || '';
-    if(cantEl) of.cantidad = parseFloat(String(cantEl.value).replace(',','.'))||of.cantidad||null;
+    if(feEl){ var _nvFe = feEl.value || of.fecha_entrega || ''; if(_nvFe !== (of.fecha_entrega||'')) _changedOfsForSP[of.of_sap]=true; of.fecha_entrega = _nvFe; }
+    if(cantEl){ var _nvCant = parseFloat(String(cantEl.value).replace(',','.'))||of.cantidad||null; if(_nvCant !== (of.cantidad||null)) _changedOfsForSP[of.of_sap]=true; of.cantidad = _nvCant; }
     // Validar obligatoriedad si está marcada para producción
     var pendProg = PENDING_PROG[of.of_sap];
     var vaProgramada = pendProg ? pendProg.programadoHoy : of.programadoHoy;
@@ -9800,6 +9808,7 @@ function confirmProgMain() {
   Object.keys(PENDING_PROG).forEach(function(sap) {
     var of = DB.ofs.find(function(o){return o.of_sap===sap;});
     if (!of) return;
+    _changedOfsForSP[sap] = true; // alta o baja de programación → persistir en Paso 3
     var prev = of.programadoHoy;
     of.programadoHoy = PENDING_PROG[sap].programadoHoy;
     of.prioridad     = PENDING_PROG[sap].prioridad;
@@ -9893,7 +9902,7 @@ function confirmProgMain() {
   // NOTE: ftSaveProgramacionToSP() is now called AFTER Step 1+2 inside the async block
   // to avoid concurrent Flow throttling. See below.
   // -- Save new OFs ops to FT_Operaciones + FT_Cola_Estacion --
-  if (!state.isDemoMode && state.token && nuevasOfs.length > 0) {
+  if (!state.isDemoMode && state.token && (nuevasOfs.length > 0 || Object.keys(_changedOfsForSP).length > 0)) {
     var _colaSnapForSP = {};
     nuevasOfs.forEach(function(sap){ _colaSnapForSP[sap] = _colaOrderSnapshot[sap] || 999; });
     setTimeout(async function(){
@@ -10114,8 +10123,11 @@ function confirmProgMain() {
             _ofMap[f.OF_SAP||f.Title||'']=i.id;
           });
           if(!Object.keys(_ofMap).length) console.warn('[Confirm Step3] _ofMap vacío — OFs no se actualizarán');
-          for(var _oi=0;_oi<DB.ofs.length;_oi++){
-            var of_=DB.ofs[_oi];
+          var _sapsCambiadas = Object.keys(_changedOfsForSP);
+          console.log('[Confirm Step3] Actualizando solo OFs cambiadas:', _sapsCambiadas.length);
+          for(var _oi=0;_oi<_sapsCambiadas.length;_oi++){
+            var of_=DB.ofs.find(function(o){return o.of_sap===_sapsCambiadas[_oi];});
+            if(!of_) continue;
             var spId=_ofMap[of_.of_sap];
             if(!spId) continue;
             var newStatus=of_.programadoHoy?'En Fabricacion':'Sin programar';
@@ -10133,7 +10145,7 @@ function confirmProgMain() {
               await spEscribir('FT_OrdenesFabricacion',fields,parseInt(spId));
               console.log('  ✅ OF actualizada:',of_.of_sap);
             }catch(e){console.warn('  ❌ OF error:',of_.of_sap,e.message);}
-            if(_oi<DB.ofs.length-1) await new Promise(function(r){setTimeout(r,300);});
+            if(_oi<_sapsCambiadas.length-1) await new Promise(function(r){setTimeout(r,300);});
           }
           console.log('✅ Programación guardada en SharePoint');
         } catch(e){ console.warn('Error Step 3:',e.message); }
@@ -10149,7 +10161,7 @@ function confirmProgMain() {
           });
         });
         sqSyncColaNumbers();
-        fireSync('coord','prog_updated',{count:hoy});
+        fireSync('coord','prog_updated',{count:hoy, saps:Object.keys(_changedOfsForSP)});
         ntfyNotificarEvento('prog_updated',{count:hoy}).catch(function(){});
         console.log('[Programación] Orden final:',_newSapsSorted.map(function(s){return s+'('+(_colaSnapForSP[s]||'?')+')';}).join(' → '));
         var toast=document.getElementById('toast-coord');
@@ -11476,7 +11488,9 @@ function saveTplModal(){
     setTimeout(async function(){
       try {
         if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
-        var affectedOFs = DB.activeOFs.filter(function(aof){ return aof.articulo === art; });
+        // Solo sincronizar (crear/actualizar ops en SP) para OFs realmente PROGRAMADAS.
+        // Evita dar de alta operaciones de OFs en "Sin programar" que comparten el artículo.
+        var affectedOFs = DB.activeOFs.filter(function(aof){ return aof.articulo === art && aof.programadoHoy === true; });
         if (!affectedOFs.length) return;
         console.log('Sincronizando plantilla', art, 'a', affectedOFs.length, 'OFs activas en SP');
         for (var ai = 0; ai < affectedOFs.length; ai++) {
@@ -11930,7 +11944,7 @@ fireSync = function(source, event, data) {
   // Timer events
   if (event === 'timer_update' && data && data.key) ftSaveTimerToSP(data.key);
   // Programacion
-  if (event === 'prog_updated') ftSaveProgramacionToSP();
+  if (event === 'prog_updated') ftSaveProgramacionToSP(data && data.saps);
 };
 
 // -- 7: appConfirmPause correcto -------------------------------

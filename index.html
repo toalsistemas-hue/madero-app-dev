@@ -3110,6 +3110,7 @@ function navigateToPantalla(pantallaID) {
       }
     }
     if (pantallaID==='Fabricaciones' && state.currentUser && !state.isDemoMode && state.token) {
+      window._progExpanded = {}; // al entrar, todos los pedidos comprimidos por defecto
       if (typeof ftLoadDataFromSP === 'function') {
         ftLoadDataFromSP();
       }
@@ -3306,9 +3307,9 @@ function toggleProgCard(btn){
   if(!card) return;
   card.classList.toggle('collapsed');
   var ped = card.getAttribute('data-pedido') || '';
-  window._progCollapsed = window._progCollapsed || {};
-  if(card.classList.contains('collapsed')) window._progCollapsed[ped] = true;
-  else delete window._progCollapsed[ped];
+  window._progExpanded = window._progExpanded || {};
+  if(card.classList.contains('collapsed')) delete window._progExpanded[ped];
+  else window._progExpanded[ped] = true;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -10219,7 +10220,7 @@ function renderProg(){
     var completed = pedidoIsComplete(g.pedido);
     var grpStyle = completed ? "border-color:var(--green);background:rgba(46,160,67,.04);"
                  : cancelado ? "border-color:var(--red);background:rgba(239,68,68,.04);opacity:.7;" : "";
-    var _colP = (window._progCollapsed && window._progCollapsed[g.pedido]) ? " collapsed" : "";
+    var _colP = (window._progExpanded && window._progExpanded[g.pedido]) ? "" : " collapsed";
     h+="<div class='prog-card"+_colP+"' data-pedido='"+esc(g.pedido)+"' style='"+grpStyle+"'>";
     h+="<div class='prog-ped-hdr' style='"+(completed?"background:rgba(46,160,67,.08);":cancelado?"background:rgba(239,68,68,.06);":"")+"'>";
     h+="<div style='display:flex;align-items:center;gap:6px;min-width:0;'><button type='button' class='prog-toggle' title='Expandir / comprimir órdenes' onclick='toggleProgCard(this)'>▾</button><div style='min-width:0;'><div class='prog-ped-num' style='"+(completed?"color:var(--green)":cancelado?"color:var(--red)":"")+"'>Pedido "+esc(g.pedido)+"</div>";

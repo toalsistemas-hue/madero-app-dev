@@ -16626,13 +16626,6 @@ async function appReloadOpsFromSP() {
     }catch(e){ body.innerHTML='<div style="color:#f87171;padding:20px;">Error al cargar: '+_esc(e.message)+'</div>'; }
   }
 
-  async function _dlUrl(d){
-    var sid=await appGetSiteId();
-    var base = d.itemId ? 'sites/'+sid+'/drive/items/'+d.itemId : 'sites/'+sid+'/drive/root:/'+_encPath(d.path);
-    var meta=await appGraphGet(base);
-    return (meta && meta['@microsoft.graph.downloadUrl']) || null;
-  }
-
   window.appPlanosVolverLista = function(){ _renderLista(); };
 
   window.appVerPlanoInline = async function(id){
@@ -16641,9 +16634,20 @@ async function appReloadOpsFromSP() {
     _freeBlob();
     body.innerHTML='<div style="text-align:center;padding:26px;color:#8b949e;">Cargando documento…</div>';
     try{
-      var u=await _dlUrl(d);
-      if(!u){ body.innerHTML='<div style="color:#f87171;padding:16px;">No se encontró el archivo.</div>'; return; }
-      var blob=await (await fetch(u)).blob();
+      // Igual que las fotos: fetch al endpoint /content con el token en el header
+      // (evita el 403 de downloadUrl / sites-drive para usuarios sin acceso directo).
+      var driveId = await appGetDriveId();
+      var tok = await appGetToken();
+      var url;
+      if(d.itemId && driveId){
+        url='https://graph.microsoft.com/v1.0/drives/'+driveId+'/items/'+d.itemId+'/content';
+      } else {
+        var sid=await appGetSiteId();
+        url='https://graph.microsoft.com/v1.0/sites/'+sid+'/drive/root:/'+_encPath(d.path)+':/content';
+      }
+      var resp=await fetch(url, { headers:{ Authorization:'Bearer '+tok } });
+      if(!resp.ok){ throw new Error('Graph '+resp.status); }
+      var blob=await resp.blob();
       if(blob.type!=='application/pdf') blob=new Blob([blob], { type:'application/pdf' });
       var obj=URL.createObjectURL(blob);
       body.innerHTML=

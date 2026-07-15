@@ -12689,6 +12689,7 @@ function renderSeg(){
           // Not running — show saved minutes snapshot
           h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);white-space:nowrap;">'+fmtM(op.mins)+'</span>';
         }
+        if(of.articulo && op.estacion) h+='<button onclick="verPlanosOperacion(\''+esc(of.articulo)+'\',\''+esc(op.estacion)+'\')" title="Ver planos · '+esc(op.estacion)+'" style="background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.25);border-radius:4px;padding:2px 7px;font-size:.66rem;color:var(--accent-l);cursor:pointer;white-space:nowrap;flex-shrink:0;">📐 Planos</button>';
         h+='</div>';
         // Ayudantes
         if(op.ayudantes && op.ayudantes.length>0){

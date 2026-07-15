@@ -15181,9 +15181,14 @@ function ftRptExportExcel(){
   window._planosDocsCache = {};
 
   function _esc(s){ return (typeof esc==='function') ? esc(s) : String(s==null?'':s); }
+  function _normPuesto(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g,''); }
   function puedeGestionar(){
     var u = (typeof state!=='undefined' && state) ? state.currentUser : null;
-    return !!(u && (u.esAdmin === true || u.puestoID === 'AsistenteProduccion'));
+    if(!u) return false;
+    if(u.esAdmin === true) return true;
+    // Reconoce 'AsistenteProduccion', 'Asistente de Producción', etc. por ID o por nombre de puesto
+    var esAsistProd = function(x){ x=_normPuesto(x); return x.indexOf('asistente')>=0 && x.indexOf('produccion')>=0; };
+    return esAsistProd(u.puestoID) || esAsistProd(u.puesto);
   }
   function _encPath(p){ return p.split('/').map(encodeURIComponent).join('/'); }
 

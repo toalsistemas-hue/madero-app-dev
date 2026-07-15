@@ -5195,10 +5195,12 @@ function renderArtListPreview(){
   h+='<thead><tr><th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--dim);font-weight:600;">No. Artículo</th><th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--dim);font-weight:600;">Descripción</th></tr></thead><tbody>';
   arts.forEach(function(k){
     h+='<tr><td style="padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-family:\'DM Mono\',monospace;font-size:.7rem;white-space:nowrap;">'+esc(k)+'</td>';
-    h+='<td style="padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:.72rem;">'+esc(DB.articles[k]||'')+'</td></tr>';
+    h+='<td style="padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:.72rem;">'+esc(DB.articles[k]||'')+'</td>';
+    h+='<td style="padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:.72rem;white-space:nowrap;text-align:right;"><span class="planos-ind" data-art="'+esc(k)+'" style="font-size:.64rem;margin-right:8px;color:var(--dim);">…</span><button class="btn-sm-ghost" data-art="'+esc(k)+'" onclick="abrirPlanosModal(this.dataset.art)" title="Administrar planos">📐 Planos</button></td></tr>';
   });
   h+='</tbody></table>';
   preview.innerHTML=h;
+  if(typeof refrescarIndicadoresPlanos==="function") refrescarIndicadoresPlanos();
 }
 async function reloadArticulosFromSP(){
   var status=document.getElementById('art-import-status');
@@ -5749,7 +5751,7 @@ const FLOW_URL_ESCRIBIR = ACTIVE.flowEscribir;
 
 // Listas que se leen/escriben via Flow (permisos restringidos en SP)
 const LISTAS_PROTEGIDAS = [
-  'Modulos','SubModulos','Pantallas','Configuracion',
+  'Modulos','SubModulos','Pantallas','Configuracion','FT_Planos',
   'PedidosEspeciales','CotizadorProyectos','CotizadorDatos',
   'FT_Operaciones','FT_Timers','FT_Status_Estacion',
   'FT_CalTiempos','FT_Plantillas_Operaciones','FT_Articulos',
@@ -15157,6 +15159,221 @@ function ftRptExportExcel(){
   } else {
     initSlideshow();
   }
+})();
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   MÓDULO DE PLANOS (PDF por artículo / estación) — ADITIVO
+   Lista SP: FT_Planos  (columnas: Title=Articulo, Estacion, Descripcion,
+   Archivo_Nombre, Archivo_Path, Archivo_ItemId)
+   Archivos: biblioteca por defecto, carpeta Planos/{Articulo}/{Estacion}/
+   Gestión: puesto 'AsistenteProduccion' o admin. Otros: solo ver/descargar.
+   No modifica ninguna función existente.
+   ═══════════════════════════════════════════════════════════════════ */
+(function(){
+  var PLANOS_LISTA = 'FT_Planos';
+  var PLANOS_CARPETA = 'Planos';
+  var MAX_MB = 25;
+  window._planosCounts = window._planosCounts || {};
+  window._planosDocsCache = {};
+
+  function _esc(s){ return (typeof esc==='function') ? esc(s) : String(s==null?'':s); }
+  function puedeGestionar(){
+    var u = (typeof state!=='undefined' && state) ? state.currentUser : null;
+    return !!(u && (u.esAdmin === true || u.puestoID === 'AsistenteProduccion'));
+  }
+  function _encPath(p){ return p.split('/').map(encodeURIComponent).join('/'); }
+
+  // ── Indicadores en la lista de artículos ──
+  window.refrescarIndicadoresPlanos = async function(){
+    try{
+      var res = await flowGet(PLANOS_LISTA, '', 2000).catch(function(){return {value:[]};});
+      var counts = {};
+      (res.value||[]).forEach(function(it){
+        var f = it.fields||{}; var art=String(f.Title||f.Articulo||'').trim();
+        if(art) counts[art]=(counts[art]||0)+1;
+      });
+      window._planosCounts = counts;
+      var spans = document.querySelectorAll('.planos-ind');
+      for(var i=0;i<spans.length;i++){
+        var art = spans[i].getAttribute('data-art'); var n = counts[art]||0;
+        spans[i].innerHTML = n>0
+          ? "<span style='color:#4caf50;'>● Planos activos ("+n+")</span>"
+          : "<span style='color:var(--dim);'>○ Sin planos</span>";
+      }
+    }catch(e){ /* silencioso */ }
+  };
+
+  // ── Modal ──
+  function ensureModal(){
+    if(document.getElementById('planos-modal')) return;
+    var d = document.createElement('div');
+    d.id='planos-modal';
+    d.style.cssText='display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:20px;';
+    d.innerHTML =
+      '<div style="background:var(--card,#161b22);border:1px solid var(--border,#30363d);border-radius:12px;max-width:760px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">'
+      + '<div style="padding:14px 18px;border-bottom:1px solid var(--border,#30363d);display:flex;align-items:center;justify-content:space-between;">'
+      +   '<div><div style="font-weight:700;font-size:.95rem;color:var(--text,#e6edf3);">📐 Planos del artículo</div><div id="planos-modal-art" style="font-size:.75rem;color:var(--dim,#8b949e);"></div></div>'
+      +   '<button onclick="cerrarPlanosModal()" style="background:none;border:none;color:var(--dim,#8b949e);font-size:1.3rem;cursor:pointer;line-height:1;">&times;</button>'
+      + '</div>'
+      + '<div id="planos-modal-body" style="padding:16px 18px;overflow-y:auto;"></div>'
+      + '</div>';
+    document.body.appendChild(d);
+    d.addEventListener('click', function(e){ if(e.target===d) cerrarPlanosModal(); });
+  }
+  window.cerrarPlanosModal = function(){ var m=document.getElementById('planos-modal'); if(m) m.style.display='none'; };
+
+  window.abrirPlanosModal = async function(art){
+    ensureModal();
+    var m=document.getElementById('planos-modal');
+    m.dataset.art = art;
+    document.getElementById('planos-modal-art').textContent = art + ((typeof DB!=='undefined'&&DB.articles&&DB.articles[art])? ' — '+DB.articles[art] : '');
+    m.style.display='flex';
+    document.getElementById('planos-modal-body').innerHTML='<div style="text-align:center;padding:24px;color:var(--dim);">Cargando planos…</div>';
+    await renderPlanosModal(art);
+  };
+
+  async function cargarPlanos(art){
+    var res = await flowGet(PLANOS_LISTA, '', 2000);
+    return (res.value||[]).filter(function(it){
+      var f=it.fields||{}; return (String(f.Title||f.Articulo||'').trim()===art);
+    }).map(function(it){ var f=it.fields||{}; return {
+      id: String(it.id), estacion:String(f.Estacion||'').trim(), descripcion:String(f.Descripcion||''),
+      nombre:String(f.Archivo_Nombre||''), path:String(f.Archivo_Path||''), itemId:String(f.Archivo_ItemId||'')
+    };});
+  }
+
+  async function renderPlanosModal(art){
+    var gestor = puedeGestionar();
+    var docs;
+    try { docs = await cargarPlanos(art); }
+    catch(e){ document.getElementById('planos-modal-body').innerHTML='<div style="color:#f87171;padding:16px;">Error al cargar: '+_esc(e.message)+'</div>'; return; }
+    window._planosDocsCache = {}; docs.forEach(function(d){ window._planosDocsCache[d.id]=d; });
+    var porEst={};
+    docs.forEach(function(d){ var k=d.estacion||'(Sin estación)'; (porEst[k]=porEst[k]||[]).push(d); });
+    var ests = Object.keys(porEst).sort();
+    var h='';
+    if(gestor){
+      h+='<div style="margin-bottom:14px;"><button onclick="planosAgregarEstacion()" style="background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.3);border-radius:8px;padding:7px 14px;font-size:.78rem;color:var(--accent-l,#58a6ff);cursor:pointer;">+ Agregar estación</button></div>';
+    }
+    if(!ests.length){
+      h+='<div style="text-align:center;padding:22px;color:var(--dim);font-size:.82rem;">Este artículo no tiene planos asignados.'+(gestor?' Usa “+ Agregar estación”.':'')+'</div>';
+    }
+    ests.forEach(function(est){
+      h+='<div style="margin-bottom:16px;">';
+      h+='<div style="font-size:.75rem;font-weight:700;color:var(--accent-l,#58a6ff);border-bottom:1px solid var(--border,#30363d);padding-bottom:5px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;"><span>🏭 '+_esc(est)+'</span>'
+        +(gestor?'<button onclick="planosAgregarDoc(\''+_esc(est)+'\')" style="background:none;border:1px solid var(--border,#30363d);border-radius:6px;padding:3px 9px;font-size:.68rem;color:var(--text,#e6edf3);cursor:pointer;">+ Documento</button>':'')
+        +'</div>';
+      porEst[est].forEach(function(d){
+        h+='<div style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);font-size:.78rem;">';
+        h+='<span style="font-size:1rem;">📄</span>';
+        h+='<div style="flex:1;min-width:0;"><div style="font-weight:600;color:var(--text,#e6edf3);word-break:break-word;">'+_esc(d.descripcion||d.nombre||'(sin descripción)')+'</div><div style="font-size:.66rem;color:var(--dim);">'+_esc(d.nombre)+'</div></div>';
+        h+='<button onclick="planosVer(\''+d.id+'\')" style="background:none;border:1px solid var(--border,#30363d);border-radius:6px;padding:3px 9px;font-size:.68rem;color:var(--text,#e6edf3);cursor:pointer;white-space:nowrap;">👁 Ver</button>';
+        h+='<button onclick="planosDescargar(\''+d.id+'\')" style="background:none;border:1px solid var(--border,#30363d);border-radius:6px;padding:3px 9px;font-size:.68rem;color:var(--text,#e6edf3);cursor:pointer;white-space:nowrap;">⬇ Descargar</button>';
+        if(gestor) h+='<button onclick="planosEliminar(\''+d.id+'\')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:3px 9px;font-size:.68rem;color:#f87171;cursor:pointer;">🗑</button>';
+        h+='</div>';
+      });
+      h+='</div>';
+    });
+    document.getElementById('planos-modal-body').innerHTML=h;
+  }
+
+  // ── Formulario de alta ──
+  window.planosAgregarEstacion = function(){ planosForm(''); };
+  window.planosAgregarDoc = function(est){ planosForm(est||''); };
+  function planosForm(estPrefill){
+    var stns = (window.STATIONS && window.STATIONS.length) ? window.STATIONS.slice() : [];
+    var opts = '<option value="">— Selecciona estación —</option>' + stns.map(function(s){ return '<option value="'+_esc(s)+'"'+(s===estPrefill?' selected':'')+'>'+_esc(s)+'</option>'; }).join('');
+    var body=document.getElementById('planos-modal-body');
+    var old=document.getElementById('planos-form'); if(old) old.remove();
+    var f=document.createElement('div');
+    f.id='planos-form';
+    f.style.cssText='background:rgba(88,166,255,.06);border:1px solid rgba(88,166,255,.25);border-radius:8px;padding:12px;margin-bottom:14px;';
+    f.innerHTML=
+      '<div style="font-weight:700;font-size:.8rem;margin-bottom:8px;color:var(--text,#e6edf3);">Agregar documento</div>'
+      +'<label style="font-size:.7rem;color:var(--dim);">Estación</label>'
+      +'<select id="planos-f-est" style="width:100%;margin:2px 0 8px;padding:6px;background:var(--bg,#0d1117);border:1px solid var(--border,#30363d);border-radius:6px;color:var(--text,#e6edf3);font-size:.78rem;">'+opts+'</select>'
+      +'<label style="font-size:.7rem;color:var(--dim);">Descripción</label>'
+      +'<input id="planos-f-desc" type="text" placeholder="Ej. Plano de soldadura general" style="width:100%;margin:2px 0 8px;padding:6px;background:var(--bg,#0d1117);border:1px solid var(--border,#30363d);border-radius:6px;color:var(--text,#e6edf3);font-size:.78rem;">'
+      +'<label style="font-size:.7rem;color:var(--dim);">Archivo PDF (máx '+MAX_MB+' MB)</label>'
+      +'<input id="planos-f-file" type="file" accept="application/pdf,.pdf" style="width:100%;margin:2px 0 10px;font-size:.72rem;color:var(--text,#e6edf3);">'
+      +'<div id="planos-f-msg" style="font-size:.72rem;color:#f87171;margin-bottom:8px;min-height:14px;"></div>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end;">'
+      +  '<button onclick="planosCancelarForm()" style="background:none;border:1px solid var(--border,#30363d);border-radius:6px;padding:6px 14px;font-size:.74rem;color:var(--text,#e6edf3);cursor:pointer;">Cancelar</button>'
+      +  '<button id="planos-f-save" onclick="planosSubir()" style="background:var(--accent-l,#58a6ff);border:none;border-radius:6px;padding:6px 14px;font-size:.74rem;color:#fff;cursor:pointer;">Subir</button>'
+      +'</div>';
+    body.insertBefore(f, body.firstChild);
+  }
+  window.planosCancelarForm = function(){ var f=document.getElementById('planos-form'); if(f) f.remove(); };
+
+  async function subirPdf(art, estacion, file){
+    var sid = await getSiteId();
+    var tok = await getToken();
+    var safe = file.name.replace(/[#%*<>?/\\{|}~:"]/g,'_');
+    var path = PLANOS_CARPETA+'/'+art+'/'+estacion+'/'+safe;
+    var url = 'https://graph.microsoft.com/v1.0/sites/'+sid+'/drive/root:/'+_encPath(path)+':/content';
+    var buf = await file.arrayBuffer();
+    var res = await fetch(url, { method:'PUT', headers:{ Authorization:'Bearer '+tok, 'Content-Type':'application/pdf' }, body: buf });
+    if(!res.ok){ var t=''; try{t=await res.text();}catch(_){}; throw new Error('No se pudo subir el PDF ('+res.status+') '+t.slice(0,120)); }
+    var item = await res.json();
+    return { path: path, itemId: item.id, nombre: safe };
+  }
+
+  window.planosSubir = async function(){
+    var art = document.getElementById('planos-modal').dataset.art;
+    var est = (document.getElementById('planos-f-est').value||'').trim();
+    var desc = (document.getElementById('planos-f-desc').value||'').trim();
+    var fileEl = document.getElementById('planos-f-file');
+    var msg = document.getElementById('planos-f-msg');
+    var file = fileEl && fileEl.files && fileEl.files[0];
+    msg.style.color='#f87171';
+    if(!est){ msg.textContent='Selecciona una estación.'; return; }
+    if(!file){ msg.textContent='Selecciona un archivo PDF.'; return; }
+    var esPdf = /\.pdf$/i.test(file.name) || file.type==='application/pdf';
+    if(!esPdf){ msg.textContent='El archivo debe ser PDF.'; return; }
+    if(file.size > MAX_MB*1024*1024){ msg.textContent='El archivo supera '+MAX_MB+' MB.'; return; }
+    var btn=document.getElementById('planos-f-save'); if(btn){ btn.disabled=true; btn.textContent='Subiendo…'; }
+    msg.style.color='var(--dim)'; msg.textContent='Subiendo archivo…';
+    try{
+      var up = await subirPdf(art, est, file);
+      await spEscribir(PLANOS_LISTA, { Title:art, Estacion:est, Descripcion:desc, Archivo_Nombre:up.nombre, Archivo_Path:up.path, Archivo_ItemId:up.itemId }, null);
+      planosCancelarForm();
+      await renderPlanosModal(art);
+      refrescarIndicadoresPlanos();
+    }catch(e){ msg.style.color='#f87171'; msg.textContent='Error: '+e.message; if(btn){ btn.disabled=false; btn.textContent='Subir'; } }
+  };
+
+  async function _downloadUrl(d){
+    var sid = await getSiteId();
+    var tok = await getToken();
+    var base = d.itemId
+      ? 'https://graph.microsoft.com/v1.0/sites/'+sid+'/drive/items/'+d.itemId
+      : 'https://graph.microsoft.com/v1.0/sites/'+sid+'/drive/root:/'+_encPath(d.path);
+    var meta = await (await fetch(base, { headers:{ Authorization:'Bearer '+tok } })).json();
+    return meta['@microsoft.graph.downloadUrl'] || meta.webUrl || null;
+  }
+  window.planosVer = async function(id){
+    var d = window._planosDocsCache[id]; if(!d) return;
+    try{ var u = await _downloadUrl(d); if(u) window.open(u,'_blank'); else alert('No se encontró el archivo.'); }
+    catch(e){ alert('No se pudo abrir: '+e.message); }
+  };
+  window.planosDescargar = async function(id){
+    var d = window._planosDocsCache[id]; if(!d) return;
+    try{ var u = await _downloadUrl(d); if(!u){ alert('No se encontró el archivo.'); return; }
+      var a=document.createElement('a'); a.href=u; a.download=d.nombre||'plano.pdf'; document.body.appendChild(a); a.click(); a.remove();
+    }catch(e){ alert('No se pudo descargar: '+e.message); }
+  };
+  window.planosEliminar = async function(id){
+    var d = window._planosDocsCache[id]; if(!d) return;
+    if(!confirm('¿Eliminar el plano "'+(d.descripcion||d.nombre)+'"?')) return;
+    try{
+      await spEscribir(PLANOS_LISTA, { _delete:true }, parseInt(d.id));
+      try{ if(d.itemId){ var sid=await getSiteId(); var tok=await getToken(); await fetch('https://graph.microsoft.com/v1.0/sites/'+sid+'/drive/items/'+d.itemId, { method:'DELETE', headers:{ Authorization:'Bearer '+tok } }); } }catch(_){}
+      var art = document.getElementById('planos-modal').dataset.art;
+      await renderPlanosModal(art);
+      refrescarIndicadoresPlanos();
+    }catch(e){ alert('No se pudo eliminar: '+e.message); }
+  };
 })();
 </script>
 </body>

@@ -8089,6 +8089,7 @@ function renderTpls(){
     h+="<div style='display:flex;gap:6px;align-items:center'>";
     h+="<button class='btn-sm-ghost' onclick='event.stopPropagation();showTplFlowModal(\""+art+"\")'>📊 Flujo</button>";
     if(_fabNivel()!=='lectura') h+="<button class='btn-sm-ghost' onclick='event.stopPropagation();openEditTpl(\""+art+"\")'>✏ Editar</button>";
+    if(_fabNivel()!=='lectura') h+="<button class='btn-sm-ghost' onclick='event.stopPropagation();duplicarPlantilla(\""+art+"\")' title='Crear una copia con un artículo nuevo'>⧉ Duplicar</button>";
     h+="<span style='color:var(--muted);font-size:.75rem'>"+(exp?"▲":"▼")+"</span></div></div>";
     if(exp){
       h+="<div class='tpl-ops-body'>";
@@ -11367,6 +11368,42 @@ function openEditTpl(art){
   });
   openCModal('modal-tpl');
 }
+
+// Duplicar una plantilla existente → copia SOLO las operaciones a un artículo NUEVO.
+// Reutiliza el modal en modo ALTA: saveTplModal ya exige un artículo distinto y no
+// registrado (if(!C.editingTplArt && DB.templates[art]) → rechaza).
+function duplicarPlantilla(srcArt){
+  var src = DB.templates[srcArt];
+  if(!src){ return; }
+  C.editingTplArt = null; C.tplOpIdx = 0;   // modo alta (no edición)
+  C._tplOriginalOps = null; C._tplLockedOps = {};
+  if (typeof _tplEnsureTecnicos === 'function') _tplEnsureTecnicos();
+  document.getElementById('tpl-modal-title').textContent = '⧉ Duplicar plantilla — asigna un artículo nuevo';
+  // Artículo vacío: el usuario debe elegir uno DIFERENTE y no registrado
+  var artInp = document.getElementById('tpl-art-sel');
+  if(artInp) artInp.value = '';
+  document.getElementById('tpl-desc-disp').textContent = '—';
+  // Padre / sub-artículos se definen para el artículo nuevo
+  var padreInp = document.getElementById('tpl-padre-sel');
+  if(padreInp){ padreInp.value = ''; padreInp.placeholder = 'Sin padre'; }
+  setTplSubarts([]);
+  // Banner informativo
+  var bannerEl = document.getElementById('tpl-active-banner');
+  if(bannerEl){
+    bannerEl.innerHTML = '⧉ <strong>Copia de '+esc(srcArt)+'</strong> — asigna un número de artículo <strong>diferente</strong> (no registrado) para poder guardarla.';
+    bannerEl.style.display = 'block';
+    bannerEl.style.background = 'rgba(88,166,255,.1)';
+    bannerEl.style.borderColor = 'rgba(88,166,255,.3)';
+  }
+  // Copiar SOLO las operaciones del origen (sin candados: es una plantilla nueva)
+  document.getElementById('tpl-ops-list').innerHTML = '';
+  (src.ops||[]).forEach(function(op){
+    C.tplOpIdx++;
+    addTplOpRow(op.nombre, op.estacion, op.tipo, false, op.tecnico || '', op.ayudantes || '', op.cantidad || null);
+  });
+  openCModal('modal-tpl');
+}
+window.duplicarPlantilla = duplicarPlantilla;
 
 // -- 3 & 4: saveTplModal actualiza subarts/padre en activeOFs --
 function saveTplModal(){

@@ -16628,6 +16628,26 @@ async function appReloadOpsFromSP() {
 
   window.appPlanosVolverLista = function(){ _renderLista(); };
 
+  // Cargar PDF.js (una vez) para renderizar el PDF en canvas — funciona inline en móvil
+  var _pdfjsLoading=null;
+  function _ensurePdfJs(){
+    if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if(_pdfjsLoading) return _pdfjsLoading;
+    _pdfjsLoading=new Promise(function(resolve,reject){
+      var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload=function(){
+        try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(_){}
+        resolve(window.pdfjsLib);
+      };
+      s.onerror=function(){ reject(new Error('No se pudo cargar el visor PDF')); };
+      document.head.appendChild(s);
+    });
+    return _pdfjsLoading;
+  }
+
+  var _volverBtn = '<div style="margin-bottom:8px;"><button onclick="appPlanosVolverLista()" style="background:rgba(255,255,255,.08);border:none;border-radius:8px;color:#e6edf3;font-size:.78rem;padding:7px 13px;cursor:pointer;">‹ Lista</button></div>';
+
   window.appVerPlanoInline = async function(id){
     var d=window._appPlanosDocs[id]; if(!d) return;
     var body=document.getElementById('app-planos-body'); if(!body) return;
@@ -16635,7 +16655,6 @@ async function appReloadOpsFromSP() {
     body.innerHTML='<div style="text-align:center;padding:26px;color:#8b949e;">Cargando documento…</div>';
     try{
       // Igual que las fotos: fetch al endpoint /content con el token en el header
-      // (evita el 403 de downloadUrl / sites-drive para usuarios sin acceso directo).
       var driveId = await appGetDriveId();
       var tok = await appGetToken();
       var url;
@@ -16647,17 +16666,34 @@ async function appReloadOpsFromSP() {
       }
       var resp=await fetch(url, { headers:{ Authorization:'Bearer '+tok } });
       if(!resp.ok){ throw new Error('Graph '+resp.status); }
-      var blob=await resp.blob();
-      if(blob.type!=='application/pdf') blob=new Blob([blob], { type:'application/pdf' });
-      var obj=URL.createObjectURL(blob);
-      body.innerHTML=
-        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">'
-        + '<button onclick="appPlanosVolverLista()" style="background:rgba(255,255,255,.08);border:none;border-radius:8px;color:#e6edf3;font-size:.78rem;padding:7px 13px;cursor:pointer;">‹ Lista</button>'
-        + '<a href="'+obj+'" download="'+_esc(d.nombre||'plano.pdf')+'" style="font-size:.76rem;color:#58a6ff;text-decoration:none;">⬇ Descargar</a>'
-        + '</div>'
-        + '<iframe src="'+obj+'" title="Plano" style="width:100%;height:calc(100vh - 170px);border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#fff;"></iframe>';
-      body._obj=obj;
-    }catch(e){ body.innerHTML='<div style="color:#f87171;padding:16px;">No se pudo abrir el plano: '+_esc(e.message)+'</div>'; }
+      var buf=await resp.arrayBuffer();
+      // Renderizar con PDF.js a canvas (visualización inline, sin descargar)
+      var pdfjs=await _ensurePdfJs();
+      body.innerHTML=_volverBtn+'<div id="app-pdf-pages"></div>';
+      var cont=document.getElementById('app-pdf-pages');
+      var pdf=await pdfjs.getDocument({ data:new Uint8Array(buf) }).promise;
+      var maxW=(body.clientWidth||600)-4;
+      var dpr=window.devicePixelRatio||1;
+      var nPag=Math.min(pdf.numPages, 40);
+      for(var p=1;p<=nPag;p++){
+        var page=await pdf.getPage(p);
+        var vp1=page.getViewport({ scale:1 });
+        var scale=(maxW>0?maxW:600)/vp1.width;
+        var vp=page.getViewport({ scale:scale*dpr });
+        var canvas=document.createElement('canvas');
+        canvas.width=Math.floor(vp.width); canvas.height=Math.floor(vp.height);
+        canvas.style.width='100%'; canvas.style.height='auto'; canvas.style.display='block';
+        canvas.style.marginBottom='8px'; canvas.style.background='#fff'; canvas.style.borderRadius='6px';
+        cont.appendChild(canvas);
+        await page.render({ canvasContext:canvas.getContext('2d'), viewport:vp }).promise;
+      }
+      if(pdf.numPages>nPag){
+        var more=document.createElement('div');
+        more.style.cssText='color:#8b949e;text-align:center;padding:10px;font-size:.72rem;';
+        more.textContent='(Mostrando '+nPag+' de '+pdf.numPages+' páginas)';
+        cont.appendChild(more);
+      }
+    }catch(e){ body.innerHTML='<div style="color:#f87171;padding:16px;">No se pudo mostrar el plano: '+_esc(e.message)+'</div>'+_volverBtn; }
   };
 })();
 </script>

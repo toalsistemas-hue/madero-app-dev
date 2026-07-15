@@ -4464,8 +4464,10 @@ function ftAdmArtRender(){
   arts.forEach(function(a){
     h+='<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05);border-radius:7px;">';
     h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.78rem;color:var(--accent-l);font-weight:700;">'+esc(a[0])+'</span>';
-    h+='<span style="font-size:.76rem;color:var(--dim);margin-left:10px;">'+esc(a[1])+'</span></div>';
+    h+='<span style="font-size:.76rem;color:var(--dim);margin-left:10px;">'+esc(a[1])+'</span>';
+    h+='<span class="planos-ind" data-art="'+esc(a[0])+'" style="font-size:.64rem;margin-left:10px;color:var(--dim);">…</span></div>';
     h+='<div style="display:flex;gap:6px;">';
+    h+='<button class="planos-btn" data-art="'+esc(a[0])+'" onclick="abrirPlanosModal(this.dataset.art)" title="Administrar planos" style="background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.25);border-radius:5px;padding:3px 10px;font-size:.7rem;cursor:pointer;color:var(--accent-l);">📐 Planos</button>';
     h+='<button onclick="ftAdmArtOpenEdit(\''+esc(a[0])+'\',\''+esc(a[1])+'\')" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 10px;font-size:.7rem;cursor:pointer;">✏️ Editar</button>';
     h+='<button onclick="ftAdmArtDelete(\''+esc(a[0])+'\')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:3px 10px;font-size:.7rem;cursor:pointer;color:var(--red);">🗑️</button>';
     h+='</div></div>';
@@ -4473,10 +4475,11 @@ function ftAdmArtRender(){
   if(!h) h='<div style="text-align:center;padding:20px;color:var(--dim);font-size:.8rem);">'+(q?'Sin resultados':'Sin artículos registrados')+'</div>';
   document.getElementById('ft-art-list').innerHTML=h;
   document.getElementById('ft-art-count').textContent=arts.length+' artículo(s)';
-  // Bloquear ✏️ y 🗑️ en acceso lectura
+  // Bloquear ✏️ y 🗑️ en acceso lectura — pero NO el botón de Planos (lo gestiona AsistenteProduccion)
   if (_fabNivel()==='lectura') {
-    document.querySelectorAll('#ft-art-list button').forEach(function(b){ b.disabled=true; b.style.opacity='0.35'; b.style.cursor='not-allowed'; b.style.pointerEvents='none'; });
+    document.querySelectorAll('#ft-art-list button:not(.planos-btn)').forEach(function(b){ b.disabled=true; b.style.opacity='0.35'; b.style.cursor='not-allowed'; b.style.pointerEvents='none'; });
   }
+  if(typeof refrescarIndicadoresPlanos==='function') refrescarIndicadoresPlanos();
 }
 function ftAdmArtOpenNew(){
   document.getElementById('art-edit-title').textContent='📦 Nuevo Artículo';

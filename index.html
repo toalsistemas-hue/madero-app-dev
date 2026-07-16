@@ -12673,13 +12673,14 @@ function renderSeg(){
       // -- 8: Ops con comentarios --
       h+='<div style="display:flex;flex-direction:column;gap:3px;">';
       aof.ops.forEach(function(op){
-        var sCol={done:'var(--green)',running:'var(--accent-l)',paused:'var(--yellow)',validating:'var(--purple)',pending:'var(--muted)',retrabajo:'var(--red)',chatarra:'var(--red)',op_concluded:'#f59e0b'}[op.status]||'var(--muted)';
-        var sIco={done:'✓',running:'▶',paused:'⏸',validating:'🔍',pending:'○',retrabajo:'🔄',chatarra:'🗑',op_concluded:'⏳'}[op.status]||'○';
-        h+='<div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:4px;padding:5px 9px;">';
+        var sCol={done:'var(--green)',running:'var(--accent-l)',paused:'var(--yellow)',validating:'var(--purple)',pending:'var(--muted)',retrabajo:'var(--red)',chatarra:'var(--red)',op_concluded:'#f59e0b',omitida:'#6e7681'}[op.status]||'var(--muted)';
+        var sIco={done:'✓',running:'▶',paused:'⏸',validating:'🔍',pending:'○',retrabajo:'🔄',chatarra:'🗑',op_concluded:'⏳',omitida:'🏁'}[op.status]||'○';
+        var _esOmit = op.status==='omitida';
+        h+='<div style="background:'+(_esOmit?'rgba(110,118,129,.08)':'rgba(255,255,255,.03)')+';border:1px solid '+(_esOmit?'rgba(110,118,129,.55)':'var(--border)')+';border-radius:4px;padding:5px 9px;">';
         h+='<div style="display:flex;align-items:flex-start;gap:6px;">';
         h+='<span style="color:'+sCol+';font-size:.7rem;margin-top:2px;flex-shrink:0;">'+sIco+'</span>';
         h+='<div style="flex:1;min-width:0;">';
-        h+='<div style="font-size:.76rem;font-weight:500;line-height:1.3;">'+esc(op.nombre)+'</div>';
+        h+='<div style="font-size:.76rem;font-weight:500;line-height:1.3;'+(_esOmit?'color:#8b949e;':'')+'">'+esc(op.nombre)+(_esOmit?' <span style="color:#6e7681;font-weight:700;font-size:.7rem;">— Omitida</span>':'')+'</div>';
         if(op.estacion) h+='<div style="font-size:.66rem;color:var(--accent-l);margin-top:1px;">📍 '+esc(op.estacion)+(op.qty_total?' · 📦 '+op.qty_total+' pzas':'')+'</div>';
         if(op.status==='op_concluded') h+='<div style="font-size:.64rem;color:#f59e0b;margin-top:2px;">⏳ Aguarda confirmación Supervisor</div>';
         h+='</div>';

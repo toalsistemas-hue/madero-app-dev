@@ -7622,7 +7622,7 @@ function renderCoordFlujos() {
     html += '</div>';
 
     // Flow nodes
-    html += '<div style="display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding-bottom:4px;">';
+    html += '<div data-flujoscroll="'+esc(aof.of_sap)+'" style="display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding-bottom:4px;">';
 
     // Group ops like renderAppFlujo
     var grps = []; var i = 0;
@@ -7698,12 +7698,17 @@ function renderCoordFlujos() {
     html += '<span style="color:var(--yellow);">⏸ Pausa</span>';
     html += '<span style="color:#a78bfa;">🔍 Cal</span>';
     html += '<span style="color:var(--green);">✓ OK</span>';
+    html += '<span style="color:#8b949e;">🏁 Omitida</span>';
     html += '</div>';
 
     html += '</div>'; // card
   });
 
+  // Preservar la posición de scroll horizontal de cada diagrama entre refrescos
+  var _scPrev = {};
+  try { body.querySelectorAll('[data-flujoscroll]').forEach(function(el){ _scPrev[el.getAttribute('data-flujoscroll')] = el.scrollLeft; }); } catch(_){}
   body.innerHTML = html;
+  try { body.querySelectorAll('[data-flujoscroll]').forEach(function(el){ var k=el.getAttribute('data-flujoscroll'); if(_scPrev[k]) el.scrollLeft = _scPrev[k]; }); } catch(_){}
 }
 
 // Auto-refresh flujos page when there are running ops
@@ -12668,7 +12673,7 @@ function renderSeg(){
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">';
       h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' · '+esc(of.articulo):'')+'</span>';
       h+=' <span style="font-size:.78rem;font-weight:500;">'+esc(of.descripcion||'')+'</span></div>';
-      h+='<span style="font-size:.72rem;color:var(--dim);font-family:\'DM Mono\',monospace;">'+done+'/'+aof.ops.length+' · '+pct+'%</span></div>';
+      h+='<span style="font-size:.72rem;color:var(--dim);font-family:\'DM Mono\',monospace;">'+done+'/'+_nOm+' · '+pct+'%</span></div>';
       h+='<div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:6px;"><div style="height:100%;width:'+pct+'%;background:var(--green);border-radius:2px;"></div></div>';
       // -- 8: Ops con comentarios --
       h+='<div style="display:flex;flex-direction:column;gap:3px;">';

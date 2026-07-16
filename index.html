@@ -7533,7 +7533,7 @@ function pedidoIsComplete(pedido){
   return ofs.every(function(of){
     var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
     if(!aof||!aof.ops.length)return false;
-    return aof.ops.every(function(op){return op.status==="done";});
+    return aof.ops.every(function(op){return op.status==="done"||op.status==="omitida";});
   });
 }
 
@@ -7591,7 +7591,8 @@ function renderCoordFlujos() {
     paused:      'rgba(245,158,11,.18)',
     validating:  'rgba(139,92,246,.18)',
     done:        'rgba(34,197,94,.18)',
-    op_concluded:'rgba(34,197,94,.12)'
+    op_concluded:'rgba(34,197,94,.12)',
+    omitida:     'rgba(110,118,129,.15)'
   };
   var statusBorder = {
     pending:     'rgba(255,255,255,.1)',
@@ -7599,9 +7600,10 @@ function renderCoordFlujos() {
     paused:      'var(--yellow)',
     validating:  '#a78bfa',
     done:        'var(--green)',
-    op_concluded:'var(--green)'
+    op_concluded:'var(--green)',
+    omitida:     'rgba(110,118,129,.6)'
   };
-  var statusIcon = { pending:'', running:'▶', paused:'⏸', validating:'🔍', done:'✓', op_concluded:'✓' };
+  var statusIcon = { pending:'', running:'▶', paused:'⏸', validating:'🔍', done:'✓', op_concluded:'✓', omitida:'🏁' };
 
   var html = '';
   DB.activeOFs.forEach(function(aof) {
@@ -7787,7 +7789,7 @@ function renderProg(){
       var tpl = DB.templates[of.articulo];
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       var done = aof?aof.ops.filter(function(o){return o.status==="done";}).length:0;
-      var total = aof?aof.ops.length:0;
+      var total = aof?aof.ops.filter(function(o){return o.status!=='omitida';}).length:0;
       var pct = total>0?Math.round(done/total*100):0;
       var ofCancelada = of.status==='Pedido Cancelado'||of.status==='Cancelada';
       h+="<div class='prog-of-row' style='"+(ofCancelada?"opacity:.55;":"")+"'>";
@@ -10254,7 +10256,7 @@ function renderProg(){
       var tpl = DB.templates[of.articulo];
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       var done = aof?aof.ops.filter(function(o){return o.status==="done";}).length:0;
-      var total = aof?aof.ops.length:0;
+      var total = aof?aof.ops.filter(function(o){return o.status!=='omitida';}).length:0;
       var pct = total>0?Math.round(done/total*100):0;
       var ofCancelada = of.status==='Pedido Cancelado'||of.status==='Cancelada';
       var ofEnCierre = of.pedidoCierre===true||of.status==='En proceso de cierre';
@@ -12083,7 +12085,7 @@ appConfirmValCal = function(){
     return ofs.every(function(of){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       if(!aof||!aof.ops.length)return false;
-      return aof.ops.every(function(op){return op.status==="done";});
+      return aof.ops.every(function(op){return op.status==="done"||op.status==="omitida";});
     });
   }
   
@@ -12610,7 +12612,7 @@ function renderSeg(){
     var grpDone=0, grpTotal=0;
     g.ofs.forEach(function(of){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      if(aof){grpDone+=aof.ops.filter(function(o){return o.status==='done';}).length;grpTotal+=aof.ops.length;}
+      if(aof){grpDone+=aof.ops.filter(function(o){return o.status==='done';}).length;grpTotal+=aof.ops.filter(function(o){return o.status!=='omitida';}).length;}
     });
     var grpPct = grpTotal>0?Math.round(grpDone/grpTotal*100):0;
     var allDone = grpTotal>0 && grpDone===grpTotal;
@@ -13369,7 +13371,7 @@ function renderHist(){
   var pedidoMap={};
   DB.activeOFs.forEach(function(aof){
     var ofRec=DB.ofs.find(function(o){return o.of_sap===aof.of_sap;})||{};
-    var allDone=aof.ops.length>0&&aof.ops.every(function(o){return o.status==='done';});
+    var allDone=aof.ops.length>0&&aof.ops.every(function(o){return o.status==='done'||o.status==='omitida';});
     if(!allDone) return;
     var ped=ofRec.pedido||'—';
     if(!pedidoMap[ped]) pedidoMap[ped]={pedido:ped,cliente:ofRec.cliente||'—',ofs:0,ok:0,mins:0,fecha:''};
@@ -13390,7 +13392,7 @@ function renderHist(){
   var ofsCompletadasMes = 0;
   var totalMins = 0, totalOps = 0, totalOk = 0, totalDef = 0;
   DB.activeOFs.forEach(function(aof){
-    var allDone = aof.ops.length>0 && aof.ops.every(function(o){return o.status==='done';});
+    var allDone = aof.ops.length>0 && aof.ops.every(function(o){return o.status==='done'||o.status==='omitida';});
     if(!allDone) return;
     // Verificar si alguna op termina en el mes actual
     var enMes = aof.ops.some(function(op){
@@ -13407,7 +13409,7 @@ function renderHist(){
   DB.activeOFs.forEach(function(aof){
     var ofRec=DB.ofs.find(function(o){return o.of_sap===aof.of_sap;})||{};
     if(ofRec.pedidoCerrado||ofRec.status==='Cerrado') return;
-    var allDone=aof.ops.length>0&&aof.ops.every(function(o){return o.status==='done';});
+    var allDone=aof.ops.length>0&&aof.ops.every(function(o){return o.status==='done'||o.status==='omitida';});
     if(!allDone) return;
     totalMins += aof.ops.reduce(function(s,o){return s+(o.mins||0);},0);
     totalOfsCompletas++;

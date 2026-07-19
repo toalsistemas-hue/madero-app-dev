@@ -9770,6 +9770,7 @@ function updatePedidoPrio(pedido, val) {
 // -- 1 & 2: confirmProgMain aplica PENDING a DB ------------
 function confirmProgMain() {
   window.confirmProgMain = confirmProgMain;
+  if (window._confirmProgRunning) { alert('Hay un registro en curso. Espera a que termine antes de programar otra orden.'); return; }
   // Capturar Fecha_Entrega y Cantidad de los inputs del DOM antes de salir del modo edición
   // Validar que OFs programadas tengan los campos obligatorios
   var errores = [];
@@ -10018,7 +10019,14 @@ function confirmProgMain() {
               if (_existingOpsMap[_opKey] && !op._spId) op._spId=_existingOpsMap[_opKey].id;
               var _saved=false;
               for (var _r=0; _r<3 && !_saved; _r++) {
-                if(_r>0) await new Promise(function(r){setTimeout(r,2000*_r);}); // exponential backoff
+                if(_r>0){
+                  await new Promise(function(r){setTimeout(r,2000*_r);}); // exponential backoff
+                  // Idempotencia: si el intento previo alcanzó a crear la op pero se perdió la respuesta,
+                  // re-leer y adoptar su _spId para ACTUALIZAR en vez de crear un duplicado.
+                  if(!op._spId){
+                    try{ var _rk=await flowGet('FT_Operaciones','',5000); var _rh=(_rk.value||[]).find(function(it){var f=it.fields||{}; return String(f.OF_SAP||'')===String(sap) && String(f.Op_ID||'')===String(op.id);}); if(_rh) op._spId=_rh.id; }catch(_e){}
+                  }
+                }
                 try { await ftSaveOpToSP(sap,op.id); _saved=true; }
                 catch(e){ console.warn('  Op error ('+(_r+1)+'):',op.id,e.message); }
               }
@@ -10107,7 +10115,14 @@ function confirmProgMain() {
           var w=_colaWrites[ci];
           var _saved=false;
           for(var _cr=0;_cr<3&&!_saved;_cr++){
-            if(_cr>0) await new Promise(function(r){setTimeout(r,1500*_cr);});
+            if(_cr>0){
+              await new Promise(function(r){setTimeout(r,1500*_cr);});
+              // Idempotencia: si el intento previo creó el registro de cola pero se perdió la respuesta,
+              // re-leer y adoptar su spId para ACTUALIZAR en vez de duplicar.
+              if(!(w.existing&&w.existing.spId)){
+                try{ var _cc=await flowGet('FT_Cola_Estacion','',2000); var _ch=(_cc.value||[]).find(function(it){var f=it.fields||{}; return String(f.Op_ID||'')===String(w.op.id);}); if(_ch) w.existing={spId:String(_ch.id),pos:w.op._colaPos}; }catch(_e){}
+              }
+            }
             try{
               if(w.existing&&w.existing.spId){
                 await spEscribir('FT_Cola_Estacion',{Posicion:w.op._colaPos,Activo:false},parseInt(w.existing.spId));
@@ -10166,6 +10181,30 @@ function confirmProgMain() {
           }
           console.log('✅ Programación guardada en SharePoint');
         } catch(e){ console.warn('Error Step 3:',e.message); }
+
+        // ── Verificación post-registro (Fase B): detectar ops faltantes o duplicadas ──
+        try{
+          var _verRes = await flowGet('FT_Operaciones','',5000).catch(function(){return {value:[]};});
+          var _problemas = [];
+          _newSapsSorted.forEach(function(sap){
+            var _esperado = (_opsSnapshot[sap]||[]).length;
+            if(!_esperado) return;
+            var _porOp = {}, _dups = 0;
+            (_verRes.value||[]).forEach(function(it){
+              var f = it.fields||{};
+              if(String(f.OF_SAP||'') !== String(sap)) return;
+              var oid = f.Op_ID||''; if(!oid) return;
+              _porOp[oid] = (_porOp[oid]||0)+1;
+              if(_porOp[oid]===2) _dups++;
+            });
+            var _unicos = Object.keys(_porOp).length;
+            if(_unicos < _esperado) _problemas.push('OF '+sap+': faltan operaciones ('+_unicos+'/'+_esperado+')');
+            if(_dups > 0) _problemas.push('OF '+sap+': '+_dups+' operación(es) duplicada(s)');
+          });
+          if(_problemas.length){
+            alert('⚠ La verificación posterior al registro detectó:\n\n'+_problemas.join('\n')+'\n\nVuelve a registrar la OF (el sistema reutiliza las operaciones existentes, no las duplica) o revisa la programación.');
+          }
+        }catch(_ev){ console.warn('Verificación post-registro:', _ev && _ev.message); }
 
         // ── Finalize ────────────────────────────────────────────────────────
         Object.keys(window.DB_STATION_QUEUE||{}).forEach(function(st){
@@ -15485,6 +15524,7 @@ function ftRptExportExcel(){
   window.cerrarRevisionProgramacion=function(){ var m=document.getElementById('rev-prog-modal'); if(m) m.style.display='none'; };
 
   window.abrirRevisionProgramacion=async function(){
+    if (window._confirmProgRunning) { alert('Hay un registro en curso. Espera a que termine.'); return; }
     // OFs NUEVAS marcadas (que aún no estaban programadas)
     var nuevas=Object.keys(PENDING_PROG).filter(function(sap){
       if(!PENDING_PROG[sap] || !PENDING_PROG[sap].programadoHoy) return false;
@@ -15528,6 +15568,7 @@ function ftRptExportExcel(){
 
   window.confirmarRevisionProgramacion=function(){
     var m=document.getElementById('rev-prog-modal'); if(!m) return;
+    var _b=document.getElementById('rev-prog-confirmar'); if(_b){ if(_b.disabled) return; _b.disabled=true; _b.textContent='Registrando…'; }
     window._progOpsEditadas = window._progOpsEditadas || {};
     m.querySelectorAll('[data-revof]').forEach(function(sec){
       var sap=sec.getAttribute('data-revof');

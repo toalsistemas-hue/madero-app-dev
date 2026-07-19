@@ -1077,7 +1077,7 @@ tr:last-child td{border-bottom:none;}
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm" onclick="openPrioModal()" id="btn-prio">⚡ Prioridades</button>
           <button class="btn btn-primary btn-sm fab-read-only-hide" onclick="startEditMode()" id="btn-prog">✏ Editar Programación</button>
-          <button class="btn btn-success btn-sm" onclick="confirmProgMain()" id="btn-confirm-prog" style="display:none;">✓ Confirmar</button>
+          <button class="btn btn-success btn-sm" onclick="abrirRevisionProgramacion()" id="btn-confirm-prog" style="display:none;">✓ Confirmar</button>
           <button class="btn btn-ghost btn-sm" onclick="cancelEditMode()" id="btn-cancel-prog" style="display:none;">✕ Cancelar</button>
         </div>
       </div>
@@ -9851,14 +9851,17 @@ function confirmProgMain() {
       if (!_existingAof) {
         var tpl = DB.templates[of.articulo];
         var padre = tpl&&tpl.padre ? {articulo:tpl.padre,nombre:DB.articles[tpl.padre]||''} : null;
-        var ops = tpl ? tpl.ops.map(function(op,i){
+        // Fase A: si hubo revisión/edición previa, usar esas ops; si no, la plantilla
+        var _fuenteOps = (window._progOpsEditadas && window._progOpsEditadas[sap]) ? window._progOpsEditadas[sap] : (tpl ? tpl.ops : []);
+        if (window._progOpsEditadas) delete window._progOpsEditadas[sap];
+        var ops = (_fuenteOps||[]).map(function(op,i){
           return {id:'op_'+sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
             tipo:op.tipo||'Secuencial', tecnico:op.tecnico||'', ayudantes:op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[],
             qty_total:op.cantidad?parseInt(op.cantidad):10, qty_ok:0, qty_def:0, qty_rej:0,
             status:'pending', inicio:null, fin:null, mins:0,
             isTemplate:true, pauseReason:null, valcalNote:null,
             needsCal:false, calResult:null, calComment:null};
-        }) : [];
+        });
         DB.activeOFs.push({of_sap:sap, pedido:of.pedido, cliente:of.cliente,
           ofv:of.ofv||'', articulo:of.articulo, descripcion:of.descripcion,
           prioridad:of.prioridad, padre:padre, subarts:tpl&&tpl.subarts?tpl.subarts.slice():[],
@@ -10271,7 +10274,7 @@ function renderProg(){
         var _esPendienteNueva2 = !of.programadoHoy && PENDING_PROG[of.of_sap] && PENDING_PROG[of.of_sap].programadoHoy;
         var _ordenActual2 = _esPendienteNueva2 ? (PENDING_COLA_ORDER[of.of_sap] || '') : '';
         h+="<div style='display:flex;flex-direction:column;align-items:center;gap:2px;'>"
-         +"<input type='checkbox' class='prog-chk' "+(_pendingChecked2?"checked":"")+" onchange=\"toggleProg('"+esc(of.of_sap)+"',this.checked)\">"
+         +"<input type='checkbox' class='prog-chk' data-sap='"+esc(of.of_sap)+"' "+(_pendingChecked2?"checked":"")+" onchange=\"toggleProg('"+esc(of.of_sap)+"',this.checked)\">"
          +"<div id='cola-wrap-"+esc(of.of_sap)+"' style='display:"+(_esPendienteNueva2?"flex":"none")+";flex-direction:column;align-items:center;gap:1px;' title='Orden de cola'>"
          +"<span style='font-size:.52rem;color:var(--dim);'>Cola</span>"
          +"<input type='number' min='1' max='99' id='cola-ord-"+esc(of.of_sap)+"' value='"+(_ordenActual2||'')+"'"
@@ -12173,6 +12176,22 @@ appConfirmValCal = function(){
       PENDING_PROG[sap] = {programadoHoy: of0 ? of0.programadoHoy : false, prioridad: of0 ? of0.prioridad : 'normal'};
     }
     PENDING_PROG[sap].programadoHoy = val;
+    // Selección ÚNICA: al marcar una OF NUEVA, desmarcar cualquier otra OF nueva ya marcada
+    if (val) {
+      var _selOf = DB.ofs.find(function(o){return o.of_sap===sap;});
+      if (_selOf && !_selOf.programadoHoy) {
+        Object.keys(PENDING_PROG).forEach(function(_o){
+          if (_o===sap) return;
+          var _od = DB.ofs.find(function(o){return o.of_sap===_o;});
+          if (_od && !_od.programadoHoy && PENDING_PROG[_o].programadoHoy) {
+            PENDING_PROG[_o].programadoHoy = false;
+            delete PENDING_COLA_ORDER[_o];
+            var _c = document.querySelector('.prog-chk[data-sap="'+_o+'"]'); if(_c) _c.checked=false;
+            var _w = document.getElementById('cola-wrap-'+_o); if(_w) _w.style.display='none';
+          }
+        });
+      }
+    }
     var ofDb = DB.ofs.find(function(o){return o.of_sap===sap;});
     var isNueva = ofDb && !ofDb.programadoHoy;
     if (isNueva) {
@@ -15420,6 +15439,109 @@ function ftRptExportExcel(){
       await renderPlanosModal(art);
       refrescarIndicadoresPlanos();
     }catch(e){ alert('No se pudo eliminar: '+e.message); }
+  };
+})();
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   FASE A — Revisión y confirmación de programación (una OF a la vez)
+   El botón "Confirmar" abre este modal con las operaciones a registrar
+   (secuencia, estación, técnico, ayudantes, cantidad) editables. Al
+   confirmar, se guardan las correcciones y se ejecuta confirmProgMain().
+   Aditivo: no cambia el proceso de registro existente.
+   ═══════════════════════════════════════════════════════════════════ */
+(function(){
+  function _esc(s){ return (typeof esc==='function')?esc(s):String(s==null?'':s); }
+  function _stationsOpts(sel){
+    var st=(window.STATIONS&&window.STATIONS.length)?window.STATIONS:[];
+    return '<option value="">—</option>'+st.map(function(s){return '<option value="'+_esc(s)+'"'+(s===sel?' selected':'')+'>'+_esc(s)+'</option>';}).join('');
+  }
+  function _tecOpts(sel){
+    var t=(window._ftTecnicosCache||[]).filter(function(x){return x && x.Activo!==false;});
+    return '<option value="">— Sin técnico —</option>'+t.map(function(x){var n=x.Nombre||x.Title||'';return '<option value="'+_esc(n)+'"'+(n===sel?' selected':'')+'>'+_esc(n)+'</option>';}).join('');
+  }
+  function ensureModal(){
+    if(document.getElementById('rev-prog-modal')) return;
+    var d=document.createElement('div');
+    d.id='rev-prog-modal';
+    d.style.cssText='display:none;position:fixed;inset:0;z-index:100050;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:20px;';
+    d.innerHTML='<div style="background:var(--card,#161b22);border:1px solid var(--border,#30363d);border-radius:12px;max-width:920px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">'
+      +'<div style="padding:14px 18px;border-bottom:1px solid var(--border,#30363d);display:flex;align-items:center;justify-content:space-between;">'
+      +'<div><div style="font-weight:700;font-size:.95rem;color:var(--text,#e6edf3);">🧾 Revisar programación</div><div id="rev-prog-sub" style="font-size:.75rem;color:var(--dim,#8b949e);"></div></div>'
+      +'<button onclick="cerrarRevisionProgramacion()" style="background:none;border:none;color:var(--dim,#8b949e);font-size:1.3rem;cursor:pointer;line-height:1;">&times;</button>'
+      +'</div>'
+      +'<div id="rev-prog-body" style="padding:14px 18px;overflow-y:auto;"></div>'
+      +'<div style="padding:12px 18px;border-top:1px solid var(--border,#30363d);display:flex;justify-content:flex-end;gap:10px;">'
+      +'<button onclick="cerrarRevisionProgramacion()" style="background:none;border:1px solid var(--border,#30363d);border-radius:8px;padding:8px 16px;font-size:.8rem;color:var(--text,#e6edf3);cursor:pointer;">Cancelar</button>'
+      +'<button id="rev-prog-confirmar" onclick="confirmarRevisionProgramacion()" style="background:var(--green,#2ea043);border:none;border-radius:8px;padding:8px 18px;font-size:.8rem;color:#fff;cursor:pointer;font-weight:600;">✓ Confirmar y registrar</button>'
+      +'</div></div>';
+    document.body.appendChild(d);
+    d.addEventListener('click', function(e){ if(e.target===d) cerrarRevisionProgramacion(); });
+  }
+  window.cerrarRevisionProgramacion=function(){ var m=document.getElementById('rev-prog-modal'); if(m) m.style.display='none'; };
+
+  window.abrirRevisionProgramacion=function(){
+    // OFs NUEVAS marcadas (que aún no estaban programadas)
+    var nuevas=Object.keys(PENDING_PROG).filter(function(sap){
+      if(!PENDING_PROG[sap] || !PENDING_PROG[sap].programadoHoy) return false;
+      var of=DB.ofs.find(function(o){return o.of_sap===sap;});
+      return of && !of.programadoHoy;
+    });
+    // Sin altas nuevas (solo bajas o prioridad) → registrar directo, sin modal
+    if(!nuevas.length){ confirmProgMain(); return; }
+    ensureModal();
+    var m=document.getElementById('rev-prog-modal');
+    var h='';
+    nuevas.forEach(function(sap){
+      var of=DB.ofs.find(function(o){return o.of_sap===sap;})||{};
+      var tpl=DB.templates[of.articulo];
+      var ops=(tpl&&tpl.ops)?tpl.ops:[];
+      h+='<div data-revof="'+_esc(sap)+'" style="margin-bottom:16px;">';
+      h+='<div style="font-size:.8rem;font-weight:700;color:var(--accent-l,#58a6ff);margin-bottom:6px;">OF '+_esc(sap)+(of.articulo?' · '+_esc(of.articulo):'')+' <span style="color:var(--dim,#8b949e);font-weight:400;">'+_esc((of.descripcion||'').substring(0,55))+'</span></div>';
+      if(!ops.length){ h+='<div style="color:#f87171;font-size:.78rem;">⚠ El artículo no tiene plantilla de operaciones; no hay nada que registrar.</div></div>'; return; }
+      h+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:.74rem;">';
+      h+='<thead><tr style="color:var(--dim,#8b949e);text-align:left;"><th style="padding:4px 6px;width:46px;">Sec</th><th style="padding:4px 6px;">Operación</th><th style="padding:4px 6px;">Estación</th><th style="padding:4px 6px;">Técnico</th><th style="padding:4px 6px;">Ayudantes</th><th style="padding:4px 6px;width:66px;">Cant</th></tr></thead><tbody>';
+      ops.forEach(function(op,i){
+        var ayu=op.ayudantes?String(op.ayudantes):'';
+        var _inp='background:var(--bg,#0d1117);border:1px solid var(--border,#30363d);border-radius:5px;color:var(--text,#e6edf3);padding:3px 4px;font-size:.72rem;';
+        h+='<tr data-revop="1" style="border-top:1px solid var(--border,#30363d);">';
+        h+='<td style="padding:4px 6px;"><input type="number" min="1" class="rev-sec" value="'+(i+1)+'" style="width:42px;text-align:center;'+_inp+'"></td>';
+        h+='<td style="padding:4px 6px;"><span style="color:var(--text,#e6edf3);">'+_esc(op.nombre)+'</span><input type="hidden" class="rev-nom-v" value="'+_esc(op.nombre)+'"><input type="hidden" class="rev-tipo-v" value="'+_esc(op.tipo||'secuencial')+'"></td>';
+        h+='<td style="padding:4px 6px;"><select class="rev-est" style="'+_inp+'">'+_stationsOpts(op.estacion||'')+'</select></td>';
+        h+='<td style="padding:4px 6px;"><select class="rev-tec" style="'+_inp+'">'+_tecOpts(op.tecnico||'')+'</select></td>';
+        h+='<td style="padding:4px 6px;"><input type="text" class="rev-ayu" value="'+_esc(ayu)+'" placeholder="coma-separado" style="width:130px;'+_inp+'"></td>';
+        h+='<td style="padding:4px 6px;"><input type="number" min="1" class="rev-cant" value="'+(op.cantidad?parseInt(op.cantidad):10)+'" style="width:58px;'+_inp+'"></td>';
+        h+='</tr>';
+      });
+      h+='</tbody></table></div></div>';
+    });
+    m.querySelector('#rev-prog-sub').textContent = (nuevas.length===1) ? ('OF '+nuevas[0]+' — revisa y corrige antes de registrar') : (nuevas.length+' OFs a registrar');
+    m.querySelector('#rev-prog-body').innerHTML=h;
+    m.style.display='flex';
+  };
+
+  window.confirmarRevisionProgramacion=function(){
+    var m=document.getElementById('rev-prog-modal'); if(!m) return;
+    window._progOpsEditadas = window._progOpsEditadas || {};
+    m.querySelectorAll('[data-revof]').forEach(function(sec){
+      var sap=sec.getAttribute('data-revof');
+      var arr=[];
+      sec.querySelectorAll('tr[data-revop]').forEach(function(r){
+        arr.push({
+          _sec: parseInt(r.querySelector('.rev-sec').value)||9999,
+          nombre: r.querySelector('.rev-nom-v').value,
+          tipo: r.querySelector('.rev-tipo-v').value,
+          estacion: r.querySelector('.rev-est').value,
+          tecnico: r.querySelector('.rev-tec').value,
+          ayudantes: r.querySelector('.rev-ayu').value,
+          cantidad: parseInt(r.querySelector('.rev-cant').value)||10
+        });
+      });
+      arr.sort(function(a,b){return a._sec-b._sec;});
+      if(arr.length) window._progOpsEditadas[sap]=arr;
+    });
+    cerrarRevisionProgramacion();
+    confirmProgMain();
   };
 })();
 </script>

@@ -15458,7 +15458,11 @@ function ftRptExportExcel(){
   }
   function _tecOpts(sel){
     var t=(window._ftTecnicosCache||[]).filter(function(x){return x && x.Activo!==false;});
-    return '<option value="">— Sin técnico —</option>'+t.map(function(x){var n=x.Nombre||x.Title||'';return '<option value="'+_esc(n)+'"'+(n===sel?' selected':'')+'>'+_esc(n)+'</option>';}).join('');
+    var nombres=t.map(function(x){return x.Nombre||x.Title||'';}).filter(Boolean);
+    if(sel && nombres.indexOf(sel)===-1) nombres.unshift(sel); // asegurar que el técnico ya asignado aparezca
+    var opts='<option value="">— Sin técnico —</option>';
+    nombres.forEach(function(n){ opts+='<option value="'+_esc(n)+'"'+(n===sel?' selected':'')+'>'+_esc(n)+'</option>'; });
+    return opts;
   }
   function ensureModal(){
     if(document.getElementById('rev-prog-modal')) return;
@@ -15480,7 +15484,7 @@ function ftRptExportExcel(){
   }
   window.cerrarRevisionProgramacion=function(){ var m=document.getElementById('rev-prog-modal'); if(m) m.style.display='none'; };
 
-  window.abrirRevisionProgramacion=function(){
+  window.abrirRevisionProgramacion=async function(){
     // OFs NUEVAS marcadas (que aún no estaban programadas)
     var nuevas=Object.keys(PENDING_PROG).filter(function(sap){
       if(!PENDING_PROG[sap] || !PENDING_PROG[sap].programadoHoy) return false;
@@ -15489,6 +15493,8 @@ function ftRptExportExcel(){
     });
     // Sin altas nuevas (solo bajas o prioridad) → registrar directo, sin modal
     if(!nuevas.length){ confirmProgMain(); return; }
+    // Asegurar la lista de técnicos para los desplegables del modal
+    if (typeof _tplEnsureTecnicos === 'function') { try { await _tplEnsureTecnicos(); } catch(e){} }
     ensureModal();
     var m=document.getElementById('rev-prog-modal');
     var h='';

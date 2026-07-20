@@ -5389,7 +5389,10 @@ async function registerNewOpsInCatalog(art, ops, artDesc){
       var fields = { Title: opName };
       if (art)  fields.Articulo_Key = art;
       if (desc) fields.Descripcion  = desc;
-      var res = await spEscribir('FT_Catalogo_Operaciones', fields, null);
+      // Inserción PURA vía Graph (no por flujo): el flujo hace upsert por Título y
+      // sobrescribiría la operación del artículo original. Con graphPost se crea una
+      // fila nueva, permitiendo la misma operación para dos artículos distintos.
+      var res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Catalogo_Operaciones/items', { fields: fields });
       // Actualizar catálogo en memoria (por artículo + nombre global)
       if (!DB.opCatalogFull) DB.opCatalogFull = [];
       DB.opCatalogFull.push({ nombre: opName, articulo: art||'', desc: desc, spId: (res&&res.id)?String(res.id):'' });
@@ -15627,6 +15630,17 @@ function ftRptExportExcel(){
   window._fabShowLoadOverlay=function(){ ensure(); var o=document.getElementById('fab-load-overlay'); if(o) o.style.display='flex'; };
   window._fabHideLoadOverlay=function(){ var o=document.getElementById('fab-load-overlay'); if(o) o.style.display='none'; };
 })();
+</script>
+<script>
+/* Advertencia al intentar cerrar/recargar/salir de la pestaña MIENTRAS un registro
+   de programación está en curso (evita abortar el proceso a la mitad). */
+window.addEventListener('beforeunload', function(e){
+  if (window._confirmProgRunning) {
+    e.preventDefault();
+    e.returnValue = 'Hay un registro de programación en curso. Si sales ahora, el proceso quedará incompleto.';
+    return e.returnValue;
+  }
+});
 </script>
 </body>
 </html>

@@ -3934,20 +3934,45 @@ function appMoveOp(sap,idx,dir){
   }
   fireSync("app","op_moved",{of_sap:sap, moved_by:'supervisor'});
 }
+function _appShowOmitOverlay(msg){
+  if(!document.getElementById('app-omit-spin-style')){
+    var s=document.createElement('style'); s.id='app-omit-spin-style';
+    s.textContent='@keyframes appomitspin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(s);
+  }
+  var o=document.getElementById('app-omit-overlay');
+  if(!o){
+    o=document.createElement('div'); o.id='app-omit-overlay';
+    o.style.cssText='position:fixed;inset:0;z-index:300000;background:rgba(0,0,0,.62);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;';
+    o.innerHTML='<div style="width:46px;height:46px;border:4px solid rgba(255,255,255,.2);border-top-color:#58a6ff;border-radius:50%;animation:appomitspin .8s linear infinite;"></div><div id="app-omit-msg" style="color:#e6edf3;font-size:.92rem;font-weight:600;text-align:center;padding:0 20px;"></div>';
+    document.body.appendChild(o);
+  }
+  var m=document.getElementById('app-omit-msg'); if(m) m.textContent=msg||'Procesando…';
+  o.style.display='flex';
+}
+function _appHideOmitOverlay(){ var o=document.getElementById('app-omit-overlay'); if(o) o.style.display='none'; }
+
+var _appOmitiendo = false;
 async function appOmitirOp(sap, opId) {
+  if (_appOmitiendo) return;  // ya hay una omisión en curso — evita el error por clics rápidos
   var of = DB.activeOFs.find(function(a){ return a.of_sap === sap; });
   var op = of ? of.ops.find(function(o){ return o.id === opId; }) : null;
   if (!op || op.status !== 'pending') return;
   if (!confirm('¿Omitir la operación "' + (op.nombre||opId) + '"?\n\nEsta operación quedará bloqueada y no se mostrará en el monitor.')) return;
+  _appOmitiendo = true;
+  _appShowOmitOverlay('Aplicando omisión…');
   op.status = 'omitida';
   op.fin    = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
   renderApp();
-  // Persist to SP
-  if (typeof appSaveOpToSP === 'function') {
-    appSaveOpToSP(sap, opId).catch(function(e){ console.warn('SP omitir error:', e.message); });
+  try {
+    // Esperar a que termine el guardado en SP antes de permitir otra omisión
+    if (typeof appSaveOpToSP === 'function') { await appSaveOpToSP(sap, opId); }
+    if (typeof fireSync === 'function') fireSync('app', 'op_omitida', {of_sap: sap, op_id: opId});
+  } catch(e){ console.warn('SP omitir error:', e.message); }
+  finally {
+    _appOmitiendo = false;
+    _appHideOmitOverlay();
   }
-  // Notify coordinator
-  if (typeof fireSync === 'function') fireSync('app', 'op_omitida', {of_sap: sap, op_id: opId});
 }
 
 function appStartOp(sap,opId){

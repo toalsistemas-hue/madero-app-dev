@@ -5970,6 +5970,8 @@ async function ftLoadDataFromSP() {
     return;
   }
   window._fabLoading = true;
+  // Overlay "Cargando…" solo en la PRIMERA carga y estando en la pantalla de Fabricaciones
+  if (!window._fabDatosCargados) { var _fpPg=document.getElementById('page-Fabricaciones'); if(_fpPg && _fpPg.classList.contains('active') && typeof _fabShowLoadOverlay==='function') _fabShowLoadOverlay(); }
   if (C && C.currentPage === 'programacion') { try { (window.renderProg||renderProg)(); } catch(_e){} }
   try {
     const siteId = await getSiteId();
@@ -6918,7 +6920,15 @@ async function ftLoadDataFromSP() {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);
   } finally {
     window._fabLoading = false;
+    window._fabDatosCargados = true;
+    if (typeof _fabHideLoadOverlay==='function') _fabHideLoadOverlay();
     if (C && C.currentPage === 'programacion') { try { (window.renderProg||renderProg)(); } catch(_e){} }
+    // Re-render de la pestaña coordinador activa tras la primera carga
+    try {
+      if (C && C.currentPage === 'seguimiento' && typeof renderSeg==='function') (window.renderSeg||renderSeg)();
+      else if (C && C.currentPage === 'flujos' && typeof renderCoordFlujos==='function') renderCoordFlujos();
+      else if (C && C.currentPage === 'historial' && typeof renderHist==='function') renderHist();
+    } catch(_e2){}
   }
 }
 
@@ -6967,7 +6977,7 @@ async function ftCreateOpInSP(of_sap, op, aof) {
     Ayudantes_JSON: (op.ayudantes || []).join(','),
     Status:         op.status || 'pending',
     Secuencia:      seqNum,
-    Qty_Total:      op.qty_total || 10,
+    Qty_Total:      op.qty_total || 1,
     Qty_OK:         op.qty_ok || 0,
     Qty_Def:        op.qty_def || 0,
     Qty_Rej:        op.qty_rej || 0,
@@ -7312,7 +7322,7 @@ function initActiveOFs() {
     var ops = tpl ? tpl.ops.map(function(op,i){
       var _tAyu2=op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[];
       return {id:"op_"+of.of_sap+"_"+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo,
-        tecnico:op.tecnico||"",ayudantes:_tAyu2,qty_total:op.cantidad?parseInt(op.cantidad):10,
+        tecnico:op.tecnico||"",ayudantes:_tAyu2,qty_total:op.cantidad?parseInt(op.cantidad):1,
         qty_ok:0,qty_def:0,qty_rej:0,
         status:"pending",inicio:null,fin:null,mins:0,
         isTemplate:true,pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
@@ -9867,7 +9877,7 @@ function confirmProgMain() {
         var ops = (_fuenteOps||[]).map(function(op,i){
           return {id:'op_'+sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
             tipo:op.tipo||'Secuencial', tecnico:op.tecnico||'', ayudantes:op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[],
-            qty_total:op.cantidad?parseInt(op.cantidad):10, qty_ok:0, qty_def:0, qty_rej:0,
+            qty_total:op.cantidad?parseInt(op.cantidad):1, qty_ok:0, qty_def:0, qty_rej:0,
             status:'pending', inicio:null, fin:null, mins:0,
             isTemplate:true, pauseReason:null, valcalNote:null,
             needsCal:false, calResult:null, calComment:null};
@@ -10449,7 +10459,7 @@ function openOFOpsModal(sap) {
         var ops = tpl.ops.map(function(op,i){
           var _tAyu45=op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[];
           return {id:'op_'+sap+'_'+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||'Secuencial',
-            tecnico:op.tecnico||'',ayudantes:_tAyu45,qty_total:op.cantidad?parseInt(op.cantidad):10,
+            tecnico:op.tecnico||'',ayudantes:_tAyu45,qty_total:op.cantidad?parseInt(op.cantidad):1,
             qty_ok:0,qty_def:0,qty_rej:0,
             status:'pending',inicio:null,fin:null,mins:0,isTemplate:true,
             pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
@@ -10465,7 +10475,7 @@ function openOFOpsModal(sap) {
         aof.ops = tpl.ops.map(function(op,i){
           var _tAyu45=op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[];
           return {id:'op_'+sap+'_'+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||'Secuencial',
-            tecnico:op.tecnico||'',ayudantes:_tAyu45,qty_total:op.cantidad?parseInt(op.cantidad):10,
+            tecnico:op.tecnico||'',ayudantes:_tAyu45,qty_total:op.cantidad?parseInt(op.cantidad):1,
             qty_ok:0,qty_def:0,qty_rej:0,
             status:'pending',inicio:null,fin:null,mins:0,isTemplate:true,
             pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
@@ -10514,7 +10524,7 @@ function openOFOpsModal(sap) {
     // Piezas
     h += '<div style="min-width:80px;">';
     h += '<div style="font-size:.68rem;color:var(--dim);font-weight:700;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">📦 Piezas</div>';
-    h += '<input type="number" min="1" value="'+(op.qty_total||10)+'" id="qty-'+sap+'-'+i+'" class="form-input-sm" style="width:72px;">';
+    h += '<input type="number" min="1" value="'+(op.qty_total||1)+'" id="qty-'+sap+'-'+i+'" class="form-input-sm" style="width:72px;">';
     h += '</div>';
     h += '</div>';
 
@@ -11757,7 +11767,7 @@ function saveTplModal(){
     var newOps = ops.map(function(op,i){
       var existing = aof.ops.find(function(o){return o.nombre===op.nombre && o.estacion===op.estacion;});
       return existing || {id:'op_'+aof.of_sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
-        tipo:op.tipo, tecnico:'', qty_total:10, qty_ok:0, qty_def:0, qty_rej:0,
+        tipo:op.tipo, tecnico:'', qty_total:1, qty_ok:0, qty_def:0, qty_rej:0,
         status:'pending', inicio:null, fin:null, mins:0, isTemplate:true,
         pauseReason:null, valcalNote:null, needsCal:false, calResult:null, calComment:null};
     });
@@ -11920,7 +11930,7 @@ function _checkQueueThenStart(sap, opId, op){
       '<strong>'+esc(op.nombre)+'</strong><br>'+esc(op.estacion)+'<br>'+
       '<span style="color:var(--ared);font-size:.72rem;">⚠ Asigna técnico y piezas para continuar.</span>';
     document.getElementById('app-qa-tech').value = op.tecnico || '';
-    document.getElementById('app-qa-qty').value  = op.qty_total || 10;
+    document.getElementById('app-qa-qty').value  = op.qty_total || 1;
     openAppModal('app-modal-quick-assign');
     return;
   }
@@ -11989,7 +11999,7 @@ function appOpenQuickAssign(sap, opId){
   document.getElementById('app-quick-assign-info').innerHTML =
     '<strong>'+esc(op.nombre)+'</strong><br><span style="font-size:.72rem;color:var(--adim);">'+esc(op.estacion)+'</span>';
   document.getElementById('app-qa-tech').value = op.tecnico || '';
-  document.getElementById('app-qa-qty').value  = op.qty_total || 10;
+  document.getElementById('app-qa-qty').value  = op.qty_total || 1;
   // Inyectar sección de ayudantes en el modal
   var ayudantes = op.ayudantes || [];
   var existing = document.getElementById('app-qa-ayud-wrap');
@@ -12748,7 +12758,8 @@ function renderSeg(){
         var sCol={done:'var(--green)',running:'var(--accent-l)',paused:'var(--yellow)',validating:'var(--purple)',pending:'var(--muted)',retrabajo:'var(--red)',chatarra:'var(--red)',op_concluded:'#f59e0b',omitida:'#6e7681'}[op.status]||'var(--muted)';
         var sIco={done:'✓',running:'▶',paused:'⏸',validating:'🔍',pending:'○',retrabajo:'🔄',chatarra:'🗑',op_concluded:'⏳',omitida:'🏁'}[op.status]||'○';
         var _esOmit = op.status==='omitida';
-        h+='<div style="background:'+(_esOmit?'rgba(110,118,129,.08)':'rgba(255,255,255,.03)')+';border:1px solid '+(_esOmit?'rgba(110,118,129,.55)':'var(--border)')+';border-radius:4px;padding:5px 9px;">';
+        var _esRun = op.status==='running';
+        h+='<div style="background:'+(_esOmit?'rgba(110,118,129,.08)':_esRun?'rgba(46,160,67,.06)':'rgba(255,255,255,.03)')+';border:1px solid '+(_esOmit?'rgba(110,118,129,.55)':_esRun?'rgba(46,160,67,.5)':'var(--border)')+';border-radius:4px;padding:5px 9px;">';
         h+='<div style="display:flex;align-items:flex-start;gap:6px;">';
         h+='<span style="color:'+sCol+';font-size:.7rem;margin-top:2px;flex-shrink:0;">'+sIco+'</span>';
         h+='<div style="flex:1;min-width:0;">';
@@ -15565,7 +15576,7 @@ function ftRptExportExcel(){
         h+='<td style="padding:4px 6px;"><select class="rev-est" style="'+_inp+'">'+_stationsOpts(op.estacion||'')+'</select></td>';
         h+='<td style="padding:4px 6px;"><select class="rev-tec" style="'+_inp+'">'+_tecOpts(op.tecnico||'')+'</select></td>';
         h+='<td style="padding:4px 6px;"><input type="text" class="rev-ayu" value="'+_esc(ayu)+'" placeholder="coma-separado" style="width:130px;'+_inp+'"></td>';
-        h+='<td style="padding:4px 6px;"><input type="number" min="1" class="rev-cant" value="'+(op.cantidad?parseInt(op.cantidad):10)+'" style="width:58px;'+_inp+'"></td>';
+        h+='<td style="padding:4px 6px;"><input type="number" min="1" class="rev-cant" value="'+(op.cantidad?parseInt(op.cantidad):1)+'" style="width:58px;'+_inp+'"></td>';
         h+='</tr>';
       });
       h+='</tbody></table></div></div>';
@@ -15599,6 +15610,22 @@ function ftRptExportExcel(){
     cerrarRevisionProgramacion();
     confirmProgMain();
   };
+})();
+</script>
+<script>
+/* Overlay "Cargando datos de Fabricación…" — visible solo en la PRIMERA carga,
+   cubre cualquier pestaña activa para que el usuario no piense que no hay datos. */
+(function(){
+  function ensure(){
+    if(document.getElementById('fab-load-overlay')) return;
+    var d=document.createElement('div');
+    d.id='fab-load-overlay';
+    d.style.cssText='display:none;position:fixed;inset:0;z-index:99000;background:rgba(3,8,16,.72);flex-direction:column;align-items:center;justify-content:center;gap:16px;';
+    d.innerHTML='<span class="fab-spinner"></span><div style="color:var(--text,#e6edf3);font-size:.9rem;font-weight:600;">Cargando datos de Fabricación…</div>';
+    document.body.appendChild(d);
+  }
+  window._fabShowLoadOverlay=function(){ ensure(); var o=document.getElementById('fab-load-overlay'); if(o) o.style.display='flex'; };
+  window._fabHideLoadOverlay=function(){ var o=document.getElementById('fab-load-overlay'); if(o) o.style.display='none'; };
 })();
 </script>
 </body>

@@ -5367,29 +5367,38 @@ function closeTplOpDd(idx){
 }
 
 // Auto-register new operations in catalog after saving template (no article relationship)
-async function registerNewOpsInCatalog(art, ops){
+async function registerNewOpsInCatalog(art, ops, artDesc){
   if (!ops || !ops.length) return;
   if (!FT_SITE_ID) { try { FT_SITE_ID = await getSiteId(); } catch(e){ return; } }
-  var catalog = DB.opCatalog || [];
-  // Only register ops not already in catalog
+  var full = DB.opCatalogFull || [];
+  // Descripción = la del ARTÍCULO destino (misma convención que el alta manual)
+  var desc = artDesc || (DB.articles && DB.articles[art]) || (DB.articulosMaestros && DB.articulosMaestros[art]) || '';
+  // Registrar SOLO las ops que aún NO existan para ESTE artículo (dedup por nombre + artículo,
+  // no global). Así al duplicar una plantilla, sus operaciones se dan de alta ligadas al
+  // artículo nuevo, sin duplicar si ya existían para ese artículo.
   var newOps = ops.filter(function(op){
-    return op.nombre && catalog.indexOf(op.nombre) < 0;
+    if (!op.nombre) return false;
+    return !full.some(function(c){ return c.nombre===op.nombre && String(c.articulo||'')===String(art||''); });
   });
   if (!newOps.length) return;
-  console.log('Registrando', newOps.length, 'operaciones nuevas en FT_Catalogo_Operaciones...');
+  console.log('Registrando', newOps.length, 'operaciones en FT_Catalogo_Operaciones para artículo', art, '...');
   var saved = 0;
   for (var i = 0; i < newOps.length; i++) {
     var opName = newOps[i].nombre;
     try {
-      // FT_Catalogo_Operaciones: just Title (= nombre operacion)
-      await spEscribir('FT_Catalogo_Operaciones', { Title: opName }, null);
-      // Update in-memory catalog
+      var fields = { Title: opName };
+      if (art)  fields.Articulo_Key = art;
+      if (desc) fields.Descripcion  = desc;
+      var res = await spEscribir('FT_Catalogo_Operaciones', fields, null);
+      // Actualizar catálogo en memoria (por artículo + nombre global)
+      if (!DB.opCatalogFull) DB.opCatalogFull = [];
+      DB.opCatalogFull.push({ nombre: opName, articulo: art||'', desc: desc, spId: (res&&res.id)?String(res.id):'' });
       if (!DB.opCatalog) DB.opCatalog = [];
       if (DB.opCatalog.indexOf(opName) < 0) { DB.opCatalog.push(opName); DB.opCatalog.sort(); }
       saved++;
     } catch(e){ console.warn('Error registrando op "'+opName+'":', e.message); }
   }
-  if (saved) console.log('✅', saved, 'operaciones nuevas en catálogo SP');
+  if (saved) console.log('✅', saved, 'operaciones registradas en catálogo SP para', art);
 }
 
 // ---- Gestión de catálogo: importar desde Excel / ver lista ----

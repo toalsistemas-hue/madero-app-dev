@@ -4853,23 +4853,36 @@ function openOpPickerForTpl(idx){
   opPickerRender();
   openCModal('modal-op-picker');
 }
+// Nombres de operación que YA están en las filas de la plantilla actual (modal abierto)
+function _tplOpsActuales(){
+  var set={};
+  document.querySelectorAll('#tpl-ops-list input[id^="top-n-"]').forEach(function(inp){
+    var v=(inp.value||'').trim().toLowerCase(); if(v) set[v]=true;
+  });
+  return set;
+}
 function opPickerRender(){
   var q=(document.getElementById('op-picker-search')||{value:''}).value.trim().toLowerCase();
   var ops=(DB.opCatalogFull||[]).slice().sort(function(a,b){return (a.nombre||'').localeCompare(b.nombre||'');});
   if(q) ops=ops.filter(function(o){
     return (o.nombre||'').toLowerCase().indexOf(q)>=0||(o.articulo||'').toLowerCase().indexOf(q)>=0;
   });
+  var _yaAsig=_tplOpsActuales();
   var list=document.getElementById('op-picker-list');
   list.innerHTML='';
   ops.forEach(function(o){
+    var _asig=!!_yaAsig[(o.nombre||'').toLowerCase()];
+    var _bg    = _asig ? 'rgba(46,160,67,.12)' : 'rgba(255,255,255,.04)';
+    var _bgHov = _asig ? 'rgba(46,160,67,.2)'  : 'rgba(255,255,255,.09)';
+    var _brd   = _asig ? 'rgba(46,160,67,.55)' : 'rgba(255,255,255,.07)';
     var div=document.createElement('div');
     div.setAttribute('data-op-nombre',o.nombre);
-    div.style.cssText='padding:10px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;cursor:pointer;transition:background .15s;';
+    div.style.cssText='padding:10px 14px;background:'+_bg+';border:1px solid '+_brd+';border-radius:8px;cursor:pointer;transition:background .15s;';
     var artDesc=o.articulo&&(DB.articles[o.articulo]||o.desc)?(' — <span style="color:var(--dim);">'+esc((DB.articles[o.articulo]||o.desc||''))+'</span>'):'';
-    div.innerHTML='<div style="font-size:.8rem;font-weight:600;">'+esc(o.nombre)+'</div>'+
+    div.innerHTML='<div style="font-size:.8rem;font-weight:600;">'+esc(o.nombre)+(_asig?' <span style="font-size:.6rem;color:#4caf50;font-weight:700;">✓ ya en la plantilla</span>':'')+'</div>'+
       (o.articulo?'<div style="font-size:.7rem;color:var(--accent-l);font-family:\'DM Mono\',monospace;margin-top:2px;">'+esc(o.articulo)+artDesc+'</div>':'');
-    div.onmouseover=function(){this.style.background='rgba(255,255,255,.09)';};
-    div.onmouseout=function(){this.style.background='rgba(255,255,255,.04)';};
+    div.onmouseover=function(){this.style.background=_bgHov;};
+    div.onmouseout=function(){this.style.background=_bg;};
     div.onclick=function(){opPickerSelect(this.getAttribute('data-op-nombre'));};
     list.appendChild(div);
   });

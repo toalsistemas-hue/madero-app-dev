@@ -6234,6 +6234,9 @@ async function ftLoadDataFromSP() {
               valcalNote: o.ValCalNote || '',
               calResult: o.CalResult || '',
               calComment: o.CalComment || '',
+              calLineaComment: o.CalLineaComment || '',
+              supFinComment: o.SupFinComment || '',
+              analistaComment: o.AnalistaComment || '',
               _spId: o._itemId || String(o.ID||''),
             })).map(function(op){
               // Merge _spId, _queueSpId, _colaPos from existing in-memory ops
@@ -6738,6 +6741,7 @@ async function ftLoadDataFromSP() {
                 _hadNormalPause:(function(){ try{var d=JSON.parse(o.TurnoData||'');return d._hadNormalPause===true;}catch(e){return false;} })(),
                 needsCal:o.NeedsCal===true,valcalNote:o.ValCalNote||null,
                 calResult:o.CalResult||'',calComment:o.CalComment||'',
+                calLineaComment:o.CalLineaComment||'',supFinComment:o.SupFinComment||'',analistaComment:o.AnalistaComment||'',
                 _spId:o.ID||null,_queueSpId:ex?ex._queueSpId:null};
             });
           });
@@ -12812,9 +12816,12 @@ function renderSeg(){
         var comments=[];
         if(op.pauseReason) comments.push({ico:'⏸',col:'var(--yellow)',txt:op.pauseReason});
         if(op.valcalNote&&op.valcalNote.charAt(0)!=='{') comments.push({ico:'🔍',col:'var(--purple)',txt:op.valcalNote});
-        if(op.calComment) comments.push({ico:'🏭',col:op.calResult==='liberado'?'var(--green)':'var(--red)',
-          txt:op.calComment+
+        var _calLinTxt=op.calLineaComment||op.calComment;
+        if(_calLinTxt) comments.push({ico:'🏭',col:op.calResult==='liberado'?'var(--green)':(op.calResult==='rechazado'?'var(--red)':'var(--accent-l)'),
+          txt:'Calidad de línea: '+_calLinTxt+
           (op.calResult==='rechazado'&&op.qty_rej>0?' ('+op.qty_rej+' rec / '+(op.qty_total-op.qty_rej)+' lib)':'')});
+        if(op.supFinComment) comments.push({ico:'👔',col:'var(--accent-l)',txt:'Supervisor: '+op.supFinComment});
+        if(op.analistaComment) comments.push({ico:'🔬',col:'var(--purple)',txt:'Analista de calidad: '+op.analistaComment});
         if(op.obs) comments.push({ico:'📝',col:'var(--dim)',txt:op.obs});
         if(op.status==='done' && (op.qty_ok>0||op.qty_def>0||op.qty_chat>0)){
           var qTxt='OK:'+op.qty_ok;
@@ -13608,7 +13615,7 @@ function renderHist(){
     running.forEach(function(x){
       h2+='<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:rgba(46,160,67,.08);border-radius:5px;margin-bottom:3px;font-size:.72rem;">';
       h2+='<span style="color:var(--green);font-weight:700;">▶</span>';
-      h2+='<span style="flex:1;">'+esc(x.op.nombre)+'</span>';
+      h2+='<span style="flex:1;">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+'</span>';
       h2+='<span style="font-family:\'DM Mono\',monospace;font-size:.65rem;color:var(--accent-l);">OF'+esc(x.aof.of_sap)+'</span>';
       if(x.op.tecnico) h2+='<span style="font-size:.65rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
       var el2=getEl(x.aof.of_sap+'_'+x.op.id);
@@ -13618,7 +13625,7 @@ function renderHist(){
     paused2.forEach(function(x){
       h2+='<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:5px;margin-bottom:3px;font-size:.72rem;">';
       h2+='<span style="color:var(--yellow);font-weight:700;">⏸</span>';
-      h2+='<span style="flex:1;color:var(--yellow);">'+esc(x.op.nombre)+'</span>';
+      h2+='<span style="flex:1;color:var(--yellow);">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+'</span>';
       h2+='<span style="font-family:\'DM Mono\',monospace;font-size:.65rem;color:var(--accent-l);">OF'+esc(x.aof.of_sap)+'</span>';
       if(x.op.tecnico) h2+='<span style="font-size:.65rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
       h2+='</div>';
@@ -13628,7 +13635,7 @@ function renderHist(){
       pending.forEach(function(x,qi2){
         h2+='<div style="display:flex;align-items:center;gap:5px;padding:3px 6px;background:rgba(255,255,255,.03);border-radius:5px;margin-bottom:2px;font-size:.7rem;">';
         h2+='<span style="min-width:18px;height:18px;background:rgba(31,111,235,.2);color:var(--accent-l);border-radius:4px;font-size:.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;">'+(qi2+1)+'</span>';
-        h2+='<span style="flex:1;">'+esc(x.op.nombre)+'</span>';
+        h2+='<span style="flex:1;">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+'</span>';
         h2+='<span style="font-family:\'DM Mono\',monospace;font-size:.62rem;color:var(--dim);">OF'+esc(x.aof.of_sap)+'</span>';
         if(x.op.tecnico) h2+='<span style="font-size:.62rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
         h2+='</div>';

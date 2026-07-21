@@ -1210,6 +1210,8 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div class="app-fl">Observaciones</div>
       <input class="app-fi" id="app-finish-obs" placeholder="Sin incidencias...">
+      <div class="app-fl">💬 Comentario del supervisor (opcional)</div>
+      <input class="app-fi" id="app-finish-supcomment" placeholder="Notas del supervisor al terminar...">
       <div id="app-finish-foto-wrap"></div>
       <div class="app-ma">
         <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-finish')">Cancelar</button>
@@ -1452,6 +1454,8 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div class="app-fl">Observaciones</div>
       <input class="app-fi" id="app-finish-obs-2" placeholder="Sin incidencias...">
+      <div class="app-fl">💬 Comentario del supervisor (opcional)</div>
+      <input class="app-fi" id="app-finish-supcomment-2" placeholder="Notas del supervisor al terminar...">
       <div id="app-finish-foto-wrap-2"></div>
       <div class="app-ma">
         <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-finish-2')">Cancelar</button>
@@ -2521,6 +2525,13 @@ async function appRenderLauncher() {
 }
 
 function appLaunchPantalla(pantallaID) {
+  // Puesto combinado "Sup_Pro / Monitor": exigir el PIN del Monitor para entrar a FabTracker
+  // (evita que un operador del Monitor entre a FabTracker al reabrir la app).
+  if (pantallaID === 'FabTracker' && _esPuestoSupMonitor() && !window._ftPinOkPassed) {
+    _pedirPinFabTracker(function(){ window._ftPinOkPassed = true; appLaunchPantalla('FabTracker'); });
+    return;
+  }
+  window._ftPinOkPassed = false;
   var launcher = document.getElementById('app-launcher');
   var shell    = document.getElementById('app-shell-mobile');
   if (launcher) launcher.style.display = 'none';
@@ -2541,6 +2552,51 @@ function appLaunchPantalla(pantallaID) {
   // Futuras pantallas se manejarán aquí
   alert('Módulo "' + pantallaID + '" próximamente.');
 }
+
+// ── Gate de PIN del Monitor para entrar a FabTracker (puesto Sup_Pro / Monitor) ──
+function _esPuestoSupMonitor(){
+  if(!APP_USER_PROFILE) return false;
+  var p = ((APP_USER_PROFILE.puesto||'')+' '+(APP_USER_PROFILE.puestoID||'')+' '+(APP_USER_PROFILE.puestoMovilID||'')).toLowerCase();
+  return p.indexOf('monitor')>=0 && p.indexOf('sup')>=0;
+}
+function _pedirPinFabTracker(onOk){
+  var saved = (typeof _MON!=='undefined') ? (localStorage.getItem(_MON.ADMIN_PIN_KEY) || _MON.DEFAULT_ADMIN_PIN) : '';
+  var o=document.getElementById('ft-pin-overlay');
+  if(!o){
+    o=document.createElement('div'); o.id='ft-pin-overlay';
+    o.style.cssText='position:fixed;inset:0;z-index:350000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;';
+    o.innerHTML='<div style="background:#161b22;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:22px;width:100%;max-width:320px;text-align:center;">'
+      +'<div style="font-size:1.7rem;margin-bottom:6px;">🔐</div>'
+      +'<div style="color:#e6edf3;font-weight:700;font-size:.95rem;margin-bottom:4px;">PIN de Administrador</div>'
+      +'<div style="color:#8b949e;font-size:.72rem;margin-bottom:12px;">Ingresa el PIN del Monitor para entrar a FabTracker</div>'
+      +'<input id="ft-pin-input" type="password" inputmode="numeric" maxlength="6" autocomplete="off" style="width:100%;box-sizing:border-box;text-align:center;font-size:1.4rem;letter-spacing:.35em;padding:10px;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#58a6ff;margin-bottom:8px;">'
+      +'<div id="ft-pin-err" style="color:#f87171;font-size:.72rem;min-height:14px;margin-bottom:10px;"></div>'
+      +'<div style="display:flex;gap:8px;">'
+        +'<button onclick="_ftPinCancel()" style="flex:1;background:rgba(255,255,255,.08);border:none;border-radius:8px;padding:10px;color:#e6edf3;font-size:.8rem;cursor:pointer;">Cancelar</button>'
+        +'<button onclick="_ftPinOk()" style="flex:1;background:#238636;border:none;border-radius:8px;padding:10px;color:#fff;font-size:.8rem;font-weight:600;cursor:pointer;">Entrar</button>'
+      +'</div></div>';
+    document.body.appendChild(o);
+    o.addEventListener('keydown', function(e){ if(e.key==='Enter') _ftPinOk(); });
+  }
+  window._ftPinSaved = String(saved||'');
+  window._ftPinOnOk = onOk;
+  var inp=document.getElementById('ft-pin-input'); if(inp) inp.value='';
+  var err=document.getElementById('ft-pin-err'); if(err) err.textContent='';
+  o.style.display='flex';
+  setTimeout(function(){ if(inp) inp.focus(); }, 60);
+}
+window._ftPinCancel=function(){ var o=document.getElementById('ft-pin-overlay'); if(o) o.style.display='none'; window._ftPinOnOk=null; };
+window._ftPinOk=function(){
+  var inp=document.getElementById('ft-pin-input'); var v=inp?String(inp.value).trim():'';
+  if(v && v===window._ftPinSaved){
+    var cb=window._ftPinOnOk; window._ftPinOnOk=null;
+    var o=document.getElementById('ft-pin-overlay'); if(o) o.style.display='none';
+    if(cb) cb();
+  } else {
+    var err=document.getElementById('ft-pin-err'); if(err) err.textContent='PIN incorrecto.';
+    if(inp){ inp.value=''; inp.focus(); }
+  }
+};
 
 
 // ── Ntfy desde la app móvil ───────────────────────────────────────
@@ -4639,6 +4695,8 @@ function appOpenFinish(sap,opId,_modalSfx){
   document.getElementById("app-finish-rej"+_s).value=op.qty_rej||0;
   document.getElementById("app-finish-qty-warn").style.display="none";
   document.getElementById("app-finish-obs"+(APP.currentFinishSfx||'')).value="";
+  var _scEl=document.getElementById("app-finish-supcomment"+(APP.currentFinishSfx||''));
+  if(_scEl) _scEl.value="";
   document.querySelectorAll('#app-finish-foto-wrap').forEach(function(w){w.innerHTML=appFotoBtnHTML(sap,opId,'terminada');});
   openAppModal("app-modal-finish"+_s);
 }
@@ -5558,6 +5616,7 @@ function appConfirmFinish(){
     ftFreezeTimer(key); // congelar display antes de calcular el tiempo final
     var elFinal = getTotalOpMins(key); // B1 fix: tiempo total = turnos previos + turno actual
     op.status="done";op.fin=nowT();op.fecha_fin_real=nowDT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
+    if(typeof supComment!=='undefined'&&supComment) op.supFinComment=supComment;
     op._localStatus='done'; op._localStatusAt=Date.now();
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
@@ -7391,6 +7450,8 @@ function renderCalTiemInputs(of, inFlujo){
       var previewText = liveVals.length>0 ? '⌀ Promedio: '+fmtMSS(Math.round(liveVals.reduce(function(a,b){return a+b;},0)/liveVals.length))+' ('+liveVals.length+' muestra'+(liveVals.length!==1?'s':'')+')'  : '';
       h += '<div id="ct-preview-'+key.replace(/[^a-z0-9]/gi,'_')+'" style="font-size:.65rem;color:var(--aaccent);margin-top:3px;font-family:monospace;'+(previewText?'':'display:none;')+'">'+previewText+'</div>';
       h += '</div>';
+      h += '<div class="app-fl" style="font-size:.62rem;margin-top:6px;">💬 Comentario analista (opcional)</div>';
+      h += '<input type="text" data-ctkey="'+key+'" value="'+esc((APP._ctComment&&APP._ctComment[key]!=null)?APP._ctComment[key]:(op.analistaComment||'')).replace(/"/g,'&quot;')+'" oninput="calTiemSetComment(\''+key+'\',this.value)" placeholder="Observaciones del analista..." style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);color:var(--atext);padding:4px 6px;border-radius:5px;font-size:.72rem;outline:none;margin-top:2px;">';
       h += '<button onclick="calTiemSave(\''+key+'\')" style="margin-top:6px;width:100%;padding:5px;background:rgba(34,197,94,.15);color:var(--agreen);border:1px solid rgba(34,197,94,.3);border-radius:6px;font-size:.7rem;font-weight:700;cursor:pointer;">💾 Guardar muestras</button>';
     }
     h += '</div>';
@@ -7425,6 +7486,10 @@ function calTiemAddSample(key){
 function calTiemSetTecnico(key, value) {
   if (!APP._ctTecnico) APP._ctTecnico = {};
   APP._ctTecnico[key] = value;
+}
+function calTiemSetComment(key, value) {
+  if (!APP._ctComment) APP._ctComment = {};
+  APP._ctComment[key] = value;
 }
 
 function calTiemSave(key){
@@ -8334,6 +8399,7 @@ async function _appLoadDataFromSP_impl() {
         })(),
         valcalNote: o.ValCalNote||null, calResult: o.CalResult||null,
         calComment: o.CalComment||null,
+        calLineaComment: o.CalLineaComment||null, supFinComment: o.SupFinComment||null, analistaComment: o.AnalistaComment||null,
         qty_def_retrabajo: parseInt(o.Qty_Def_Retrabajo||o.qty_def_retrabajo||0),
         qty_def_chatarra: parseInt(o.Qty_Def_Chatarra||o.qty_def_chatarra||0),
         _spId: o.ID||o._itemId||null,
@@ -8675,6 +8741,10 @@ async function appSaveOpToSP(of_sap, opId) {
     else if (op.valcalNote && op.valcalNote.charAt(0) === '{') patchFields.ValCalNote = '';
     if (op.calResult)  patchFields.CalResult  = op.calResult;
     if (op.calComment) patchFields.CalComment = op.calComment;
+    // Columnas dedicadas de comentarios — solo se escriben si tienen valor (nunca se borran)
+    if (op.calLineaComment) patchFields.CalLineaComment = op.calLineaComment;
+    if (op.supFinComment)   patchFields.SupFinComment   = op.supFinComment;
+    if (op.analistaComment) patchFields.AnalistaComment = op.analistaComment;
     patchFields.Qty_Def_Retrabajo = op.qty_def_retrabajo || 0;
     patchFields.Qty_Def_Chatarra  = op.qty_def_chatarra  || 0;
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
@@ -9127,6 +9197,12 @@ var APP_PUESTO_ROL_MAP = [
   // Puesto dual: Supervisor + Analista Calidad (check first — more specific)
   { keywords: ['supervisor pro / analista', 'supervisor pro/analista', 'sup pro / analista',
                'analista / supervisor', 'sup_pro_analista'], roles: ['supervisor', 'calidad_tiem'] },
+  // Puesto combinado: Supervisor Pro + Monitor → supervisor en FabTracker.
+  // El acceso a la pantalla Monitor se asigna en FT_PuestosMovil; la administración
+  // del Monitor sigue protegida por su PIN.
+  { keywords: ['supervisor pro / monitor', 'supervisor pro/monitor', 'sup pro / monitor',
+               'sup_pro / monitor', 'sup_pro/monitor', 'sup_pro_monitor',
+               'supervisor / monitor', 'supervisor/monitor'], roles: ['supervisor'] },
   // Administrador General — acceso completo en la app
   { keywords: ['administrador general', 'admin general', 'admingeneral',
                'direcciongeneral', 'direccion general', 'director',
@@ -13123,6 +13199,8 @@ function appCalRespond(result){
   var comment=document.getElementById("app-cal-comment").value.trim();
   var key=ctx.of_sap+'_'+ctx.op_id;
   op.calComment=comment;op.needsCal=false;
+  // Comentario del encargado de Calidad de Línea — columna dedicada, persiste entre ciclos
+  if(comment) op.calLineaComment=comment;
   if(result==="liberado"){
     op.calResult="liberado";op.status="running";op.qty_rej=0;
     // Reiniciar timer usando el elapsed acumulado antes de la pausa de validación
@@ -13239,6 +13317,8 @@ function appOpenFinish(sap,opId,_modalSfx){
   document.getElementById("app-finish-rej"+_s).value=op.qty_rej||0;
   document.getElementById("app-finish-qty-warn").style.display="none";
   document.getElementById("app-finish-obs"+(APP.currentFinishSfx||'')).value="";
+  var _scEl=document.getElementById("app-finish-supcomment"+(APP.currentFinishSfx||''));
+  if(_scEl) _scEl.value="";
   document.querySelectorAll('#app-finish-foto-wrap').forEach(function(w){w.innerHTML=appFotoBtnHTML(sap,opId,'terminada');});
   openAppModal("app-modal-finish"+_s);
 }
@@ -14175,6 +14255,7 @@ function appConfirmFinish(){
   var avail=op.qty_total-rej;
   var dRetr=parseInt((document.getElementById('app-finish-def-retrabajo'+s)||{value:0}).value)||0;
   var dChat=parseInt((document.getElementById('app-finish-def-chatarra'+s)||{value:0}).value)||0;
+  var supComment=((document.getElementById("app-finish-supcomment"+s)||{value:''}).value||'').trim();
   // Si calidad evaluó: usar valores de op directamente (campos disabled pueden no leer)
   if(op.calResult==='rechazado'){
     var _cr=op.qty_def_retrabajo||0, _cc=op.qty_def_chatarra||0;
@@ -14186,6 +14267,7 @@ function appConfirmFinish(){
     ftFreezeTimer(key); // congelar display antes de calcular el tiempo final
     var elFinal = getTotalOpMins(key); // B1 fix: tiempo total = turnos previos + turno actual
     op.status="done";op.fin=nowT();op.fecha_fin_real=nowDT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
+    if(typeof supComment!=='undefined'&&supComment) op.supFinComment=supComment;
     op._localStatus='done'; op._localStatusAt=Date.now();
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
@@ -16021,6 +16103,8 @@ function renderCalTiemInputs(of, inFlujo){
       var previewText = liveVals.length>0 ? '⌀ Promedio: '+fmtMSS(Math.round(liveVals.reduce(function(a,b){return a+b;},0)/liveVals.length))+' ('+liveVals.length+' muestra'+(liveVals.length!==1?'s':'')+')'  : '';
       h += '<div id="ct-preview-'+key.replace(/[^a-z0-9]/gi,'_')+'" style="font-size:.65rem;color:var(--aaccent);margin-top:3px;font-family:monospace;'+(previewText?'':'display:none;')+'">'+previewText+'</div>';
       h += '</div>';
+      h += '<div class="app-fl" style="font-size:.62rem;margin-top:6px;">💬 Comentario analista (opcional)</div>';
+      h += '<input type="text" data-ctkey="'+key+'" value="'+esc((APP._ctComment&&APP._ctComment[key]!=null)?APP._ctComment[key]:(op.analistaComment||'')).replace(/"/g,'&quot;')+'" oninput="calTiemSetComment(\''+key+'\',this.value)" placeholder="Observaciones del analista..." style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);color:var(--atext);padding:4px 6px;border-radius:5px;font-size:.72rem;outline:none;margin-top:2px;">';
       h += '<button onclick="calTiemSave(\''+key+'\')" style="margin-top:6px;width:100%;padding:5px;background:rgba(34,197,94,.15);color:var(--agreen);border:1px solid rgba(34,197,94,.3);border-radius:6px;font-size:.7rem;font-weight:700;cursor:pointer;">💾 Guardar muestras</button>';
     }
     h += '</div>';
@@ -16056,6 +16140,10 @@ function calTiemSetTecnico(key, value) {
   if (!APP._ctTecnico) APP._ctTecnico = {};
   APP._ctTecnico[key] = value;
 }
+function calTiemSetComment(key, value) {
+  if (!APP._ctComment) APP._ctComment = {};
+  APP._ctComment[key] = value;
+}
 
 function calTiemSave(key){
   var samples = (APP._ctSamples && APP._ctSamples[key]) ? APP._ctSamples[key] : [];
@@ -16070,6 +16158,15 @@ function calTiemSave(key){
   if(APP._ctSamples) delete APP._ctSamples[key];
   console.log('[CalTiemSave] key='+key+' | _spId='+spId+' | samples='+nums.length);
   if(appSiteId) appSaveCalTiempoToSP(key, calData);
+  // Comentario del analista de calidad → persistir en FT_Operaciones (columna AnalistaComment)
+  var _cmt = (APP._ctComment && APP._ctComment[key]) ? String(APP._ctComment[key]).trim() : '';
+  if(_cmt){
+    var _us=key.indexOf('_'); var _ofSap=_us>-1?key.slice(0,_us):key; var _opId=_us>-1?key.slice(_us+1):'';
+    var _aof=DB.activeOFs.find(function(a){return a.of_sap===_ofSap;});
+    var _op=_aof?_aof.ops.find(function(o){return o.id===_opId;}):null;
+    if(_op){ _op.analistaComment=_cmt; if(appSiteId) appSaveOpToSP(_ofSap,_opId).catch(function(e){}); }
+  }
+  if(APP._ctComment) delete APP._ctComment[key];
   renderApp();
   if(C&&C.currentPage==='historial') renderHist();
 }
@@ -16421,6 +16518,9 @@ async function appReloadOpsFromSP() {
           valcalNote:  o.ValCalNote || null,
           calResult:   o.CalResult || null,
           calComment:  o.CalComment || null,
+          calLineaComment: o.CalLineaComment || null,
+          supFinComment:   o.SupFinComment || null,
+          analistaComment: o.AnalistaComment || null,
           // Preservar fechas reales desde memoria si SP no las tiene aún
           fecha_inicio_real: o.Fecha_Inicio || (existing ? existing.fecha_inicio_real||'' : ''),
           fecha_fin_real:    o.Fecha_Fin    || (existing ? existing.fecha_fin_real||''    : ''),

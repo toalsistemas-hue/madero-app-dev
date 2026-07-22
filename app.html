@@ -4045,6 +4045,9 @@ async function appOmitirOp(sap, opId) {
   op.status = 'omitida';
   op.omitComment = _omitCmt;
   op.fin    = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  // Candado local: protege el estado 'omitida' de que un poll/reload lo revierta
+  // mientras SharePoint termina de propagar el cambio.
+  op._localStatus = 'omitida'; op._localStatusAt = Date.now();
   renderApp();
   try {
     // Esperar a que termine el guardado en SP antes de permitir otra omisión

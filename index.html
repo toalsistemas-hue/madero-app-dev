@@ -12868,8 +12868,9 @@ function renderSeg(){
           });
           h+='</div>';
         }
-        // Bitácora de cambios (auditoría desde app móvil)
-        if(op.historialCambios && op.historialCambios.length){
+        // Bitácora de cambios (auditoría desde app móvil) — solo visible para Administrador General
+        var _esAdminGral = !!(state.currentUser && (state.currentUser.puestoID==='AdminGeneral' || state.currentUser.esAdmin===true));
+        if(_esAdminGral && op.historialCambios && op.historialCambios.length){
           h+='<details style="margin-top:5px;margin-left:14px;">';
           h+='<summary style="cursor:pointer;font-size:.66rem;color:var(--dim);user-select:none;">🧾 Historial de cambios ('+op.historialCambios.length+')</summary>';
           h+='<div style="margin-top:3px;display:flex;flex-direction:column;gap:2px;border-left:2px solid var(--border);padding-left:8px;">';

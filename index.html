@@ -1115,6 +1115,7 @@ tr:last-child td{border-bottom:none;}
         </div>
       </div>
       <div class="alert alert-info">ℹ Al programar una OF cuyo artículo tenga plantilla, las operaciones se cargan automáticamente en la app.</div>
+      <input id="tpl-search" type="text" oninput="renderTpls()" placeholder="🔍 Buscar por número de artículo o descripción..." style="width:100%;box-sizing:border-box;margin-bottom:12px;padding:9px 12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:var(--text,#e6edf3);font-size:.85rem;outline:none;">
       <div id="tpl-list"></div>
     </div>
 
@@ -1178,6 +1179,7 @@ tr:last-child td{border-bottom:none;}
         <div class="kpi-card"><div class="kpi-val" style="color:var(--yellow)" id="seg-kpi-run">0</div><div class="kpi-lbl">En proceso</div></div>
         <div class="kpi-card"><div class="kpi-val" style="color:var(--purple)" id="seg-kpi-val">0</div><div class="kpi-lbl">En validación</div></div>
       </div>
+      <input id="seg-search" type="text" oninput="(window.renderSeg||renderSeg)()" placeholder="🔍 Buscar por pedido, cliente, OF, artículo o descripción..." style="width:100%;box-sizing:border-box;margin-bottom:12px;padding:9px 12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:var(--text,#e6edf3);font-size:.85rem;outline:none;">
       <div id="seg-list"></div>
     </div>
 
@@ -6237,6 +6239,8 @@ async function ftLoadDataFromSP() {
               calLineaComment: o.CalLineaComment || '',
               supFinComment: o.SupFinComment || '',
               analistaComment: o.AnalistaComment || '',
+              omitComment: o.OmitComment || '',
+              historialCambios: (function(){try{return JSON.parse(o.Historial_Cambios||'[]');}catch(e){return [];}})(),
               _spId: o._itemId || String(o.ID||''),
             })).map(function(op){
               // Merge _spId, _queueSpId, _colaPos from existing in-memory ops
@@ -6641,6 +6645,7 @@ async function ftLoadDataFromSP() {
         tecnico_op:     f.Tecnico_Op   || '',
         tecnico_cal:    f.Tecnico_Cal  || '',
         fecha_registro: f.Fecha_Registro ? f.Fecha_Registro.split('T')[0] : '',
+        comentario:     f.Comentario   || '',
       };
     });
     console.log('[CalTiempos] Cargados desde SP:', Object.keys(DB.calTiemposGuardados).length, 'registros');
@@ -6741,7 +6746,8 @@ async function ftLoadDataFromSP() {
                 _hadNormalPause:(function(){ try{var d=JSON.parse(o.TurnoData||'');return d._hadNormalPause===true;}catch(e){return false;} })(),
                 needsCal:o.NeedsCal===true,valcalNote:o.ValCalNote||null,
                 calResult:o.CalResult||'',calComment:o.CalComment||'',
-                calLineaComment:o.CalLineaComment||'',supFinComment:o.SupFinComment||'',analistaComment:o.AnalistaComment||'',
+                calLineaComment:o.CalLineaComment||'',supFinComment:o.SupFinComment||'',analistaComment:o.AnalistaComment||'',omitComment:o.OmitComment||'',
+                historialCambios:(function(){try{return JSON.parse(o.Historial_Cambios||'[]');}catch(e){return [];}})(),
                 _spId:o.ID||null,_queueSpId:ex?ex._queueSpId:null};
             });
           });
@@ -6874,7 +6880,7 @@ async function ftLoadDataFromSP() {
             var f=i.fields||i; var key=f.Title||''; if(!key) return;
             var muestras=[]; try{muestras=JSON.parse(f.Muestras_JSON||'[]');}catch(e){}
             var avg=parseFloat(f.Promedio_Seg||0);
-            DB.calTiemposGuardados[key]={of_sap:f.OF_SAP||'',op_id:f.Op_ID||'',samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(f.Count||muestras.length||0),_spId:i.id||f.ID};
+            DB.calTiemposGuardados[key]={of_sap:f.OF_SAP||'',op_id:f.Op_ID||'',samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(f.Count||muestras.length||0),tecnico_op:f.Tecnico_Op||'',tecnico_cal:f.Tecnico_Cal||'',fecha_registro:f.Fecha_Registro?f.Fecha_Registro.split('T')[0]:'',comentario:f.Comentario||'',_spId:i.id||f.ID};
           });
           if(C&&C.currentPage==='historial') renderHist();
           console.log('[CalTiempos] Actualizados:', Object.keys(DB.calTiemposGuardados).length);
@@ -7202,6 +7208,7 @@ async function ftSaveCalTiempoToSP(key, calData) {
       Promedio_Seg: calData.promedio || 0,
       // Fecha omitida — SP registra Modified automáticamente
       Registrado_Por: window.CURRENT_USER_NAME || 'Sistema',
+      Comentario:  calData.comentario || '',
     };
     if (calData._spId) {
       await spEscribir('FT_CalTiempos', fields, calData._spId);
@@ -8124,7 +8131,11 @@ var expandedTpls = {};
 function renderTpls(){
   window.renderTpls = renderTpls; // expose globally
   var h="";
+  var _q=((document.getElementById('tpl-search')||{}).value||'').trim().toLowerCase();
+  var _shown=0;
   Object.keys(DB.templates).forEach(function(art){
+    if(_q){ var _desc=(DB.articles[art]||'').toLowerCase(); if(String(art).toLowerCase().indexOf(_q)<0 && _desc.indexOf(_q)<0) return; }
+    _shown++;
     var tpl=DB.templates[art];
     var exp=expandedTpls[art];
     h+="<div class='tpl-card' id='tpl-card-"+art+"'>";
@@ -8173,7 +8184,7 @@ function renderTpls(){
     }
     h+="</div>";
   });
-  if(!h) h="<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin plantillas. Crea la primera con '+ Nueva Plantilla'.</div>";
+  if(!h) h=_q?"<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin plantillas que coincidan con la búsqueda.</div>":"<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin plantillas. Crea la primera con '+ Nueva Plantilla'.</div>";
   document.getElementById("tpl-list").innerHTML=h;
 }
 function toggleTpl(art){expandedTpls[art]=!expandedTpls[art];renderTpls();}
@@ -12707,6 +12718,21 @@ function renderSeg(){
 
   if (!window._segExpanded) window._segExpanded = {};
   var groups = groupByPedido((pedidos_to_show||[]).filter(Boolean));
+  // Filtro de búsqueda: pedido, cliente, OF, artículo o descripción
+  var _sq=((document.getElementById('seg-search')||{}).value||'').trim().toLowerCase();
+  if(_sq){
+    groups = groups.map(function(g){
+      var pedMatch = String(g.pedido||'').toLowerCase().indexOf(_sq)>=0 || String(g.cliente||'').toLowerCase().indexOf(_sq)>=0;
+      if(pedMatch) return g;
+      var ofs=(g.ofs||[]).filter(function(of){
+        return String(of.of_sap||'').toLowerCase().indexOf(_sq)>=0
+          || String(of.articulo||'').toLowerCase().indexOf(_sq)>=0
+          || String(of.descripcion||'').toLowerCase().indexOf(_sq)>=0;
+      });
+      if(!ofs.length) return null;
+      var g2={}; for(var k in g) g2[k]=g[k]; g2.ofs=ofs; return g2;
+    }).filter(Boolean);
+  }
   var pC={alta:'chip prio-alta',media:'chip prio-media',normal:'chip prio-normal'};
   var pL={alta:'🔴 ALTA',media:'🟡 MEDIA',normal:'⬜ NORMAL'};
 
@@ -12822,6 +12848,7 @@ function renderSeg(){
           (op.calResult==='rechazado'&&op.qty_rej>0?' ('+op.qty_rej+' rec / '+(op.qty_total-op.qty_rej)+' lib)':'')});
         if(op.supFinComment) comments.push({ico:'👔',col:'var(--accent-l)',txt:'Supervisor: '+op.supFinComment});
         if(op.analistaComment) comments.push({ico:'🔬',col:'var(--purple)',txt:'Analista de calidad: '+op.analistaComment});
+        if(op.omitComment) comments.push({ico:'🚫',col:'#8b949e',txt:'Motivo omisión: '+op.omitComment});
         if(op.obs) comments.push({ico:'📝',col:'var(--dim)',txt:op.obs});
         if(op.status==='done' && (op.qty_ok>0||op.qty_def>0||op.qty_chat>0)){
           var qTxt='OK:'+op.qty_ok;
@@ -12841,6 +12868,16 @@ function renderSeg(){
           });
           h+='</div>';
         }
+        // Bitácora de cambios (auditoría desde app móvil)
+        if(op.historialCambios && op.historialCambios.length){
+          h+='<details style="margin-top:5px;margin-left:14px;">';
+          h+='<summary style="cursor:pointer;font-size:.66rem;color:var(--dim);user-select:none;">🧾 Historial de cambios ('+op.historialCambios.length+')</summary>';
+          h+='<div style="margin-top:3px;display:flex;flex-direction:column;gap:2px;border-left:2px solid var(--border);padding-left:8px;">';
+          op.historialCambios.slice().reverse().forEach(function(e){
+            h+='<div style="font-size:.64rem;color:var(--dim);line-height:1.35;"><span style="font-family:\'DM Mono\',monospace;color:var(--accent-l);">'+esc((e.fecha||'')+' '+(e.hora||''))+'</span> · <strong>'+esc(e.usuario||'')+'</strong> — '+esc(e.accion||'')+'</div>';
+          });
+          h+='</div></details>';
+        }
         // Botón de fotos — siempre visible para ops terminadas/rechazadas
         if(op.status==='done' || op.calResult==='rechazado') {
           h+='<div style="margin-top:5px;padding-left:14px;">'            +'<button'            +' data-of="'+aof.of_sap+'"'            +' data-op="'+op.id+'"'            +' data-nom="'+op.nombre.replace(/"/g,'&quot;')+'"'            +' onclick="var b=this;coordVerFotos(b.dataset.of,b.dataset.op,b.dataset.nom);event.stopPropagation()"'            +' style="background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:6px;padding:3px 10px;cursor:pointer;color:var(--aaccent);font-size:.72rem;white-space:nowrap;">'            +'&#128247; Ver fotos</button></div>';
@@ -12854,7 +12891,7 @@ function renderSeg(){
   });
   if(!h || h.indexOf('prog-card') === -1 && groups.length===0){
     h+='<div style="text-align:center;padding:30px;color:var(--muted);font-size:.82rem;">'+
-      (filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.'))+'</div>';
+      (_sq?'Sin resultados para la búsqueda.':(filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.')))+'</div>';
   }
   document.getElementById('seg-list').innerHTML=h;
   // Update Carga por Estacion in historial page too
@@ -13403,21 +13440,24 @@ function renderHist(){
       var displayAvg = savedCount>0 ? Math.round(totalAvg/savedCount) : 0;
       if(!artGroups[art])artGroups[art]={name:artName,ops:[],totalAvg:0};
       // Collect tecnico_op/cal/fecha from latest measurement for this op+article combo
-      var _lastTecOp='', _lastTecCal='', _lastFecha='';
+      var _lastTecOp='', _lastTecCal='', _lastFecha='', _lastCmt='';
       matchAofs.forEach(function(aof){
         var realOp=aof.ops.find(function(o){return o.nombre===op.nombre&&o.estacion===op.estacion;});
         if(realOp){
           var key2=aof.of_sap+'_'+realOp.id;
           var d2=calTiemGetData(key2);
-          if(d2.saved&&d2.fecha_registro){
-            _lastTecOp=d2.tecnico_op||_lastTecOp;
-            _lastTecCal=d2.tecnico_cal||_lastTecCal;
-            _lastFecha=d2.fecha_registro||_lastFecha;
+          if(d2.saved){
+            if(d2.comentario) _lastCmt=d2.comentario;
+            if(d2.fecha_registro){
+              _lastTecOp=d2.tecnico_op||_lastTecOp;
+              _lastTecCal=d2.tecnico_cal||_lastTecCal;
+              _lastFecha=d2.fecha_registro||_lastFecha;
+            }
           }
         }
       });
       artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion,avg:displayAvg,count:savedCount,
-        tecnico_op:_lastTecOp,tecnico_cal:_lastTecCal,fecha_registro:_lastFecha});
+        tecnico_op:_lastTecOp,tecnico_cal:_lastTecCal,fecha_registro:_lastFecha,comentario:_lastCmt});
       artGroups[art].totalAvg+=displayAvg;
     });
   });
@@ -13434,9 +13474,9 @@ function renderHist(){
       if(!d.saved)return;
       if(!artGroups[art])artGroups[art]={name:artName,ops:[],totalAvg:0};
       var existing=artGroups[art].ops.find(function(o){return o.nombre===op.nombre;});
-      if(existing){existing.avg=Math.round((existing.avg+d.avg)/2);existing.count+=d.count;}
+      if(existing){existing.avg=Math.round((existing.avg+d.avg)/2);existing.count+=d.count; if(d.comentario)existing.comentario=d.comentario;}
       else artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion||'—',avg:d.avg,count:d.count,
-        tecnico_op:d.tecnico_op||'',tecnico_cal:d.tecnico_cal||'',fecha_registro:d.fecha_registro||''});
+        tecnico_op:d.tecnico_op||'',tecnico_cal:d.tecnico_cal||'',fecha_registro:d.fecha_registro||'',comentario:d.comentario||''});
       artGroups[art].totalAvg+=d.avg;
     });
   });
@@ -13458,7 +13498,7 @@ function renderHist(){
       calH+='<span class="ct-chevron" style="color:var(--dim);font-size:.75rem;transition:transform .2s;">▶</span>';
       calH+='</div></div>';
       calH+='<div id="'+_ctId+'" style="display:none">';  // contraído por defecto
-      calH+='<table style="margin:0;"><thead><tr><th>Operación</th><th>Estación</th><th>T. Promedio</th><th>Técnico Op.</th><th>Analista Cal.</th><th>Fecha Medición</th><th>Mediciones</th></tr></thead><tbody>';
+      calH+='<table style="margin:0;"><thead><tr><th>Operación</th><th>Estación</th><th>T. Promedio</th><th>Técnico Op.</th><th>Analista Cal.</th><th>Fecha Medición</th><th>Mediciones</th><th>Comentario</th></tr></thead><tbody>';
       g.ops.forEach(function(op){
         calH+='<tr><td style="font-weight:500;">'+esc(op.nombre)+'</td>';
         calH+='<td style="color:var(--dim);">'+esc(op.estacion)+'</td>';
@@ -13466,7 +13506,8 @@ function renderHist(){
         calH+='<td style="color:var(--dim);">'+(op.tecnico_op?'<span style="background:rgba(61,155,233,.1);border:1px solid rgba(61,155,233,.2);border-radius:4px;padding:1px 6px;font-size:.65rem;">👷 '+esc(op.tecnico_op)+'</span>':'<span style="color:var(--muted);">—</span>')+'</td>';
         calH+='<td style="color:var(--dim);">'+(op.tecnico_cal?'<span style="background:rgba(124,92,191,.1);border:1px solid rgba(124,92,191,.2);border-radius:4px;padding:1px 6px;font-size:.65rem;">📋 '+esc(op.tecnico_cal)+'</span>':'<span style="color:var(--muted);">—</span>')+'</td>';
         calH+='<td style="color:var(--dim);font-family:\'DM Mono\',monospace;font-size:.7rem;">'+(op.fecha_registro||'—')+'</td>';
-        calH+='<td style="color:var(--dim);">'+op.count+'</td></tr>';
+        calH+='<td style="color:var(--dim);">'+op.count+'</td>';
+        calH+='<td style="color:var(--dim);font-size:.7rem;">'+(op.comentario?esc(op.comentario):'<span style="color:var(--muted);">—</span>')+'</td></tr>';
       });
       calH+='</tbody></table></div></div>'; // close table + collapsible wrapper
     });
@@ -14140,7 +14181,7 @@ function calTiemGetData(key){
   if(!d) return {samples:[], avg:0, count:0, saved:false, tecnico_op:'', tecnico_cal:'', fecha_registro:''};
   if(typeof d === 'number') return {samples:[d*60], avg:d*60, count:1, saved:true, tecnico_op:'', tecnico_cal:'', fecha_registro:''};
   return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:d.count>0,
-    tecnico_op:d.tecnico_op||'', tecnico_cal:d.tecnico_cal||'', fecha_registro:d.fecha_registro||''};
+    tecnico_op:d.tecnico_op||'', tecnico_cal:d.tecnico_cal||'', fecha_registro:d.fecha_registro||'', comentario:d.comentario||''};
 }
 
 function renderCalTiemInputs(of, inFlujo){

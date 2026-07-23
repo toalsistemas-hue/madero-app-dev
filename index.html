@@ -2587,6 +2587,15 @@ async function getToken(forceRefresh) {
 }
 
 async function graphGet(endpoint, retry) {
+  // Listas protegidas: las lecturas de colección se resuelven por el flujo (cuenta de servicio),
+  // porque el usuario miembro ya no tiene permiso directo. Solo colecciones (/items o /items?...).
+  if (typeof esListaProtegida === 'function' && esListaProtegida(endpoint)) {
+    var _mc = endpoint.match(/\/lists\/([^\/?]+)\/items(?:\?|$)/);
+    if (_mc) {
+      var _tm = endpoint.match(/\$top=(\d+)/);
+      return flowGet(decodeURIComponent(_mc[1]), '', _tm ? parseInt(_tm[1]) : 500);
+    }
+  }
   const token = await getToken();
   // Guard: if siteId is undefined in endpoint, re-fetch it before proceeding
   if (endpoint && endpoint.includes('/sites/undefined/')) {
@@ -2629,6 +2638,11 @@ async function graphGet(endpoint, retry) {
 }
 
 async function graphPatch(endpoint, body, retry) {
+  // Listas protegidas: las actualizaciones se hacen por el flujo (cuenta de servicio).
+  if (typeof esListaProtegida === 'function' && esListaProtegida(endpoint)) {
+    var _mp = endpoint.match(/\/lists\/([^\/?]+)\/items\/(\d+)/);
+    if (_mp) return flowEscribir(decodeURIComponent(_mp[1]), 'actualizar', parseInt(_mp[2]), body);
+  }
   const token = await getToken();
   const url   = `https://graph.microsoft.com/v1.0/${endpoint}`;
   const res   = await fetch(url, {
@@ -5759,6 +5773,11 @@ async function ftSaveEstacion() {
 
 // -- graphPost helper (not in platform) ----------------
 async function graphPost(endpoint, body, retry) {
+  // Listas protegidas: las creaciones se hacen por el flujo (cuenta de servicio).
+  if (typeof esListaProtegida === 'function' && esListaProtegida(endpoint)) {
+    var _mc = endpoint.match(/\/lists\/([^\/?]+)\/items(?:\?|$)/);
+    if (_mc) { var _f = (body && body.fields) ? body.fields : body; return flowEscribir(decodeURIComponent(_mc[1]), 'crear', 0, _f); }
+  }
   const token = await getToken();
   const url = 'https://graph.microsoft.com/v1.0/' + endpoint;
   const res = await fetch(url, {
@@ -5781,6 +5800,8 @@ const FLOW_URL_ESCRIBIR = ACTIVE.flowEscribir;
 
 // Listas que se leen/escriben via Flow (permisos restringidos en SP)
 const LISTAS_PROTEGIDAS = [
+  'Usuarios',
+  'FT_PuestosMovil','FT_PantallasMovil','FT_UsuariosMovil',
   'Modulos','SubModulos','Pantallas','Configuracion','FT_Planos',
   'PedidosEspeciales','CotizadorProyectos','CotizadorDatos',
   'FT_Operaciones','FT_Timers','FT_Status_Estacion',

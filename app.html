@@ -7976,7 +7976,21 @@ async function appGetToken(force) {
   }
 }
 
+// Listas protegidas en la app — se acceden por el flujo (cuenta de servicio), no por Graph directo.
+var APP_LISTAS_PROTEGIDAS = ['FT_PuestosMovil','FT_PantallasMovil','FT_UsuariosMovil','Configuracion','Usuarios'];
+function appEsProtegida(endpoint){
+  return APP_LISTAS_PROTEGIDAS.some(function(l){ return endpoint.indexOf('/lists/'+l) !== -1; });
+}
+
 async function appGraphGet(endpoint, retry) {
+  // Listas protegidas: lecturas de colección por el flujo
+  if (appEsProtegida(endpoint)) {
+    var _mc = endpoint.match(/\/lists\/([^\/?]+)\/items(?:\?|$)/);
+    if (_mc) {
+      var _tm = endpoint.match(/\$top=(\d+)/);
+      return appFlowGet(decodeURIComponent(_mc[1]), _tm ? parseInt(_tm[1]) : 500);
+    }
+  }
   const token = await appGetToken();
   const url = endpoint.startsWith('https') ? endpoint : 'https://graph.microsoft.com/v1.0/' + endpoint;
   const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
@@ -7999,6 +8013,11 @@ async function appGraphGet(endpoint, retry) {
 }
 
 async function appGraphPatch(endpoint, body, retry) {
+  // Listas protegidas: actualizaciones por el flujo
+  if (appEsProtegida(endpoint)) {
+    var _mp = endpoint.match(/\/lists\/([^\/?]+)\/items\/(\d+)/);
+    if (_mp) return appFlowEscribir(decodeURIComponent(_mp[1]), 'actualizar', parseInt(_mp[2]), body);
+  }
   const token = await appGetToken();
   const url = 'https://graph.microsoft.com/v1.0/' + endpoint;
   let res;
@@ -8041,6 +8060,11 @@ async function appGraphDelete(endpoint) {
 }
 
 async function appGraphPost(endpoint, body, retry) {
+  // Listas protegidas: creaciones por el flujo
+  if (appEsProtegida(endpoint)) {
+    var _mc = endpoint.match(/\/lists\/([^\/?]+)\/items(?:\?|$)/);
+    if (_mc) { var _f = (body && body.fields) ? body.fields : body; return appFlowEscribir(decodeURIComponent(_mc[1]), 'crear', 0, _f); }
+  }
   const token = await appGetToken();
   const url = 'https://graph.microsoft.com/v1.0/' + endpoint;
   let res;

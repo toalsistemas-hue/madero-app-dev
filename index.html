@@ -6721,6 +6721,11 @@ async function ftLoadDataFromSP() {
           await ftLoadDataFromSP();
           return;
         }
+        // Optimización: la lectura de ops se hace por el flujo (1 ejecución de Power Automate por lectura).
+        // Para no consumir demasiadas ejecuciones, limitamos esta lectura a ~60s (aunque el poll corra cada 30s).
+        // El refresh al volver a la ventana (visibilitychange) garantiza datos frescos cuando el coordinador regresa.
+        if (window._coordLastOpsRead && (Date.now() - window._coordLastOpsRead) < 55000) return;
+        window._coordLastOpsRead = Date.now();
         // Firma de contenido de las operaciones. Antes se usaba lastModifiedDateTime (solo disponible
         // por Graph directo); como FT_Operaciones es lista protegida y se resuelve por el flujo,
         // ese metadato no llega. Calculamos una firma con el contenido para detectar cambios.
@@ -12846,6 +12851,18 @@ function renderSeg(){
           h+='<div style="display:flex;gap:10px;margin-top:2px;padding-left:14px;font-size:.66rem;color:var(--dim);">';
           if(op.inicio) h+='<span>🕐 <strong>'+(op.fecha_inicio_real||esc(op.inicio))+'</strong></span>';
           if(op.fin)    h+='<span>🏁 <strong>'+(op.fecha_fin_real||esc(op.fin))+'</strong></span>';
+          h+='</div>';
+        }
+        // Turnos previos (fin de turno) — mismo detalle que FabTracker / Monitor
+        if(op.turnos && op.turnos.length){
+          h+='<div style="margin-top:3px;padding-left:14px;display:flex;flex-direction:column;gap:2px;">';
+          op.turnos.forEach(function(seg,si){
+            h+='<div style="font-size:.66rem;color:var(--dim);padding:2px 7px;background:rgba(124,92,191,.08);border-left:3px solid rgba(124,92,191,.45);border-radius:4px;">'+
+              '🕐 Turno '+(si+1)+': '+esc(seg.tecnico||'')+' · '+fmtM(seg.mins||0)+' · OK:'+(seg.qty_ok||0)+
+              ((seg.qty_def||0)>0?' DEF:'+seg.qty_def:'')+
+              ((seg.qty_rest||0)>0?' · <span style="color:var(--yellow);">'+seg.qty_rest+' restantes</span>':'')+
+              '</div>';
+          });
           h+='</div>';
         }
         // Comentarios de la operación

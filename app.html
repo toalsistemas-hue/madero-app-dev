@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.53</title>
+<title>FabTracker App v2.54</title>
 
 <!-- MSAL Browser -->
 
@@ -9976,6 +9976,9 @@ var _MON = {
 // el polling y aparece la pantalla de reposo. Swipe-up o tap reactiva.
 
 function monitorResetIdle() {
+  // Marca de actividad — el watchdog del intervalo del reloj compara contra IDLE_MS.
+  _MON.lastActivity = Date.now();
+  // Compatibilidad: también reprogramar el setTimeout (redundante pero inofensivo).
   if (_MON.isIdle) return;
   if (_MON.idleTimer) clearTimeout(_MON.idleTimer);
   _MON.idleTimer = setTimeout(function() { monitorGoSleep(); }, _MON.IDLE_MS);
@@ -10038,6 +10041,11 @@ async function monitorInit() {
   monitorUpdateClock();
   _MON.clockTimer = setInterval(function() {
     monitorUpdateClock();
+    // Watchdog de inactividad basado en marca de tiempo (robusto ante setTimeout perdidos):
+    // si no está en reposo y pasó IDLE_MS sin actividad, entrar en reposo.
+    if (!_MON.isIdle && _MON.lastActivity && (Date.now() - _MON.lastActivity) >= _MON.IDLE_MS) {
+      monitorGoSleep();
+    }
     // También actualiza el reloj de la pantalla de reposo mientras está activa
     if (_MON.isIdle) {
       var sc = document.getElementById('mon-sleep-clock');
@@ -10369,6 +10377,19 @@ function monitorRenderOp(of, op) {
     var _today = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'});
     if (op.inicio) card += '<span>INICIO: <span style="color:#58a6ff;">'+(op.fechaInicio||_today)+' '+esc(op.inicio)+'</span></span>';
     if (op.fin)    card += '<span>FIN: <span style="color:#22c55e;">'+(op.fechaFin||_today)+' '+esc(op.fin)+'</span></span>';
+    card += '</div>';
+  }
+
+  // Turnos previos (fin de turno) — mismo detalle que FabTracker
+  if (op.turnos && op.turnos.length) {
+    card += '<div style="display:flex;flex-direction:column;gap:3px;margin-bottom:8px;">';
+    op.turnos.forEach(function(seg, si) {
+      card += '<div style="font-size:.68rem;color:#8b949e;padding:3px 8px;background:rgba(99,102,241,.08);border-left:3px solid rgba(99,102,241,.5);border-radius:4px;">'+
+        '🕐 Turno '+(si+1)+': '+esc(seg.tecnico||'')+' · '+fmtM(seg.mins||0)+' · OK:'+(seg.qty_ok||0)+
+        ((seg.qty_def||0)>0?' DEF:'+seg.qty_def:'')+
+        ((seg.qty_rest||0)>0?' · <span style="color:#f59e0b;">'+seg.qty_rest+' restantes</span>':'')+
+        '</div>';
+    });
     card += '</div>';
   }
 

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.52</title>
+<title>FabTracker App v2.53</title>
 
 <!-- MSAL Browser -->
 
@@ -246,7 +246,7 @@ tr:last-child td{border-bottom:none;}
 
 /* ── Monitor Sleep Screen ──────────────────────────────────────── */
 #monitor-sleep-screen{
-  display:none;position:fixed;inset:0;z-index:500;
+  display:none;position:fixed;inset:0;z-index:999999;touch-action:manipulation;
   background:#020810;flex-direction:column;align-items:center;
   justify-content:center;overflow:hidden;cursor:pointer;
   user-select:none;-webkit-user-select:none;
@@ -9994,10 +9994,11 @@ function monitorGoSleep() {
 }
 
 async function monitorWakeUp() {
-  if (!_MON.isIdle) return;
-  _MON.isIdle = false;
+  // Ocultar SIEMPRE la pantalla de reposo al invocar (aunque el flag se haya desincronizado)
   var ss = document.getElementById('monitor-sleep-screen');
   if (ss) ss.classList.remove('active');
+  if (!_MON.isIdle) return; // ya estaba despierto — solo aseguramos que la pantalla quede oculta
+  _MON.isIdle = false;
   // Refresh inmediato al despertar para mostrar datos frescos
   try {
     await spPollCheck();
@@ -10011,18 +10012,18 @@ async function monitorWakeUp() {
 function monitorInitSleepScreen() {
   var ss = document.getElementById('monitor-sleep-screen');
   if (!ss) return;
-  // Swipe-up en pantalla de reposo → despertar
-  var _ty0 = 0;
-  ss.addEventListener('touchstart', function(e){ _ty0 = e.touches[0].clientY; }, {passive:true});
-  ss.addEventListener('touchend',   function(e){
-    if (e.changedTouches[0].clientY - _ty0 < -40) monitorWakeUp();
-  }, {passive:true});
-  // Tap también despierta (cubre stylus y desktop)
-  ss.addEventListener('click', function(){ monitorWakeUp(); });
-
+  if (!ss._sleepBound) {
+    ss._sleepBound = true; // evitar enganchar listeners duplicados si monitorInit corre otra vez
+    // Cualquier toque / clic / puntero / deslizamiento en la pantalla de reposo la despierta
+    var _wake = function(e){ try { if (e && e.cancelable && e.preventDefault) e.preventDefault(); } catch(_){} monitorWakeUp(); };
+    ss.addEventListener('pointerup', _wake);
+    ss.addEventListener('touchend',  _wake, {passive:false});
+    ss.addEventListener('click',     _wake);
+  }
   // Cualquier interacción en monitor-screen resetea el timer de inactividad
   var ms = document.getElementById('monitor-screen');
-  if (ms) {
+  if (ms && !ms._idleBound) {
+    ms._idleBound = true;
     ms.addEventListener('touchstart', function(){ if (!_MON.isIdle) monitorResetIdle(); }, {passive:true});
     ms.addEventListener('click',      function(){ if (!_MON.isIdle) monitorResetIdle(); }, {passive:true});
   }

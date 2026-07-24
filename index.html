@@ -6721,16 +6721,17 @@ async function ftLoadDataFromSP() {
           await ftLoadDataFromSP();
           return;
         }
-        var r = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc');
-        var latestMod = (r.value&&r.value.length) ? (r.value[0].lastModifiedDateTime||'') : '';
-        if (!window._coordLastOpsMod && latestMod) {
-          // First successful poll — set baseline, don't trigger reload
-          window._coordLastOpsMod = latestMod;
-        } else if (window._coordLastOpsMod && latestMod && latestMod !== window._coordLastOpsMod) {
-          window._coordLastOpsMod = latestMod;
-          // Lightweight: reload only ops fields, no full page rebuild
-          var opsRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$expand=fields&$top=5000');
-          var allOps = (opsRes.value||[]).map(function(i){return i.fields;});
+        // Firma de contenido de las operaciones. Antes se usaba lastModifiedDateTime (solo disponible
+        // por Graph directo); como FT_Operaciones es lista protegida y se resuelve por el flujo,
+        // ese metadato no llega. Calculamos una firma con el contenido para detectar cambios.
+        var opsRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$expand=fields&$top=5000');
+        var allOps = (opsRes.value||[]).map(function(i){return i.fields;});
+        var _opsSig = allOps.map(function(o){return (o.OF_SAP||'')+'~'+(o.Op_ID||o.Title||'')+'~'+(o.Status||'')+'~'+(o.Mins||0)+'~'+(o.Qty_OK||0)+'~'+(o.Qty_Def||0)+'~'+(o.Qty_Chat||0)+'~'+(o.Qty_Rej||0)+'~'+(o.NeedsCal||'')+'~'+(o.CalResult||'');}).sort().join('|');
+        if (!window._coordLastOpsMod) {
+          // Primer poll — establecer línea base sin recargar
+          window._coordLastOpsMod = _opsSig;
+        } else if (_opsSig !== window._coordLastOpsMod) {
+          window._coordLastOpsMod = _opsSig;
           var _statusEvents=[];
           DB.activeOFs.forEach(function(aof){
             var spOps=allOps.filter(function(o){return o.OF_SAP===aof.of_sap;})
@@ -6944,20 +6945,8 @@ async function ftLoadDataFromSP() {
       console.log('[Coord] Ventana visible — refresh inmediato');
       window._coordSlowTick = 0; // reset slow-poll counter
       try {
-        if (window._coordCanUseGraph === false) {
-          await ftLoadDataFromSP();
-        } else {
-          // Lightweight check first — only full reload if data changed
-          var _vr = await graphGet('sites/'+FT_SITE_ID+
-            '/lists/FT_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc')
-            .catch(function(){return null;});
-          if (_vr && _vr.value && _vr.value.length) {
-            var _vm = _vr.value[0].lastModifiedDateTime || '';
-            if (_vm && _vm !== window._coordLastOpsMod) {
-              await ftLoadDataFromSP();
-            }
-          }
-        }
+        // Al volver a la ventana recargamos datos frescos (una sola vez, no es un poll repetido)
+        await ftLoadDataFromSP();
         if (C.currentPage === 'seguimiento') renderSeg();
         else if (C.currentPage === 'Fabricaciones') (window.renderProg||function(){})();
       } catch(e) { console.warn('[Coord] Visibility refresh error:', e.message); }

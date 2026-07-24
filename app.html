@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.54</title>
+<title>FabTracker App v2.55</title>
 
 <!-- MSAL Browser -->
 
@@ -3624,7 +3624,10 @@ function renderAppHoy(){
     return h;
   }
   h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+DB.activeOFs.length+"</span></div>";
-  var groups=groupByPedido((DB.activeOFs||[]).filter(Boolean));
+  h+="<input id='app-search-of' value='"+esc(APP.searchOF||'')+"' oninput='appSetSearch(this.value)' placeholder='🔍 Buscar por N° de OF...' style='width:100%;box-sizing:border-box;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--atext);font-size:.85rem;outline:none;'>";
+  var _hoySrc=(DB.activeOFs||[]).filter(Boolean);
+  if(APP.searchOF){var _hq=String(APP.searchOF).toLowerCase();_hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_hq)>=0;});}
+  var groups=groupByPedido(_hoySrc);
   groups.forEach(function(g){
     var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
     var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
@@ -3848,7 +3851,8 @@ function renderAppOFs(){
   var planeacion=DB.ofs.filter(function(o){return !o.programadoHoy;});
   var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
   var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
-  var h="<div class='app-sh'>EN PROCESO <span class='app-sbadge'>"+enProceso.length+"</span></div>";
+  var h="<input id='app-search-of' value='"+esc(APP.searchOF||'')+"' oninput='appSetSearch(this.value)' placeholder='🔍 Buscar por N° de OF...' style='width:100%;box-sizing:border-box;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--atext);font-size:.85rem;outline:none;'>";
+  h+="<div class='app-sh'>EN PROCESO <span class='app-sbadge'>"+enProceso.length+"</span></div>";
   if(enProceso.length===0){
     h+="<div style='padding:14px 10px;text-align:center;color:var(--adim);font-size:.76rem;'>Sin OFs en producción hoy. El Coordinador programa las OFs desde la plataforma web.</div>";
   }
@@ -10154,6 +10158,47 @@ async function monitorLoadTechnicians() {
 }
 
 // ── Tab ───────────────────────────────────────────────────────────
+// Buscador por N° de OF en FabTracker (vistas HOY y ÓRDENES)
+function appSetSearch(v){
+  APP.searchOF = v;
+  renderApp();
+  var el = document.getElementById('app-search-of');
+  if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(_){} }
+}
+// Filtro por N° de OF en el Monitor
+function monitorSetOFFilter(v){
+  _MON.filtroOF = v;
+  monitorRender();
+  var el = document.getElementById('monitor-of-filter');
+  if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(_){} }
+}
+// Iniciar Comida — pausa normal con comentario y hora (se muestra en Tiempo Real como pausa normal)
+async function monitorIniciarComida(ofSap, opId){
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null; if(!op) return;
+  if(op.status!=='running'){ if(typeof showAppNotif==='function') showAppNotif('info','⚠️ La operación no está en proceso'); return; }
+  var key = ofSap+'_'+opId;
+  if(typeof _acquireOpLock==='function' && !_acquireOpLock(key)) return;
+  var hora = nowT();
+  if(DB.timers[key]){
+    if(DB.timers[key].running && DB.timers[key].start){ DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start); }
+    DB.timers[key].running=false; DB.timers[key].start=0; DB.timers[key]._frozenAt=Date.now();
+    op.mins=Math.floor((DB.timers[key].elapsed||0)/60000);
+  }
+  op.status='paused';
+  op.pauseReason='🍽 Operador a iniciado tiempo de comida — '+hora;
+  op._pauseTipo='normal';
+  op._hadNormalPause=true;
+  try{ var _td=op.turnoData?JSON.parse(op.turnoData):{_turnosArray:true,turnos:op.turnos||[]}; _td._hadNormalPause=true; op.turnoData=JSON.stringify(_td); }catch(e){}
+  op._localStatus='paused'; op._localStatusAt=Date.now();
+  (op.ayudantes||[]).forEach(function(a){ var ak=key+'_ayud_'+a.replace(/[^a-z0-9]/gi,'_'); if(DB.timers[ak]&&DB.timers[ak].running){ DB.timers[ak].elapsed=(DB.timers[ak].elapsed||0)+(Date.now()-DB.timers[ak].start); DB.timers[ak].running=false; } });
+  monitorRender();
+  try{ await appSaveOpToSP(ofSap,opId); if(typeof appSaveTimerToSP==='function') await appSaveTimerToSP(key); }
+  catch(e){ console.warn('[Monitor] Comida SP:', e.message); }
+  finally{ if(typeof _releaseOpLock==='function') _releaseOpLock(key); }
+  if(typeof fireSync==='function') fireSync('app','op_paused',{of_sap:ofSap, op_id:opId, op_name:op.nombre, tecnico:op.tecnico||'', reason:op.pauseReason||'', tipo:'normal'});
+  console.log('[Monitor] Comida iniciada:', op.nombre, hora);
+}
 function monitorBuildFilterBar(bar, estaciones) {
   var all = _MON.filtroEstacion === '';
   var html = '';
@@ -10165,6 +10210,7 @@ function monitorBuildFilterBar(bar, estaciones) {
     var a = (_MON.filtroEstacion === est);
     html += '<button style="'+(a?styleActive:styleInact)+'" onclick="_MON.filtroEstacion=\''+est+'\';monitorRender();">'+est+'</button>';
   });
+  html += '<input id="monitor-of-filter" value="'+(_MON.filtroOF?String(_MON.filtroOF).replace(/"/g,'&quot;'):'')+'" oninput="monitorSetOFFilter(this.value)" placeholder="🔍 N° de OF" style="flex:1;min-width:120px;padding:4px 10px;border-radius:6px;font-size:.68rem;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#e6edf3;outline:none;">';
   bar.innerHTML = html;
 }
 
@@ -10213,7 +10259,9 @@ function monitorRender() {
 
   // Collect all ops for selected stations
   var opsActivas = [], opsTerminadas = [];
+  var _monOF = _MON.filtroOF ? String(_MON.filtroOF).toLowerCase() : '';
   (DB.activeOFs || []).forEach(function(of) {
+    if (_monOF && String(of.of_sap||'').toLowerCase().indexOf(_monOF) < 0) return; // filtro por N° de OF
     (of.ops || []).forEach(function(op) {
       if (!estaciones.includes(op.estacion)) return;
       var item = { of: of, op: op };
@@ -10421,6 +10469,12 @@ function monitorRenderOp(of, op) {
       'style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);border-radius:8px;'+
       'padding:9px 14px;color:#f59e0b;font-size:.78rem;font-weight:600;cursor:pointer;">'+
       '🌙 Fin de Turno</button>';
+    // Iniciar Comida — pausa normal con comentario y hora
+    card += '<button data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
+      'onclick="var b=this;monitorIniciarComida(b.dataset.monOf,b.dataset.monOp)" '+
+      'style="background:rgba(0,180,216,.15);border:1px solid rgba(0,180,216,.4);border-radius:8px;'+
+      'padding:9px 14px;color:#22d3ee;font-size:.78rem;font-weight:600;cursor:pointer;">'+
+      '🍽 Iniciar Comida</button>';
   }
   if (isPaused) {
     // Paused — only Reanudar is available (no Concluir/Val.Cal while paused)
@@ -12487,7 +12541,10 @@ function renderAppHoy(){
     return h;
   }
   h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+DB.activeOFs.length+"</span></div>";
-  var groups=groupByPedido((DB.activeOFs||[]).filter(Boolean));
+  h+="<input id='app-search-of' value='"+esc(APP.searchOF||'')+"' oninput='appSetSearch(this.value)' placeholder='🔍 Buscar por N° de OF...' style='width:100%;box-sizing:border-box;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--atext);font-size:.85rem;outline:none;'>";
+  var _hoySrc=(DB.activeOFs||[]).filter(Boolean);
+  if(APP.searchOF){var _hq=String(APP.searchOF).toLowerCase();_hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_hq)>=0;});}
+  var groups=groupByPedido(_hoySrc);
   groups.forEach(function(g){
     var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
     var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
@@ -12726,9 +12783,11 @@ function renderAppOFs(){
   var asignadas=DB.activeOFs.map(function(o){return o.of_sap;});
   var enProceso=DB.ofs.filter(function(o){return asignadas.indexOf(o.of_sap)>-1;});
   var planeacion=DB.ofs.filter(function(o){return asignadas.indexOf(o.of_sap)===-1;});
+  if(APP.searchOF){var _oq=String(APP.searchOF).toLowerCase();var _ofx=function(o){return String(o.of_sap||'').toLowerCase().indexOf(_oq)>=0;};enProceso=enProceso.filter(_ofx);planeacion=planeacion.filter(_ofx);}
   var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
   var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
-  var h="<div class='app-sh'>EN PROCESO <span class='app-sbadge'>"+enProceso.length+"</span></div>";
+  var h="<input id='app-search-of' value='"+esc(APP.searchOF||'')+"' oninput='appSetSearch(this.value)' placeholder='🔍 Buscar por N° de OF...' style='width:100%;box-sizing:border-box;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--atext);font-size:.85rem;outline:none;'>";
+  h+="<div class='app-sh'>EN PROCESO <span class='app-sbadge'>"+enProceso.length+"</span></div>";
   groupByPedido((enProceso||[]).filter(Boolean)).forEach(function(g){
     h+="<div class='app-ped-group'><div class='app-ped-hdr'><div><div class='app-ped-num'>"+esc(g.pedido)+"</div><div class='app-ped-cliente'>"+esc(g.cliente)+(g.ofv?" · "+esc(g.ofv):"")+"</div></div><span class='app-chip "+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span></div>";
     g.ofs.forEach(function(o){

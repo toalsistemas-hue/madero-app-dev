@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.49</title>
+<title>FabTracker App v2.50</title>
 
 <!-- MSAL Browser -->
 
@@ -8734,14 +8734,27 @@ async function _doSaveTimerToSP(key) {
     if (t._spId) {
       await _flowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
     } else {
-      var res = null;
-      for (var _r = 0; _r < 2 && !res; _r++) {
-        try {
-          if (_r > 0) await new Promise(function(r){setTimeout(r,2000);});
-          res = await _flowEscribir('FT_Timers', 'crear', 0, fields);
-        } catch(e2) { console.warn('[Timer] Create attempt', _r+1, 'failed:', e2.message); }
+      // Evitar filas duplicadas: el "crear" del flujo no devuelve el id, así que
+      // primero buscamos si ya existe una fila para esta clave y la actualizamos.
+      var _existId = null;
+      try {
+        var _tl = await appFlowGet('FT_Timers', 2000);
+        var _mt = (_tl.value||[]).filter(function(x){ return x.fields && (x.fields.Title===key || x.fields.Timer_Key===key); });
+        if (_mt.length) _existId = _mt[0].id;
+      } catch(eLk) { /* si la búsqueda falla, se crea abajo */ }
+      if (_existId) {
+        t._spId = _existId;
+        await _flowEscribir('FT_Timers', 'actualizar', parseInt(_existId), fields);
+      } else {
+        var res = null;
+        for (var _r = 0; _r < 2 && !res; _r++) {
+          try {
+            if (_r > 0) await new Promise(function(r){setTimeout(r,2000);});
+            res = await _flowEscribir('FT_Timers', 'crear', 0, fields);
+          } catch(e2) { console.warn('[Timer] Create attempt', _r+1, 'failed:', e2.message); }
+        }
+        if (res && res.id) t._spId = res.id;
       }
-      if (res && res.id) t._spId = res.id;
     }
   } catch(e) {
     console.warn('[Timer] appSaveTimerToSP error:', key, e.message||e);

@@ -6241,7 +6241,7 @@ async function ftLoadDataFromSP() {
               fecha_inicio_real: o.Fecha_Inicio || '',
               fecha_fin_real: o.Fecha_Fin || '',
               mins: parseInt(o.Mins||0),
-              qty_total: parseInt(o.Qty_Total||10),
+              qty_total: parseInt(o.Qty_Total||1),
               qty_ok: parseInt(o.Qty_OK||0),
               qty_def: parseInt(o.Qty_Def||0),
               qty_rej: parseInt(o.Qty_Rej||0),
@@ -6487,7 +6487,7 @@ async function ftLoadDataFromSP() {
               // Apply template defaults for tecnico, ayudantes, qty_total
               tecnico:   op.tecnico  || '',
               ayudantes: _tplAyu,
-              qty_total: op.cantidad ? parseInt(op.cantidad) : 10,
+              qty_total: op.cantidad ? parseInt(op.cantidad) : 1,
               qty_ok: 0, qty_def: 0, qty_rej: 0,
               status: 'pending', inicio: null, fin: null, mins: 0,
               isTemplate: true, pauseReason: null, valcalNote: null,
@@ -6760,7 +6760,7 @@ async function ftLoadDataFromSP() {
                 tecnico:o.Tecnico||'',ayudantes:(o.Ayudantes_JSON||'').split(',').filter(Boolean),
                 status:newStatus,inicio:o.Inicio||'',fin:o.Fin||'',
                 fecha_inicio_real:o.Fecha_Inicio||'',fecha_fin_real:o.Fecha_Fin||'',
-                mins:parseInt(o.Mins||0),qty_total:parseInt(o.Qty_Total||10),
+                mins:parseInt(o.Mins||0),qty_total:parseInt(o.Qty_Total||1),
                 qty_ok:parseInt(o.Qty_OK||0),qty_def:parseInt(o.Qty_Def||0),
                 qty_rej:parseInt(o.Qty_Rej||0),
                 qty_chat:parseInt(o.Qty_Chat||0),
@@ -9914,25 +9914,30 @@ function confirmProgMain() {
     // // Si se marca como nueva, crear activeOF con ops (si no existe ya en memoria)
     if (of.programadoHoy && !prev) {
       var _existingAof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+      var _editOps = (window._progOpsEditadas && window._progOpsEditadas[sap]) ? window._progOpsEditadas[sap] : null;
+      var _mapEditOp = function(op,i){
+        return {id:'op_'+sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
+          tipo:op.tipo||'Secuencial', tecnico:op.tecnico||'', ayudantes:op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[],
+          qty_total:op.cantidad?parseInt(op.cantidad):1, qty_ok:0, qty_def:0, qty_rej:0,
+          status:'pending', inicio:null, fin:null, mins:0,
+          isTemplate:true, pauseReason:null, valcalNote:null,
+          needsCal:false, calResult:null, calComment:null};
+      };
       if (!_existingAof) {
         var tpl = DB.templates[of.articulo];
         var padre = tpl&&tpl.padre ? {articulo:tpl.padre,nombre:DB.articles[tpl.padre]||''} : null;
         // Fase A: si hubo revisión/edición previa, usar esas ops; si no, la plantilla
-        var _fuenteOps = (window._progOpsEditadas && window._progOpsEditadas[sap]) ? window._progOpsEditadas[sap] : (tpl ? tpl.ops : []);
-        if (window._progOpsEditadas) delete window._progOpsEditadas[sap];
-        var ops = (_fuenteOps||[]).map(function(op,i){
-          return {id:'op_'+sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
-            tipo:op.tipo||'Secuencial', tecnico:op.tecnico||'', ayudantes:op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[],
-            qty_total:op.cantidad?parseInt(op.cantidad):1, qty_ok:0, qty_def:0, qty_rej:0,
-            status:'pending', inicio:null, fin:null, mins:0,
-            isTemplate:true, pauseReason:null, valcalNote:null,
-            needsCal:false, calResult:null, calComment:null};
-        });
+        var _fuenteOps = _editOps ? _editOps : (tpl ? tpl.ops : []);
+        var ops = (_fuenteOps||[]).map(_mapEditOp);
         DB.activeOFs.push({of_sap:sap, pedido:of.pedido, cliente:of.cliente,
           ofv:of.ofv||'', articulo:of.articulo, descripcion:of.descripcion,
           prioridad:of.prioridad, padre:padre, subarts:tpl&&tpl.subarts?tpl.subarts.slice():[],
           ops:ops});
+      } else if (_editOps) {
+        // La OF ya estaba en memoria — aplicar las operaciones/cantidades capturadas en el modal
+        _existingAof.ops = _editOps.map(_mapEditOp);
       }
+      if (window._progOpsEditadas) delete window._progOpsEditadas[sap];
       // Always track for SP save — ops may exist in memory but not yet in FT_Operaciones
       nuevasOfs.push(sap);
     }
@@ -15649,7 +15654,15 @@ function ftRptExportExcel(){
     if (typeof _tplEnsureTecnicos === 'function') { try { await _tplEnsureTecnicos(); } catch(e){} }
     ensureModal();
     var m=document.getElementById('rev-prog-modal');
+    // Reiniciar el botón por si quedó en 'Registrando…' de un registro anterior
+    var _cbtn=m.querySelector('#rev-prog-confirmar'); if(_cbtn){ _cbtn.disabled=false; _cbtn.textContent='✓ Confirmar y registrar'; }
     var h='';
+    // Ajuste rápido: aplicar una cantidad a TODAS las operaciones
+    h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:8px 10px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);border-radius:8px;">'
+      +'<span style="font-size:.78rem;color:var(--text,#e6edf3);font-weight:600;">Cantidad para todas:</span>'
+      +'<input id="rev-cant-todas" type="number" min="1" value="1" oninput="revProgAplicarCantTodas()" style="width:80px;text-align:center;background:var(--bg,#0d1117);border:1px solid var(--border,#30363d);border-radius:5px;color:var(--text,#e6edf3);padding:4px 6px;font-size:.8rem;">'
+      +'<label style="display:flex;align-items:center;gap:6px;font-size:.78rem;color:var(--dim,#8b949e);cursor:pointer;"><input type="checkbox" id="rev-cant-todas-chk" onchange="revProgAplicarCantTodas()" style="width:15px;height:15px;cursor:pointer;"> Aplicar a todas las operaciones</label>'
+      +'</div>';
     nuevas.forEach(function(sap){
       var of=DB.ofs.find(function(o){return o.of_sap===sap;})||{};
       var tpl=DB.templates[of.articulo];
@@ -15678,6 +15691,15 @@ function ftRptExportExcel(){
     m.style.display='flex';
   };
 
+  // Aplica la cantidad del control superior a TODAS las operaciones (si el check está marcado)
+  window.revProgAplicarCantTodas=function(){
+    var chk=document.getElementById('rev-cant-todas-chk');
+    if(!chk||!chk.checked) return;
+    var val=parseInt((document.getElementById('rev-cant-todas')||{}).value)||1;
+    var m=document.getElementById('rev-prog-modal'); if(!m) return;
+    m.querySelectorAll('.rev-cant').forEach(function(inp){ inp.value=val; });
+  };
+
   window.confirmarRevisionProgramacion=function(){
     var m=document.getElementById('rev-prog-modal'); if(!m) return;
     var _b=document.getElementById('rev-prog-confirmar'); if(_b){ if(_b.disabled) return; _b.disabled=true; _b.textContent='Registrando…'; }
@@ -15693,7 +15715,7 @@ function ftRptExportExcel(){
           estacion: r.querySelector('.rev-est').value,
           tecnico: r.querySelector('.rev-tec').value,
           ayudantes: r.querySelector('.rev-ayu').value,
-          cantidad: parseInt(r.querySelector('.rev-cant').value)||10
+          cantidad: parseInt(r.querySelector('.rev-cant').value)||1
         });
       });
       arr.sort(function(a,b){return a._sec-b._sec;});

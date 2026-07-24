@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.55</title>
+<title>FabTracker App v2.56</title>
 
 <!-- MSAL Browser -->
 
@@ -10469,9 +10469,9 @@ function monitorRenderOp(of, op) {
       'style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);border-radius:8px;'+
       'padding:9px 14px;color:#f59e0b;font-size:.78rem;font-weight:600;cursor:pointer;">'+
       '🌙 Fin de Turno</button>';
-    // Iniciar Comida — pausa normal con comentario y hora
-    card += '<button data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
-      'onclick="var b=this;monitorIniciarComida(b.dataset.monOf,b.dataset.monOp)" '+
+    // Iniciar Comida — pausa normal con comentario y hora (requiere PIN del operador)
+    card += '<button data-mon-accion="comida" data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
+      'onclick="var b=this;monitorAskPin(b.dataset.monAccion,b.dataset.monOf,b.dataset.monOp)" '+
       'style="background:rgba(0,180,216,.15);border:1px solid rgba(0,180,216,.4);border-radius:8px;'+
       'padding:9px 14px;color:#22d3ee;font-size:.78rem;font-weight:600;cursor:pointer;">'+
       '🍽 Iniciar Comida</button>';
@@ -10617,14 +10617,15 @@ function monitorAskPin(accion, ofSap, opId) {
   var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
   if (!op) return;
 
-  var icons   = { iniciar:'▶', concluir:'⏹', valcal:'🔍', reanudar:'▶', finturno:'🌙' };
-  var titles  = { iniciar:'Iniciar operación', concluir:'Concluir operación', valcal:'Solicitar validación de calidad', reanudar:'Reanudar operación', finturno:'Fin de turno' };
+  var icons   = { iniciar:'▶', concluir:'⏹', valcal:'🔍', reanudar:'▶', finturno:'🌙', comida:'🍽' };
+  var titles  = { iniciar:'Iniciar operación', concluir:'Concluir operación', valcal:'Solicitar validación de calidad', reanudar:'Reanudar operación', finturno:'Fin de turno', comida:'Iniciar tiempo de comida' };
   var subs    = {
     iniciar:  op.tecnico ? ('PIN de '+op.tecnico) : 'PIN de operador (o nuevo operador)',
     concluir: op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
     valcal:   op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
     reanudar: op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
     finturno: op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
+    comida:   op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
   };
 
   _MON.pinCtx = { accion: accion, ofSap: ofSap, opId: opId, of: of, op: op };
@@ -10929,6 +10930,11 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
   } else if (accion === 'finturno') {
     // Fin de turno — abrir modal de captura de piezas (equivale a Pausa fin de turno de FabTracker)
     monFinTurnoOpen(of, op, tecNombre);
+    return;
+
+  } else if (accion === 'comida') {
+    // Iniciar tiempo de comida — pausa normal con comentario y hora
+    monitorIniciarComida(of.of_sap, op.id);
     return;
 
   } else if (accion === 'concluir') {

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.50</title>
+<title>FabTracker App v2.51</title>
 
 <!-- MSAL Browser -->
 
@@ -7583,7 +7583,12 @@ var APP_IS_LOCAL_IP = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(win
 // Exact registered redirect URIs in Azure AD
 function appGetRedirectUri() {
   var h = window.location.hostname;
-  if (h === 'toalsistemas-hue.github.io') return 'https://toalsistemas-hue.github.io/madero-app/app.html';
+  if (h === 'toalsistemas-hue.github.io') {
+    // dev y prod comparten host; diferenciar por RUTA (igual que la detección de entorno)
+    return (window.location.pathname.indexOf('madero-app-dev') !== -1)
+      ? 'https://toalsistemas-hue.github.io/madero-app-dev/app.html'
+      : 'https://toalsistemas-hue.github.io/madero-app/app.html';
+  }
   if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3000/';
   if (h.indexOf('netlify') >= 0) return 'https://automatizaciones-madero-app.netlify.app/app.html';
   if (h === 'automatizaciones.maderoequipos.com') return 'https://automatizaciones.maderoequipos.com/app.html';

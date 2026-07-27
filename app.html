@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.56</title>
+<title>FabTracker App v2.58</title>
 
 <!-- MSAL Browser -->
 
@@ -3722,6 +3722,7 @@ function renderAppOpsPanel(of){
       op.turnos.forEach(function(seg,si){
         h+="<div style='font-size:.64rem;color:var(--adim);padding:2px 6px;background:rgba(255,255,255,.03);border-radius:4px;border-left:2px solid rgba(99,102,241,.4);'>";
         h+="🕐 Turno "+(si+1)+": "+esc(seg.tecnico)+" · "+fmtM(seg.mins)+" · OK:"+seg.qty_ok+(seg.qty_def>0?" DEF:"+seg.qty_def:"")+(seg.qty_rest>0?" · <span style='color:var(--ayellow);'>"+seg.qty_rest+" restantes</span>":"");
+        h+="<div style='font-size:.6rem;opacity:.8;margin-top:1px;'>🟢 "+esc((seg.fecha_inicio||seg.fecha||'')+' '+(seg.inicio||''))+" → 🏁 "+esc((seg.fecha_fin||seg.fecha||'')+' '+(seg.fin||''))+"</div>";
         h+="</div>";
       });
       h+="</div>";
@@ -4238,7 +4239,9 @@ function appConfirmPause(){
       qty_ok:pzOk,
       qty_def:pzDef,
       qty_rest:pzRest,
-      fecha:new Date().toLocaleDateString('es-MX')
+      fecha:new Date().toLocaleDateString('es-MX'),
+      fecha_inicio: op.fechaInicioTurnoActual || (op.fecha_inicio_real ? String(op.fecha_inicio_real).split(' ')[0] : '') || new Date().toLocaleDateString('es-MX'),
+      fecha_fin: new Date().toLocaleDateString('es-MX')
     };
     // Evitar duplicado si ya existe turno con el mismo inicio
     var existIdx=op.turnos.findIndex(function(t){return t.inicio===turnoActual.inicio;});
@@ -4391,6 +4394,7 @@ function appConfirmReanudar(){
     op.qty_total=pzAok+pzAdef;op.qty_ok=pzAok;op.qty_def=pzAdef;
     op.mins=turnoA?turnoA.mins:0;
     op._traspasoA={tecnico:op.tecnico,ayudantes:op.ayudantes||[]};
+    op._localStatus='done';op._localStatusAt=Date.now();op._pauseTipo=null;op.pauseReason=null;
     // Generar nueva op para turno B
     // Op_ID: mismo patrón que otras ops → op_<sap>_<índice>
     var _turnoIdx = of.ops.length; // índice al final (antes del push)
@@ -10436,6 +10440,7 @@ function monitorRenderOp(of, op) {
         '🕐 Turno '+(si+1)+': '+esc(seg.tecnico||'')+' · '+fmtM(seg.mins||0)+' · OK:'+(seg.qty_ok||0)+
         ((seg.qty_def||0)>0?' DEF:'+seg.qty_def:'')+
         ((seg.qty_rest||0)>0?' · <span style="color:#f59e0b;">'+seg.qty_rest+' restantes</span>':'')+
+        '<div style="opacity:.8;font-size:.62rem;margin-top:1px;">🟢 '+esc((seg.fecha_inicio||seg.fecha||'')+' '+(seg.inicio||''))+' → 🏁 '+esc((seg.fecha_fin||seg.fecha||'')+' '+(seg.fin||''))+'</div>'+
         '</div>';
     });
     card += '</div>';
@@ -10865,7 +10870,9 @@ async function monFinTurnoConfirm(){
   var turnoActual = {
     turno: turnoNum, tecnico: op.tecnico||ctx.tecnico, ayudantes:(op.ayudantes||[]).slice(),
     inicio: op.inicioTurnoActual||op.inicio, fin: nowT(), mins: turnoMins,
-    qty_ok: pzOk, qty_def: pzDef, qty_rest: pzRest, fecha: new Date().toLocaleDateString('es-MX')
+    qty_ok: pzOk, qty_def: pzDef, qty_rest: pzRest, fecha: new Date().toLocaleDateString('es-MX'),
+    fecha_inicio: op.fechaInicioTurnoActual || (op.fecha_inicio_real ? String(op.fecha_inicio_real).split(' ')[0] : '') || new Date().toLocaleDateString('es-MX'),
+    fecha_fin: new Date().toLocaleDateString('es-MX')
   };
   var existIdx = op.turnos.findIndex(function(t){ return t.inicio===turnoActual.inicio; });
   if(existIdx>=0) op.turnos[existIdx]=turnoActual; else op.turnos.push(turnoActual);
@@ -11183,6 +11190,9 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
   op.qty_total = pzAok + pzAdef; op.qty_ok = pzAok; op.qty_def = pzAdef;
   op.mins = turnoA ? (turnoA.mins||0) : 0;
   op._traspasoA = { tecnico: op.tecnico, ayudantes: op.ayudantes || [] };
+  // Candado local: evitar que el poll/reload revierta 'done' al 'paused' de la pausa de fin de turno
+  op._localStatus = 'done'; op._localStatusAt = Date.now();
+  op._pauseTipo = null; op.pauseReason = null;
   // Create new op B
   var _turnoIdx  = of.ops.length;
   var _turnoOpId = 'op_' + of.of_sap + '_turnoB' + _turnoIdx;
@@ -11196,6 +11206,7 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
     needsCal: op.needsCal, calResult: null, calComment: null,
     pauseReason: null, _pauseTipo: null
   };
+  newOp._colaPos = op._colaPos || null; // heredar la posición de cola del turno A
   of.ops.push(newOp);
   // Persist
   (async function() {
@@ -11214,9 +11225,10 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
       var res = await appFlowEscribir('FT_Operaciones', 'crear', 0, postFields);
       newOp._spId = res && res.id ? res.id : null;
       if (newOp.estacion) {
+        var _posB = op._colaPos || 999; // heredar la posición del turno A para que quede en el lugar correcto
         appFlowEscribir('FT_Cola_Estacion', 'crear', 0, {
           Title: of.of_sap+'_'+newOp.id, OF_SAP: of.of_sap, Op_ID: newOp.id,
-          Estacion: newOp.estacion, Posicion: 999, Tipo_Cola: 'normal', Status: 'pending', Activo: true
+          Estacion: newOp.estacion, Posicion: _posB, Tipo_Cola: 'normal', Status: 'pending', Activo: true
         }).then(function(r) { if (r&&r.id) newOp._queueSpId = r.id; }).catch(function(){});
       }
       console.log('[Monitor] Traspaso turno B: ' + nuevoTech + ' · ' + pzRest + ' pzas');
@@ -12646,6 +12658,7 @@ function renderAppOpsPanel(of){
       op.turnos.forEach(function(seg,si){
         h+="<div style='font-size:.64rem;color:var(--adim);padding:2px 6px;background:rgba(255,255,255,.03);border-radius:4px;border-left:2px solid rgba(99,102,241,.4);'>";
         h+="🕐 Turno "+(si+1)+": "+esc(seg.tecnico)+" · "+fmtM(seg.mins)+" · OK:"+seg.qty_ok+(seg.qty_def>0?" DEF:"+seg.qty_def:"")+(seg.qty_rest>0?" · <span style='color:var(--ayellow);'>"+seg.qty_rest+" restantes</span>":"");
+        h+="<div style='font-size:.6rem;opacity:.8;margin-top:1px;'>🟢 "+esc((seg.fecha_inicio||seg.fecha||'')+' '+(seg.inicio||''))+" → 🏁 "+esc((seg.fecha_fin||seg.fecha||'')+' '+(seg.fin||''))+"</div>";
         h+="</div>";
       });
       h+="</div>";
@@ -13123,7 +13136,9 @@ function appConfirmPause(){
       qty_ok:pzOk,
       qty_def:pzDef,
       qty_rest:pzRest,
-      fecha:new Date().toLocaleDateString('es-MX')
+      fecha:new Date().toLocaleDateString('es-MX'),
+      fecha_inicio: op.fechaInicioTurnoActual || (op.fecha_inicio_real ? String(op.fecha_inicio_real).split(' ')[0] : '') || new Date().toLocaleDateString('es-MX'),
+      fecha_fin: new Date().toLocaleDateString('es-MX')
     };
     // Evitar duplicados — si ya existe un turno con el mismo inicio, actualizarlo
     var existIdx=op.turnos.findIndex(function(t){return t.inicio===turnoActual.inicio;});
@@ -13260,6 +13275,7 @@ function appConfirmReanudar(){
     op.qty_total=pzAok+pzAdef;op.qty_ok=pzAok;op.qty_def=pzAdef;
     op.mins=turnoA?turnoA.mins:0;
     op._traspasoA={tecnico:op.tecnico,ayudantes:op.ayudantes||[]};
+    op._localStatus='done';op._localStatusAt=Date.now();op._pauseTipo=null;op.pauseReason=null;
     // Generar nueva op para turno B
     // Op_ID: mismo patrón que otras ops → op_<sap>_<índice>
     var _turnoIdx = of.ops.length; // índice al final (antes del push)

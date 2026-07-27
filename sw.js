@@ -2,7 +2,7 @@
 // ⬆️ SUBE ESTE NÚMERO en cada publicación para forzar limpieza de caché vieja.
 //    (El HTML ya es "network-first", así que app.html/index.html se actualizan solos;
 //     bumpear la versión solo limpia cachés de recursos antiguos.)
-const CACHE_NAME = 'madero-app-v1.7.3';
+const CACHE_NAME = 'madero-app-v1.7.4';
 
 // Rutas RELATIVAS al scope del SW — funcionan igual en la raíz o en subcarpeta
 // (/madero-app/ y /madero-app-dev/), a diferencia de las rutas absolutas '/app.html'.
@@ -55,7 +55,14 @@ self.addEventListener('activate', function(event) {
 
 // Fetch: network-first para HTML (nunca servir HTML viejo), cache-first para recursos
 self.addEventListener('fetch', function(event) {
-  var url = new URL(event.request.url);
+  var req = event.request;
+
+  // IMPORTANTE: solo interceptar GET del MISMO ORIGEN.
+  // Las llamadas a los flujos de Power Automate (POST), a Microsoft Graph y a CDNs
+  // deben pasar directo a la red — Cache.put NO soporta POST y las rompería.
+  if (req.method !== 'GET') return;
+  var url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
 
   // HTML siempre fresco desde la red (con respaldo a caché si no hay conexión)
   if (event.request.destination === 'document' ||

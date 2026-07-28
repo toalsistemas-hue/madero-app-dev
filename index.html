@@ -1337,6 +1337,7 @@ tr:last-child td{border-bottom:none;}
                   <div style="font-family:\'Syne\',sans-serif;font-size:1rem;font-weight:700;">👷 Técnicos de Fabricación</div>
                   <button class="fab-read-only-hide" onclick="ftOpenTecnico()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar técnico</button>
                 </div>
+                <input type="text" id="ft-tec-search" oninput="ftFiltrarTecnicos()" placeholder="🔍 Buscar técnico por nombre o puesto..." style="width:100%;box-sizing:border-box;margin-bottom:12px;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid var(--border,#30363d);border-radius:8px;color:var(--text,#e6edf3);font-size:.82rem;outline:none;">
                 <div id="ft-tecnicos-list" style="display:flex;flex-direction:column;gap:6px;">
                   <div style="text-align:center;padding:20px;color:var(--dim,#64748b);font-size:.8rem;">Cargando técnicos...</div>
                 </div>
@@ -1350,6 +1351,7 @@ tr:last-child td{border-bottom:none;}
                   <div style="font-family:\'Syne\',sans-serif;font-size:1rem;font-weight:700;">🏗️ Estaciones de Trabajo</div>
                   <button class="fab-read-only-hide" onclick="ftOpenEstacion()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar estación</button>
                 </div>
+                <input type="text" id="ft-est-search" oninput="ftFiltrarEstaciones()" placeholder="🔍 Buscar estación por nombre..." style="width:100%;box-sizing:border-box;margin-bottom:12px;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid var(--border,#30363d);border-radius:8px;color:var(--text,#e6edf3);font-size:.82rem;outline:none;">
                 <div id="ft-estaciones-list" style="display:flex;flex-direction:column;gap:6px;">
                   <div style="text-align:center;padding:20px;color:var(--dim,#64748b);font-size:.8rem;">Cargando estaciones...</div>
                 </div>
@@ -5332,11 +5334,37 @@ async function saveArticulosToSP(newArts, statusEl){
         if(statusEl && i % 5 === 0) statusEl.textContent='⏳ Guardando en SharePoint... '+saved+'/'+keys.length;
       }catch(e){ errs++; console.warn('Error saving art '+art, e.message); }
     }
-    var msg = '✅ '+saved+' artículos guardados en SharePoint';
-    if(errs>0) msg += ' ('+errs+' errores — posible columna incorrecta)';
+    // ── Verificación posterior: releer FT_Articulos y detectar los que NO se registraron ──
+    // (el flujo puede responder 'ok' sin haber insertado; aquí confirmamos contra SP real)
+    var faltantes = [];
+    try {
+      var verifRes = await flowGet('FT_Articulos', '', 5000);
+      var existSet = {};
+      (verifRes.value||[]).forEach(function(it){ existSet[String((it.fields&&it.fields.Title)||'').trim().toUpperCase()] = true; });
+      keys.forEach(function(k){ if(!existSet[String(k).trim().toUpperCase()]) faltantes.push(k); });
+    } catch(e){ console.warn('[Artículos] Verificación falló:', e.message); }
+    // Reintentar una vez los faltantes
+    if (faltantes.length) {
+      if(statusEl) statusEl.textContent = '⏳ Reintentando '+faltantes.length+' artículo(s) que no se registraron...';
+      for (var r=0; r<faltantes.length; r++){
+        try { await spEscribir('FT_Articulos', {Title:faltantes[r], Descripcion:newArts[faltantes[r]]||''}, null); } catch(e){}
+      }
+      try {
+        var verif2 = await flowGet('FT_Articulos', '', 5000);
+        var set2 = {}; (verif2.value||[]).forEach(function(it){ set2[String((it.fields&&it.fields.Title)||'').trim().toUpperCase()] = true; });
+        faltantes = faltantes.filter(function(k){ return !set2[String(k).trim().toUpperCase()]; });
+      } catch(e){}
+    }
+    var msg;
+    if (faltantes.length) {
+      msg = '⚠ '+(keys.length-faltantes.length)+' de '+keys.length+' artículos registrados. NO se registraron '+faltantes.length+': '+faltantes.slice(0,15).join(', ')+(faltantes.length>15?' …':'')+'. Revísalos e inténtalo de nuevo.';
+      console.warn('[Artículos] NO registrados en SP:', faltantes);
+      try { alert('Atención: '+faltantes.length+' artículo(s) NO se registraron en SharePoint:\n\n'+faltantes.join(', ')+'\n\nVuelve a cargarlos.'); } catch(_){}
+    } else {
+      msg = '✅ '+keys.length+' artículos registrados y verificados en SharePoint';
+    }
     if(statusEl) statusEl.textContent = msg;
-    // Reload from SP to confirm
-    if(saved>0) setTimeout(function(){ reloadArticulosFromSP(); }, 1000);
+    setTimeout(function(){ reloadArticulosFromSP(); }, 1000);
   }catch(e){
     if(statusEl) statusEl.textContent='❌ Error SP: '+e.message;
   }
@@ -5561,6 +5589,23 @@ async function importOpsToCatalog(newOps, statusEl){
 
 _ftEditTecId = null;
 
+// Filtros de Técnicos / Estaciones — ocultar/mostrar filas (sin re-render, sin perder foco)
+function ftFiltrarTecnicos(){
+  var q=((document.getElementById('ft-tec-search')||{}).value||'').trim().toLowerCase();
+  var list=document.getElementById('ft-tecnicos-list'); if(!list) return;
+  Array.prototype.forEach.call(list.children, function(row){
+    if(!row || row.nodeType!==1) return;
+    row.style.display = (!q || (row.textContent||'').toLowerCase().indexOf(q)>=0) ? '' : 'none';
+  });
+}
+function ftFiltrarEstaciones(){
+  var q=((document.getElementById('ft-est-search')||{}).value||'').trim().toLowerCase();
+  var list=document.getElementById('ft-estaciones-list'); if(!list) return;
+  Array.prototype.forEach.call(list.children, function(row){
+    if(!row || row.nodeType!==1) return;
+    row.style.display = (!q || (row.textContent||'').toLowerCase().indexOf(q)>=0) ? '' : 'none';
+  });
+}
 async function ftLoadTecnicos() {
   const list = document.getElementById('ft-tecnicos-list');
   list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--dim);font-size:.8rem;">⏳ Cargando...</div>';
@@ -12866,6 +12911,7 @@ function renderSeg(){
               '🕐 Turno '+(si+1)+': '+esc(seg.tecnico||'')+' · '+fmtM(seg.mins||0)+' · OK:'+(seg.qty_ok||0)+
               ((seg.qty_def||0)>0?' DEF:'+seg.qty_def:'')+
               ((seg.qty_rest||0)>0?' · <span style="color:var(--yellow);">'+seg.qty_rest+' restantes</span>':'')+
+              '<div style="opacity:.85;font-size:.62rem;margin-top:1px;">🟢 Inicio: '+esc((seg.fecha_inicio||seg.fecha||'')+' '+(seg.inicio||''))+' · 🏁 Fin: '+esc((seg.fecha_fin||seg.fecha||'')+' '+(seg.fin||''))+'</div>'+
               '</div>';
           });
           h+='</div>';

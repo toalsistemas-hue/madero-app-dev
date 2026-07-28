@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.59</title>
+<title>FabTracker App v2.60</title>
 
 <!-- MSAL Browser -->
 
@@ -10201,23 +10201,30 @@ function _appFiltroBarHTML(full){
 
 // Botón Actualizar — recarga todos los datos desde SP (para ver OFs recién programadas)
 async function appActualizar(){
+  if(typeof _appShowOmitOverlay==='function') _appShowOmitOverlay('Actualizando datos…');
   try {
     await appLoadDataFromSP();
     renderApp();
     if(typeof showAppNotif==='function') showAppNotif('ok','✅ Datos actualizados');
   } catch(e){ console.warn('[App] Actualizar:', e.message); if(typeof showAppNotif==='function') showAppNotif('error','No se pudo actualizar'); }
+  finally { if(typeof _appHideOmitOverlay==='function') _appHideOmitOverlay(); }
 }
 async function monitorActualizar(){
+  if(typeof _appShowOmitOverlay==='function') _appShowOmitOverlay('Actualizando datos…');
   try { await appLoadDataFromSP(); monitorRender(); if(typeof showAppNotif==='function') showAppNotif('ok','✅ Actualizado'); }
   catch(e){ console.warn('[Monitor] Actualizar:', e.message); }
+  finally { if(typeof _appHideOmitOverlay==='function') _appHideOmitOverlay(); }
 }
 
 // Filtro por N° de OF en el Monitor
 function monitorSetOFFilter(v){
   _MON.filtroOF = v;
-  monitorRender();
-  var el = document.getElementById('monitor-of-filter');
-  if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(_){} }
+  clearTimeout(_MON._ofFilterTimer);
+  _MON._ofFilterTimer = setTimeout(function(){
+    monitorRender();
+    var el = document.getElementById('monitor-of-filter');
+    if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(_){} }
+  }, 250);
 }
 // Iniciar Comida — pausa normal con comentario y hora (se muestra en Tiempo Real como pausa normal)
 async function monitorIniciarComida(ofSap, opId){
@@ -10990,6 +10997,8 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
   } else if (accion === 'concluir') {
     op.status = 'op_concluded';
     op.fin    = timeStr;
+    // Candado local para que el poll no revierta el estado mientras SP confirma
+    op._localStatus = 'op_concluded'; op._localStatusAt = Date.now();
     var timer = DB.timers ? DB.timers[of.of_sap+'_'+op.id] : null;
     if (timer) {
       // Acumular elapsed antes de detener
@@ -11002,6 +11011,9 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
       op.mins = Math.round((timer.elapsed||0)/60000);
       appSaveTimerToSP(of.of_sap+'_'+op.id).catch(function(){});
     }
+    // Feedback inmediato: mostrar "CONCLUIDA — Aguarda Supervisor" al instante,
+    // sin esperar a que termine el guardado en SP (que puede tardar unos segundos).
+    monitorRender();
     await appSaveOpToSP(of.of_sap, op.id);
     appNtfyNotificar('mon_op_concluida', {
       of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion,

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.58</title>
+<title>FabTracker App v2.59</title>
 
 <!-- MSAL Browser -->
 
@@ -549,7 +549,9 @@ tr:last-child td{border-bottom:none;}
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
       <div id="monitor-clock" style="font-size:.8rem;color:#58a6ff;font-family:monospace;"></div>
-
+      <button onclick="monitorActualizar()" title="Actualizar datos"
+        style="background:rgba(0,180,216,.12);border:1px solid rgba(0,180,216,.3);
+               border-radius:7px;padding:5px 8px;cursor:pointer;color:#22d3ee;font-size:.85rem;">🔄</button>
       <button id="monitor-gear-btn" onclick="monitorToggleGear()"
         style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
                border-radius:7px;padding:5px 8px;cursor:pointer;color:#8b949e;font-size:.85rem;">⚙️</button>
@@ -3624,9 +3626,12 @@ function renderAppHoy(){
     return h;
   }
   h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+DB.activeOFs.length+"</span></div>";
-  h+="<input id='app-search-of' value='"+esc(APP.searchOF||'')+"' oninput='appSetSearch(this.value)' placeholder='🔍 Buscar por N° de OF...' style='width:100%;box-sizing:border-box;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--atext);font-size:.85rem;outline:none;'>";
+  h+=_appFiltroBarHTML(true);
   var _hoySrc=(DB.activeOFs||[]).filter(Boolean);
-  if(APP.searchOF){var _hq=String(APP.searchOF).toLowerCase();_hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_hq)>=0;});}
+  var _fOF=(APP.searchOF||'').trim().toLowerCase(), _fTec=(APP.searchTec||'').trim().toLowerCase(), _fEst=(APP.searchEst||'').trim().toLowerCase();
+  if(_fOF)  _hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_fOF)>=0;});
+  if(_fTec) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.tecnico||'').toLowerCase().indexOf(_fTec)>=0;});});
+  if(_fEst) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.estacion||'').toLowerCase().indexOf(_fEst)>=0;});});
   var groups=groupByPedido(_hoySrc);
   groups.forEach(function(g){
     var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
@@ -3852,7 +3857,7 @@ function renderAppOFs(){
   var planeacion=DB.ofs.filter(function(o){return !o.programadoHoy;});
   var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
   var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
-  var h="<input id='app-search-of' value='"+esc(APP.searchOF||'')+"' oninput='appSetSearch(this.value)' placeholder='🔍 Buscar por N° de OF...' style='width:100%;box-sizing:border-box;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--atext);font-size:.85rem;outline:none;'>";
+  var h=_appFiltroBarHTML(false);
   h+="<div class='app-sh'>EN PROCESO <span class='app-sbadge'>"+enProceso.length+"</span></div>";
   if(enProceso.length===0){
     h+="<div style='padding:14px 10px;text-align:center;color:var(--adim);font-size:.76rem;'>Sin OFs en producción hoy. El Coordinador programa las OFs desde la plataforma web.</div>";
@@ -10163,12 +10168,50 @@ async function monitorLoadTechnicians() {
 
 // ── Tab ───────────────────────────────────────────────────────────
 // Buscador por N° de OF en FabTracker (vistas HOY y ÓRDENES)
-function appSetSearch(v){
-  APP.searchOF = v;
-  renderApp();
-  var el = document.getElementById('app-search-of');
-  if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(_){} }
+// Re-render con debounce (evita perder teclas al re-renderizar en cada pulsación en móvil)
+function _appDebouncedFilter(focusId){
+  APP._searchFocusId = focusId;
+  clearTimeout(APP._searchTimer);
+  APP._searchTimer = setTimeout(function(){
+    renderApp();
+    var el = document.getElementById(APP._searchFocusId);
+    if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(_){} }
+  }, 250);
 }
+function appSetSearch(v){    APP.searchOF  = v; _appDebouncedFilter('app-search-of');  }
+function appSetSearchTec(v){ APP.searchTec = v; _appDebouncedFilter('app-search-tec'); }
+function appSetSearchEst(v){ APP.searchEst = v; _appDebouncedFilter('app-search-est'); }
+
+// Barra de filtros FabTracker. full=true incluye Operador y Estación (vista HOY);
+// full=false solo N° de OF (vista ÓRDENES). Siempre incluye el botón Actualizar.
+function _appFiltroBarHTML(full){
+  var _st='flex:1;min-width:90px;box-sizing:border-box;padding:7px 9px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--atext);font-size:.8rem;outline:none;';
+  var _btn='<button onclick="appActualizar()" title="Actualizar datos" style="flex:0 0 auto;padding:7px 12px;background:rgba(0,180,216,.15);border:1px solid rgba(0,180,216,.35);border-radius:8px;color:var(--aaccent);font-size:.8rem;font-weight:600;cursor:pointer;white-space:nowrap;">🔄 Actualizar</button>';
+  var _of='<input id="app-search-of" value="'+esc(APP.searchOF||'')+'" oninput="appSetSearch(this.value)" placeholder="🔍 N° de OF" style="'+_st+'">';
+  if(!full) return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">'+_btn+_of+'</div>';
+  var _tecs=(window.TECHNICIANS||(window.DB&&DB.tecnicos)||[]);
+  var _ests=(window.STATIONS||[]);
+  var _tOpts=_tecs.map(function(t){return '<option value="'+esc(t)+'">';}).join('');
+  var _eOpts=_ests.map(function(s){return '<option value="'+esc(s)+'">';}).join('');
+  var _tec='<input id="app-search-tec" list="app-dl-tec" value="'+esc(APP.searchTec||'')+'" oninput="appSetSearchTec(this.value)" placeholder="👷 Operador" style="'+_st+'">';
+  var _est='<input id="app-search-est" list="app-dl-est" value="'+esc(APP.searchEst||'')+'" oninput="appSetSearchEst(this.value)" placeholder="🏭 Estación" style="'+_st+'">';
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">'+_btn+_of+_tec+_est
+    +'<datalist id="app-dl-tec">'+_tOpts+'</datalist><datalist id="app-dl-est">'+_eOpts+'</datalist></div>';
+}
+
+// Botón Actualizar — recarga todos los datos desde SP (para ver OFs recién programadas)
+async function appActualizar(){
+  try {
+    await appLoadDataFromSP();
+    renderApp();
+    if(typeof showAppNotif==='function') showAppNotif('ok','✅ Datos actualizados');
+  } catch(e){ console.warn('[App] Actualizar:', e.message); if(typeof showAppNotif==='function') showAppNotif('error','No se pudo actualizar'); }
+}
+async function monitorActualizar(){
+  try { await appLoadDataFromSP(); monitorRender(); if(typeof showAppNotif==='function') showAppNotif('ok','✅ Actualizado'); }
+  catch(e){ console.warn('[Monitor] Actualizar:', e.message); }
+}
+
 // Filtro por N° de OF en el Monitor
 function monitorSetOFFilter(v){
   _MON.filtroOF = v;
@@ -12559,9 +12602,12 @@ function renderAppHoy(){
     return h;
   }
   h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+DB.activeOFs.length+"</span></div>";
-  h+="<input id='app-search-of' value='"+esc(APP.searchOF||'')+"' oninput='appSetSearch(this.value)' placeholder='🔍 Buscar por N° de OF...' style='width:100%;box-sizing:border-box;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--atext);font-size:.85rem;outline:none;'>";
+  h+=_appFiltroBarHTML(true);
   var _hoySrc=(DB.activeOFs||[]).filter(Boolean);
-  if(APP.searchOF){var _hq=String(APP.searchOF).toLowerCase();_hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_hq)>=0;});}
+  var _fOF=(APP.searchOF||'').trim().toLowerCase(), _fTec=(APP.searchTec||'').trim().toLowerCase(), _fEst=(APP.searchEst||'').trim().toLowerCase();
+  if(_fOF)  _hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_fOF)>=0;});
+  if(_fTec) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.tecnico||'').toLowerCase().indexOf(_fTec)>=0;});});
+  if(_fEst) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.estacion||'').toLowerCase().indexOf(_fEst)>=0;});});
   var groups=groupByPedido(_hoySrc);
   groups.forEach(function(g){
     var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
@@ -12805,7 +12851,7 @@ function renderAppOFs(){
   if(APP.searchOF){var _oq=String(APP.searchOF).toLowerCase();var _ofx=function(o){return String(o.of_sap||'').toLowerCase().indexOf(_oq)>=0;};enProceso=enProceso.filter(_ofx);planeacion=planeacion.filter(_ofx);}
   var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
   var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
-  var h="<input id='app-search-of' value='"+esc(APP.searchOF||'')+"' oninput='appSetSearch(this.value)' placeholder='🔍 Buscar por N° de OF...' style='width:100%;box-sizing:border-box;margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--atext);font-size:.85rem;outline:none;'>";
+  var h=_appFiltroBarHTML(false);
   h+="<div class='app-sh'>EN PROCESO <span class='app-sbadge'>"+enProceso.length+"</span></div>";
   groupByPedido((enProceso||[]).filter(Boolean)).forEach(function(g){
     h+="<div class='app-ped-group'><div class='app-ped-hdr'><div><div class='app-ped-num'>"+esc(g.pedido)+"</div><div class='app-ped-cliente'>"+esc(g.cliente)+(g.ofv?" · "+esc(g.ofv):"")+"</div></div><span class='app-chip "+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span></div>";

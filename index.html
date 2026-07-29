@@ -12827,6 +12827,38 @@ function renderSeg(){
   var pC={alta:'chip prio-alta',media:'chip prio-media',normal:'chip prio-normal'};
   var pL={alta:'🔴 ALTA',media:'🟡 MEDIA',normal:'⬜ NORMAL'};
 
+  // --- Prioridad por fecha de entrega -----------------------------------
+  // of.fecha_entrega llega como 'YYYY-MM-DD'. Menor fecha = más urgente (vencida primero).
+  var _msDay = 86400000;
+  var _hoy0 = new Date(); _hoy0.setHours(0,0,0,0);
+  function _feMs(of){
+    if(!of || !of.fecha_entrega) return Infinity;
+    var p = String(of.fecha_entrega).split('T')[0].split('-');
+    if(p.length!==3) return Infinity;
+    var d = new Date(+p[0], +p[1]-1, +p[2]); d.setHours(0,0,0,0);
+    var t = d.getTime();
+    return isNaN(t) ? Infinity : t;
+  }
+  // ¿La OF sigue abierta? (tiene ops no-omitidas aún sin terminar)
+  function _ofAbierta(of){
+    var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+    if(!aof) return false;
+    var nonOmit = aof.ops.filter(function(o){return o.status!=='omitida';});
+    if(!nonOmit.length) return false; // todo omitido = terminada
+    return nonOmit.some(function(o){return o.status!=='done' && o.status!=='op_concluded';});
+  }
+  // Urgencia del pedido = fecha de entrega más próxima entre sus OFs aún abiertas.
+  // Si todas están cerradas/terminadas, usa la más próxima de todas sus OFs.
+  function _grpUrgencia(g){
+    var abiertas = (g.ofs||[]).filter(_ofAbierta).map(_feMs);
+    var pool = abiertas.length ? abiertas : (g.ofs||[]).map(_feMs);
+    return pool.length ? Math.min.apply(null, pool) : Infinity;
+  }
+  // Ordenar OFs dentro de cada pedido: fecha menor (vencida/próxima) arriba
+  groups.forEach(function(g){ (g.ofs||[]).sort(function(a,b){ return _feMs(a) - _feMs(b); }); });
+  // Ordenar pedidos por su OF abierta más urgente
+  groups.sort(function(a,b){ return _grpUrgencia(a) - _grpUrgencia(b); });
+
   groups.forEach(function(g){
     var grpDone=0, grpTotal=0, grpAll=0;
     g.ofs.forEach(function(of){
@@ -12889,7 +12921,22 @@ function renderSeg(){
       h+='<div style="padding:10px 14px;border-bottom:1px solid var(--border);">';
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">';
       h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' · '+esc(of.articulo):'')+'</span>';
-      h+=' <span style="font-size:.78rem;font-weight:500;">'+esc(of.descripcion||'')+'</span></div>';
+      h+=' <span style="font-size:.78rem;font-weight:500;">'+esc(of.descripcion||'')+'</span>';
+      // Fecha de entrega con color según urgencia
+      if(of.fecha_entrega){
+        var _feT=_feMs(of);
+        var _feDias = _feT===Infinity ? null : Math.round((_feT - _hoy0.getTime())/_msDay);
+        var _feP=String(of.fecha_entrega).split('T')[0].split('-');
+        var _feTxt=_feP.length===3?_feP[2]+'/'+_feP[1]+'/'+_feP[0]:of.fecha_entrega;
+        var _feCol='var(--dim)', _feTag='';
+        if(_feDias!==null){
+          if(_feDias<0){ _feCol='var(--red)'; _feTag=' · ⚠ Vencida '+Math.abs(_feDias)+'d'; }
+          else if(_feDias===0){ _feCol='var(--red)'; _feTag=' · Hoy'; }
+          else if(_feDias<=3){ _feCol='var(--yellow)'; _feTag=' · en '+_feDias+'d'; }
+        }
+        h+=' <span style="font-size:.7rem;color:'+_feCol+';font-family:\'DM Mono\',monospace;white-space:nowrap;">📅 '+_feTxt+_feTag+'</span>';
+      }
+      h+='</div>';
       h+='<span style="font-size:.72rem;color:var(--dim);font-family:\'DM Mono\',monospace;">'+done+'/'+_nOm+' · '+pct+'%</span></div>';
       h+='<div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:6px;"><div style="height:100%;width:'+pct+'%;background:var(--green);border-radius:2px;"></div></div>';
       // -- 8: Ops con comentarios --

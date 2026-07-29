@@ -5893,6 +5893,19 @@ function esListaProtegida(endpoint) {
 window._SP_GRAPH_DIRECT_ENABLED = (window._SP_GRAPH_DIRECT_ENABLED !== false); // interruptor de seguridad (poner false → todo por flujo)
 window._graphCap = window._graphCap || {};   // { lista: true(Graph) | false(flujo) | undefined(sin probar) }
 
+// Persistencia por usuario (evita reintentar Graph —y el 404 en consola— en cada sesión).
+// TTL de 24 h para re-aprender si cambian permisos. A prueba de almacenamiento bloqueado.
+function _graphCapKey(){ try{ return 'madero_graphcap_'+((state&&state.currentUser&&state.currentUser.email)||'anon').toLowerCase(); }catch(_){ return 'madero_graphcap_anon'; } }
+function _graphCapLoad(){
+  if(window._graphCapHydrated) return;
+  window._graphCapHydrated=true;
+  try{
+    var raw=localStorage.getItem(_graphCapKey());
+    if(raw){ var o=JSON.parse(raw); if(o && o.at && (Date.now()-o.at < 86400000) && o.caps){ Object.keys(o.caps).forEach(function(k){ if(window._graphCap[k]===undefined) window._graphCap[k]=o.caps[k]; }); } }
+  }catch(_){}
+}
+function _graphCapSave(){ try{ localStorage.setItem(_graphCapKey(), JSON.stringify({at:Date.now(), caps:window._graphCap})); }catch(_){} }
+
 // Lectura de TODA la lista por Graph directo, siguiendo la paginación (@odata.nextLink).
 // Devuelve el mismo formato que flowGet: { value: [ { id, fields } ] }
 async function _spGraphLeerLista(lista, top){
@@ -5903,7 +5916,9 @@ async function _spGraphLeerLista(lista, top){
   while(url && guard<500){
     guard++;
     var res=await fetch(url,{headers:{Authorization:'Bearer '+token}});
-    if(res.status===401||res.status===403){ var e=new Error('Graph '+res.status+' '+lista); e._authFail=true; throw e; }
+    // 404 = SharePoint oculta la lista a usuarios sin permiso (no siempre devuelve 403).
+    // Tratamos 401/403/404 como "sin acceso Graph" → usar flujo y cachear la decisión.
+    if(res.status===401||res.status===403||res.status===404){ var e=new Error('Graph '+res.status+' '+lista); e._authFail=true; throw e; }
     if(!res.ok) throw new Error('Graph GET '+lista+' '+res.status);
     var data=await res.json();
     (data.value||[]).forEach(function(it){ out.push({ id:String(it.id||''), fields: it.fields||{} }); });
@@ -5923,7 +5938,7 @@ async function _spGraphEscribirLista(lista, operacion, itemId, datos){
   } else {
     res=await fetch(base+'/'+itemId+'/fields',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(datos)});
   }
-  if(res.status===401||res.status===403){ var e=new Error('Graph write '+res.status+' '+lista); e._authFail=true; throw e; }
+  if(res.status===401||res.status===403||res.status===404){ var e=new Error('Graph write '+res.status+' '+lista); e._authFail=true; throw e; }
   if(!res.ok){ var t=await res.text(); throw new Error('Graph write '+lista+' '+res.status+': '+t.slice(0,200)); }
   var txt=await res.text();
   if(!txt) return { resultado:'ok' };
@@ -5934,13 +5949,14 @@ async function flowGet(lista, filtro, top) {
   filtro = filtro || '';
   top    = top    || 500;
   // Ruta rápida Graph: solo para lecturas sin filtro y si esa lista no está marcada como "solo flujo".
+  _graphCapLoad();
   if (window._SP_GRAPH_DIRECT_ENABLED && !filtro && window._graphCap[lista] !== false) {
     try {
       var _gr = await _spGraphLeerLista(lista, top);
-      if (window._graphCap[lista] !== true) { window._graphCap[lista] = true; console.log('[SP ruteo] '+lista+' → Graph directo'); }
+      if (window._graphCap[lista] !== true) { window._graphCap[lista] = true; _graphCapSave(); console.log('[SP ruteo] '+lista+' → Graph directo'); }
       return _gr;
     } catch(ge) {
-      if (ge && ge._authFail) { window._graphCap[lista] = false; console.log('[SP ruteo] '+lista+' → flujo (sin permiso Graph)'); }
+      if (ge && ge._authFail) { window._graphCap[lista] = false; _graphCapSave(); console.log('[SP ruteo] '+lista+' → flujo (sin permiso Graph)'); }
       // Cualquier otro error de Graph: caemos al flujo sin marcar (reintentará Graph luego).
     }
   }
@@ -5995,7 +6011,7 @@ async function flowEscribir(lista, operacion, itemId, datos) {
     try {
       return await _spGraphEscribirLista(lista, operacion, itemId, datos);
     } catch(ge) {
-      if (ge && ge._authFail) { window._graphCap[lista] = false; console.log('[SP ruteo] '+lista+' escritura → flujo (sin permiso Graph)'); }
+      if (ge && ge._authFail) { window._graphCap[lista] = false; _graphCapSave(); console.log('[SP ruteo] '+lista+' escritura → flujo (sin permiso Graph)'); }
       else { throw ge; } // otro error: no reintentar por flujo para evitar doble escritura
     }
   }

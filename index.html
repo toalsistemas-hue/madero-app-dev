@@ -6098,16 +6098,17 @@ async function ftLoadDataFromSP() {
       flowGet('FT_CalTiempos', '', 2000).catch(empty),
     ]);
 
-    // Preserve existing data if both OFs and Ops failed (504/timeout)
+    // Preservar la data existente si la lectura de OFs vuelve vacía/con error
+    // (504/timeout del flujo). Antes exigía que TAMBIÉN fallaran las ops, lo que
+    // permitía vaciar las OFs cuando solo fallaba su lectura.
     if ((ofsRes._error || (ofsRes.value||[]).length===0) &&
-        (opsRes._error  || (opsRes.value||[]).length===0) &&
         DB.activeOFs && DB.activeOFs.length > 0) {
-      console.warn('[ftLoadData] OFs+Ops empty (504?) — keeping existing data');
+      console.warn('[ftLoadData] OFs vacío/504 — se conserva la data existente');
       return;
     }
 
-    // Build DB.ofs from SharePoint
-    const ofs = (ofsRes.value||[]).map(i => i.fields);
+    // Build DB.ofs from SharePoint (conservar el id del item SP en _spId)
+    const ofs = (ofsRes.value||[]).map(function(i){ var f=i.fields||{}; if(i.id!=null) f._spId=i.id; return f; });
     DB.ofs = ofs.map(f => ({
       of_sap: f.OF_SAP || f.Title || '',
       articulo: f.Numero_Articulo || '',
@@ -6125,6 +6126,7 @@ async function ftLoadDataFromSP() {
       fecha_programacion: (f.Fecha_Programacion||'').split('T')[0] || '',
       cantidad: parseFloat(String(f.Cantidad||'').replace(',','.'))||null,
       monitor_override: String(f.Monitor_Override||f.MonitorOverride||'').toLowerCase().trim(),
+      _spId: f._spId!=null ? f._spId : null,
     }));
     // Restaurar pedidos cerrados desde localStorage
     // SOLO aplicar a OFs cuyo status en SP NO es activo (evita ocultar OFs recién cargadas)
@@ -12831,13 +12833,15 @@ async function ftCycleMonitorVis(ofSap){
   if(!ofRec) return;
   var cur=(ofRec.monitor_override||'');
   var next = cur==='' ? 'pin' : (cur==='pin' ? 'hide' : '');
-  ofRec.monitor_override=next; // optimista
+  ofRec.monitor_override=next; // optimista (la UI ya refleja el cambio)
   try{ if(typeof renderSeg==='function') renderSeg(); }catch(e){}
+  // Escritura directa por id del item (SIN leer toda la lista → evita timeouts del flujo)
+  if(ofRec._spId==null){
+    if(typeof ftErrNotify==='function') ftErrNotify('ftCycleMonitorVis', new Error('Sin _spId para OF '+ofSap+' — recarga los datos e intenta de nuevo'),'FT_OrdenesFabricacion');
+    return;
+  }
   try{
-    var res=await flowGet('FT_OrdenesFabricacion','',3000);
-    var found=(res.value||[]).find(function(i){ return String((i.fields&&(i.fields.OF_SAP||i.fields.Title))||'')===String(ofSap); });
-    if(found){ await spEscribir('FT_OrdenesFabricacion',{Title:ofSap,Monitor_Override:next},found.id); }
-    else if(typeof ftErrNotify==='function'){ ftErrNotify('ftCycleMonitorVis', new Error('OF no encontrada en SP: '+ofSap),'FT_OrdenesFabricacion'); }
+    await spEscribir('FT_OrdenesFabricacion',{Monitor_Override:next}, ofRec._spId);
   }catch(e){ if(typeof ftErrNotify==='function') ftErrNotify('ftCycleMonitorVis',e,'FT_OrdenesFabricacion'); }
 }
 

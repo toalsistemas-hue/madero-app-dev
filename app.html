@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.60</title>
+<title>FabTracker App v2.61</title>
 
 <!-- MSAL Browser -->
 
@@ -8272,6 +8272,7 @@ async function _appLoadDataFromSP_impl() {
         Programado_Hoy:       f.Programado_Hoy,
         Status:               f.Status || f.Status_SAP || 'Sin programar',
         Fecha_Entrega:        f.Fecha_Entrega || f.FechaEntrega || null,
+        Monitor_Override:     f.Monitor_Override || f.MonitorOverride || '',
       };
     };
     // Normalize Op fields
@@ -8406,6 +8407,8 @@ async function _appLoadDataFromSP_impl() {
       descripcion: f.Descripcion_Articulo||'',
       prioridad:   (f.Prioridad||'Normal').toLowerCase(),
       ofv:         f.OFV||f.Rotacion||'',
+      fecha_entrega: (String(f.Fecha_Entrega||f.FechaEntrega||'').split('T')[0]) || '',
+      monitor_override: String(f.Monitor_Override||f.MonitorOverride||'').toLowerCase().trim(),
       sub_articulos: f.Sub_Articulos ? f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean) : [],
       ops: allOps.filter(o=>o.OF_SAP===(f.OF_SAP||f.Title)).sort((a,b)=>(a.Secuencia||0)-(b.Secuencia||0)).map(o => ({
         id: o.Op_ID||('op_'+(o.ID||'')),
@@ -10286,6 +10289,47 @@ function monitorSetTab(tab) {
 }
 
 // ── Main render ───────────────────────────────────────────────────
+// ── Ventana de visibilidad del Monitor ──────────────────────────────────
+// Regla: por estación se muestran solo las N OFs más urgentes (por fecha de entrega).
+// - Las ops ya iniciadas (activas) NUNCA se ocultan aunque su OF caiga fuera del top-N.
+// - Override del coordinador: 'pin' = siempre visible, 'hide' = nunca visible.
+var MON_MAX_OFS = 5;
+function _monFeMs(of) {
+  var fe = of && of.fecha_entrega;
+  if (!fe) return Infinity;
+  var p = String(fe).split('T')[0].split('-');
+  if (p.length !== 3) return Infinity;
+  var d = new Date(+p[0], +p[1]-1, +p[2]); d.setHours(0,0,0,0);
+  var t = d.getTime();
+  return isNaN(t) ? Infinity : t;
+}
+// items: array {of, op} de UNA estación (solo ops activas+pendientes, sin done/omitida).
+// Devuelve un objeto {of_sap: true} con las OFs visibles en esa estación.
+function _monVisibleOFsForStation(items) {
+  var _ACTIVE = { running:true, paused:true, validating:true, op_concluded:true, retrabajo:true, chatarra:true };
+  var byOf = {};
+  items.forEach(function(it) {
+    var k = it.of.of_sap;
+    if (!byOf[k]) byOf[k] = { of: it.of, hasActive:false };
+    if (_ACTIVE[it.op.status]) byOf[k].hasActive = true;
+  });
+  var entries = Object.keys(byOf).map(function(k){ return byOf[k]; });
+  var visible = {}, count = 0, autoPool = [];
+  entries.forEach(function(e) {
+    var ov = (e.of.monitor_override||'');
+    if (ov === 'hide') return;               // nunca visible
+    if (ov === 'pin') { visible[e.of.of_sap] = true; count++; return; } // siempre visible
+    autoPool.push(e);
+  });
+  // Ops ya iniciadas: siempre visibles (seguridad — no quitar trabajo en curso)
+  autoPool.forEach(function(e) { if (e.hasActive) { visible[e.of.of_sap] = true; count++; } });
+  // Pendientes: rellenar hasta N por urgencia de fecha de entrega
+  autoPool.filter(function(e){ return !e.hasActive; })
+    .sort(function(a,b){ return _monFeMs(a.of) - _monFeMs(b.of); })
+    .forEach(function(e) { if (count < MON_MAX_OFS) { visible[e.of.of_sap] = true; count++; } });
+  return visible;
+}
+
 function monitorRender() {
   var content = document.getElementById('monitor-content');
   if (!content) return;
@@ -10354,6 +10398,12 @@ function monitorRender() {
       if (stA !== stB) return stA - stB;
       return colaA - colaB;
     });
+  });
+  // Ventana de visibilidad: limitar cada estación a las N OFs más urgentes
+  // (las ops activas y las OFs fijadas siempre se conservan).
+  Object.keys(byStation).forEach(function(est) {
+    var vis = _monVisibleOFsForStation(byStation[est]);
+    byStation[est] = byStation[est].filter(function(it){ return vis[it.of.of_sap]; });
   });
 
   var h = '';

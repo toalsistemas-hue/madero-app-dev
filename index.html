@@ -6124,6 +6124,7 @@ async function ftLoadDataFromSP() {
       fecha_entrega: (f.Fecha_Entrega||'').split('T')[0] || '',
       fecha_programacion: (f.Fecha_Programacion||'').split('T')[0] || '',
       cantidad: parseFloat(String(f.Cantidad||'').replace(',','.'))||null,
+      monitor_override: String(f.Monitor_Override||f.MonitorOverride||'').toLowerCase().trim(),
     }));
     // Restaurar pedidos cerrados desde localStorage
     // SOLO aplicar a OFs cuyo status en SP NO es activo (evita ocultar OFs recién cargadas)
@@ -12781,10 +12782,69 @@ appConfirmValCal = function(){
   }
   
   // Check if moving would displace a running op
+// ═══ Visibilidad en Monitor (misma fórmula que app.html) ═══════════════
+// Por estación se muestran solo las N OFs más urgentes por fecha de entrega.
+// Las ops ya iniciadas nunca se ocultan; override 'pin'=siempre, 'hide'=nunca.
+var _MON_MAX_OFS_IDX = 5;
+function _idxMonFeMs(info){
+  var fe = info && info.fecha_entrega;
+  if(!fe) return Infinity;
+  var p=String(fe).split('T')[0].split('-');
+  if(p.length!==3) return Infinity;
+  var d=new Date(+p[0],+p[1]-1,+p[2]); d.setHours(0,0,0,0);
+  var t=d.getTime(); return isNaN(t)?Infinity:t;
+}
+// Devuelve { of_sap:true } de OFs visibles en el Monitor en AL MENOS una estación.
+function ftComputeMonitorVisible(){
+  var _ACTIVE={running:true,paused:true,validating:true,op_concluded:true,retrabajo:true,chatarra:true};
+  var ofInfo={};
+  (DB.ofs||[]).forEach(function(o){ ofInfo[o.of_sap]={fecha_entrega:o.fecha_entrega,ov:(o.monitor_override||'')}; });
+  var byEst={};
+  (DB.activeOFs||[]).forEach(function(aof){
+    (aof.ops||[]).forEach(function(op){
+      if(op.status==='done'||op.status==='omitida') return;
+      var est=op.estacion||''; if(!est) return;
+      if(!byEst[est]) byEst[est]={};
+      if(!byEst[est][aof.of_sap]) byEst[est][aof.of_sap]={hasActive:false};
+      if(_ACTIVE[op.status]) byEst[est][aof.of_sap].hasActive=true;
+    });
+  });
+  var visible={};
+  Object.keys(byEst).forEach(function(est){
+    var m=byEst[est], count=0, autoPool=[];
+    Object.keys(m).forEach(function(sap){
+      var ov=(ofInfo[sap]&&ofInfo[sap].ov)||'';
+      if(ov==='hide') return;
+      if(ov==='pin'){ visible[sap]=true; count++; return; }
+      autoPool.push({sap:sap,hasActive:m[sap].hasActive});
+    });
+    autoPool.forEach(function(e){ if(e.hasActive){ visible[e.sap]=true; count++; } });
+    autoPool.filter(function(e){return !e.hasActive;})
+      .sort(function(a,b){ return _idxMonFeMs(ofInfo[a.sap]) - _idxMonFeMs(ofInfo[b.sap]); })
+      .forEach(function(e){ if(count<_MON_MAX_OFS_IDX){ visible[e.sap]=true; count++; } });
+  });
+  return visible;
+}
+// Alternar visibilidad manual del coordinador: auto → fijar → ocultar → auto
+async function ftCycleMonitorVis(ofSap){
+  var ofRec=(DB.ofs||[]).find(function(o){return o.of_sap===ofSap;});
+  if(!ofRec) return;
+  var cur=(ofRec.monitor_override||'');
+  var next = cur==='' ? 'pin' : (cur==='pin' ? 'hide' : '');
+  ofRec.monitor_override=next; // optimista
+  try{ if(typeof renderSeg==='function') renderSeg(); }catch(e){}
+  try{
+    var res=await flowGet('FT_OrdenesFabricacion','',3000);
+    var found=(res.value||[]).find(function(i){ return String((i.fields&&(i.fields.OF_SAP||i.fields.Title))||'')===String(ofSap); });
+    if(found){ await spEscribir('FT_OrdenesFabricacion',{Title:ofSap,Monitor_Override:next},found.id); }
+    else if(typeof ftErrNotify==='function'){ ftErrNotify('ftCycleMonitorVis', new Error('OF no encontrada en SP: '+ofSap),'FT_OrdenesFabricacion'); }
+  }catch(e){ if(typeof ftErrNotify==='function') ftErrNotify('ftCycleMonitorVis',e,'FT_OrdenesFabricacion'); }
+}
+
 function renderSeg(){
   window.renderSeg = renderSeg; // expose globally
-  
-  
+
+
   // --- HISTORIAL -------------------------------------------
   var histFilter={from:"",to:""};
   var filterStatus = C.segFilter || 'activos';
@@ -12858,6 +12918,9 @@ function renderSeg(){
   groups.forEach(function(g){ (g.ofs||[]).sort(function(a,b){ return _feMs(a) - _feMs(b); }); });
   // Ordenar pedidos por su OF abierta más urgente
   groups.sort(function(a,b){ return _grpUrgencia(a) - _grpUrgencia(b); });
+
+  // Mapa de OFs visibles en el Monitor (para el indicador 📺)
+  var _monVis = (typeof ftComputeMonitorVisible==='function') ? ftComputeMonitorVisible() : {};
 
   groups.forEach(function(g){
     var grpDone=0, grpTotal=0, grpAll=0;
@@ -12935,6 +12998,16 @@ function renderSeg(){
           else if(_feDias<=3){ _feCol='var(--yellow)'; _feTag=' · en '+_feDias+'d'; }
         }
         h+=' <span style="font-size:.7rem;color:'+_feCol+';font-family:\'DM Mono\',monospace;white-space:nowrap;">📅 '+_feTxt+_feTag+'</span>';
+      }
+      // Indicador y control de visibilidad en Monitor
+      var _ov=(of.monitor_override||'');
+      var _visM = _ov==='pin' ? true : (_ov==='hide' ? false : !!_monVis[of.of_sap]);
+      var _mLbl = _ov==='pin' ? '📌 Fijada en Monitor' : (_ov==='hide' ? '🚫 Oculta en Monitor' : (_visM ? '📺 En Monitor' : '⚪ Fuera de Monitor'));
+      var _mCol = _ov==='pin' ? 'var(--accent-l)' : (_ov==='hide' ? 'var(--red)' : (_visM ? 'var(--green)' : 'var(--dim)'));
+      if(typeof _fabNivel==='function' && _fabNivel()!=='lectura'){
+        h+=' <button onclick="event.stopPropagation();ftCycleMonitorVis(\''+esc(of.of_sap)+'\')" title="Cambiar visibilidad en Monitor (auto → fijar → ocultar)" style="font-size:.66rem;padding:2px 7px;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:'+_mCol+';cursor:pointer;white-space:nowrap;">'+_mLbl+'</button>';
+      } else {
+        h+=' <span style="font-size:.66rem;color:'+_mCol+';white-space:nowrap;">'+_mLbl+'</span>';
       }
       h+='</div>';
       h+='<span style="font-size:.72rem;color:var(--dim);font-family:\'DM Mono\',monospace;">'+done+'/'+_nOm+' · '+pct+'%</span></div>';

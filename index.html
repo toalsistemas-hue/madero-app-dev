@@ -5882,9 +5882,68 @@ function esListaProtegida(endpoint) {
   return LISTAS_PROTEGIDAS.some(function(l){ return endpoint.indexOf('/lists/'+l) !== -1; });
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// RUTEO DINÁMICO GRAPH / FLUJO — por usuario y por lista
+// En vez de mandar SIEMPRE las listas protegidas por Power Automate,
+// intentamos Graph directo. Si el usuario tiene permiso, se usa Graph
+// (rápido y sin consumir ejecuciones del flujo). Si no (401/403), se
+// recuerda esa lista y se usa el flujo. El aprendizaje es perezoso: se
+// descubre con la primera lectura real y queda cacheado en la sesión.
+// ═══════════════════════════════════════════════════════════════════
+window._SP_GRAPH_DIRECT_ENABLED = (window._SP_GRAPH_DIRECT_ENABLED !== false); // interruptor de seguridad (poner false → todo por flujo)
+window._graphCap = window._graphCap || {};   // { lista: true(Graph) | false(flujo) | undefined(sin probar) }
+
+// Lectura de TODA la lista por Graph directo, siguiendo la paginación (@odata.nextLink).
+// Devuelve el mismo formato que flowGet: { value: [ { id, fields } ] }
+async function _spGraphLeerLista(lista, top){
+  const sid = await getSiteId();
+  const token = await getToken();
+  var url='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+encodeURIComponent(lista)+'/items?$expand=fields&$top=200';
+  var out=[], guard=0;
+  while(url && guard<500){
+    guard++;
+    var res=await fetch(url,{headers:{Authorization:'Bearer '+token}});
+    if(res.status===401||res.status===403){ var e=new Error('Graph '+res.status+' '+lista); e._authFail=true; throw e; }
+    if(!res.ok) throw new Error('Graph GET '+lista+' '+res.status);
+    var data=await res.json();
+    (data.value||[]).forEach(function(it){ out.push({ id:String(it.id||''), fields: it.fields||{} }); });
+    url = data['@odata.nextLink'] || null;
+    if(top && out.length>=top) break;
+  }
+  return { value: out };
+}
+// Escritura por Graph directo (crear/actualizar). Usa fetch directo (NO graphPatch/graphPost) para evitar re-ruteo.
+async function _spGraphEscribirLista(lista, operacion, itemId, datos){
+  const sid = await getSiteId();
+  const token = await getToken();
+  var base='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+encodeURIComponent(lista)+'/items';
+  var res;
+  if(operacion==='crear'){
+    res=await fetch(base,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({fields:datos})});
+  } else {
+    res=await fetch(base+'/'+itemId+'/fields',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(datos)});
+  }
+  if(res.status===401||res.status===403){ var e=new Error('Graph write '+res.status+' '+lista); e._authFail=true; throw e; }
+  if(!res.ok){ var t=await res.text(); throw new Error('Graph write '+lista+' '+res.status+': '+t.slice(0,200)); }
+  var txt=await res.text();
+  if(!txt) return { resultado:'ok' };
+  try{ return JSON.parse(txt); }catch(_){ return { resultado:'ok' }; }
+}
+
 async function flowGet(lista, filtro, top) {
   filtro = filtro || '';
   top    = top    || 500;
+  // Ruta rápida Graph: solo para lecturas sin filtro y si esa lista no está marcada como "solo flujo".
+  if (window._SP_GRAPH_DIRECT_ENABLED && !filtro && window._graphCap[lista] !== false) {
+    try {
+      var _gr = await _spGraphLeerLista(lista, top);
+      if (window._graphCap[lista] !== true) { window._graphCap[lista] = true; console.log('[SP ruteo] '+lista+' → Graph directo'); }
+      return _gr;
+    } catch(ge) {
+      if (ge && ge._authFail) { window._graphCap[lista] = false; console.log('[SP ruteo] '+lista+' → flujo (sin permiso Graph)'); }
+      // Cualquier otro error de Graph: caemos al flujo sin marcar (reintentará Graph luego).
+    }
+  }
   const controller = new AbortController();
   const tid = setTimeout(function(){ controller.abort(); }, 25000);
   let res;
@@ -5930,6 +5989,16 @@ async function flowGet(lista, filtro, top) {
 }
 
 async function flowEscribir(lista, operacion, itemId, datos) {
+  // Ruta rápida Graph: solo si YA confirmamos acceso de lectura Graph a esa lista
+  // (no arriesgamos escrituras a ciegas). Si el permiso cambió (401/403), caemos al flujo.
+  if (window._SP_GRAPH_DIRECT_ENABLED && window._graphCap[lista] === true) {
+    try {
+      return await _spGraphEscribirLista(lista, operacion, itemId, datos);
+    } catch(ge) {
+      if (ge && ge._authFail) { window._graphCap[lista] = false; console.log('[SP ruteo] '+lista+' escritura → flujo (sin permiso Graph)'); }
+      else { throw ge; } // otro error: no reintentar por flujo para evitar doble escritura
+    }
+  }
   const res = await fetch(FLOW_URL_ESCRIBIR, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -6125,7 +6194,19 @@ async function ftLoadDataFromSP() {
       fecha_entrega: (f.Fecha_Entrega||'').split('T')[0] || '',
       fecha_programacion: (f.Fecha_Programacion||'').split('T')[0] || '',
       cantidad: parseFloat(String(f.Cantidad||'').replace(',','.'))||null,
-      monitor_override: String(f.Monitor_Override||f.MonitorOverride||'').toLowerCase().trim(),
+      monitor_override: (function(){
+        var _sap=f.OF_SAP||f.Title||'';
+        var _sp=String(f.Monitor_Override||f.MonitorOverride||'').toLowerCase().trim();
+        // Guarda local: si el coordinador acaba de cambiar el estado y el poll recarga
+        // antes de que SP lo refleje, conservamos el valor local (TTL 120s) para no revertir.
+        var _g=window._moLocal && window._moLocal[_sap];
+        if(_g){
+          if(_g.val===_sp){ delete window._moLocal[_sap]; return _sp; } // SP ya confirmó
+          if(Date.now()-_g.at < 120000) return _g.val;                  // usar local reciente
+          delete window._moLocal[_sap];                                 // expiró → usar SP
+        }
+        return _sp;
+      })(),
       _spId: f._spId!=null ? f._spId : null,
     }));
     // Restaurar pedidos cerrados desde localStorage
@@ -6776,20 +6857,10 @@ async function ftLoadDataFromSP() {
       try {
         // Re-validate FT_SITE_ID if it may have changed after network event
         if (!FT_SITE_ID) { try { FT_SITE_ID = await getSiteId(); } catch(e) { return; } }
-        // Detect if user's token has direct Graph access to FT lists.
-        // If not (Emilio-type accounts), fall back to Flow-based poll.
-        if (window._coordCanUseGraph === undefined) {
-          try {
-            var _testR = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$select=id&$top=1');
-            window._coordCanUseGraph = !!(_testR && _testR.value !== undefined);
-          } catch(e) { window._coordCanUseGraph = false; }
-          console.log('[Coord poll] Direct Graph access:', window._coordCanUseGraph);
-        }
-        // If no direct Graph access, use full Flow reload instead
-        if (!window._coordCanUseGraph) {
-          await ftLoadDataFromSP();
-          return;
-        }
+        // Ruta única para todos: leemos SOLO las operaciones y comparamos una firma
+        // de contenido; recargamos todo solo si cambió. flowGet() decide internamente
+        // Graph directo (si el usuario tiene permiso) o flujo (si no), así que esto
+        // ya no recarga todo cada tick para las cuentas sin Graph.
         // Optimización: la lectura de ops se hace por el flujo (1 ejecución de Power Automate por lectura).
         // Para no consumir demasiadas ejecuciones, limitamos esta lectura a ~60s (aunque el poll corra cada 30s).
         // El refresh al volver a la ventana (visibilitychange) garantiza datos frescos cuando el coordinador regresa.
@@ -12788,6 +12859,7 @@ appConfirmValCal = function(){
 // Por estación se muestran solo las N OFs más urgentes por fecha de entrega.
 // Las ops ya iniciadas nunca se ocultan; override 'pin'=siempre, 'hide'=nunca.
 var _MON_MAX_OFS_IDX = 5;
+try{ if(!document.getElementById('mo-spin-style')){ var _mss=document.createElement('style'); _mss.id='mo-spin-style'; _mss.textContent='@keyframes moSpin{to{transform:rotate(360deg)}}'; (document.head||document.documentElement).appendChild(_mss); } }catch(_e){}
 function _idxMonFeMs(info){
   var fe = info && info.fecha_entrega;
   if(!fe) return Infinity;
@@ -12831,18 +12903,32 @@ function ftComputeMonitorVisible(){
 async function ftCycleMonitorVis(ofSap){
   var ofRec=(DB.ofs||[]).find(function(o){return o.of_sap===ofSap;});
   if(!ofRec) return;
-  var cur=(ofRec.monitor_override||'');
-  var next = cur==='' ? 'pin' : (cur==='pin' ? 'hide' : '');
-  ofRec.monitor_override=next; // optimista (la UI ya refleja el cambio)
-  try{ if(typeof renderSeg==='function') renderSeg(); }catch(e){}
-  // Escritura directa por id del item (SIN leer toda la lista → evita timeouts del flujo)
+  window._moPending = window._moPending || {};
+  if(window._moPending[ofSap]) return; // ya hay una escritura en curso — ignorar clic extra
   if(ofRec._spId==null){
     if(typeof ftErrNotify==='function') ftErrNotify('ftCycleMonitorVis', new Error('Sin _spId para OF '+ofSap+' — recarga los datos e intenta de nuevo'),'FT_OrdenesFabricacion');
     return;
   }
+  var cur=(ofRec.monitor_override||'');
+  var next = cur==='' ? 'pin' : (cur==='pin' ? 'hide' : '');
+  // Guarda local: evita que el poll revierta el valor antes de que SP lo confirme
+  window._moLocal = window._moLocal || {};
+  window._moLocal[ofSap] = { val: next, at: Date.now() };
+  ofRec.monitor_override = next;          // optimista
+  window._moPending[ofSap] = true;        // activa el spinner en el botón
+  try{ if(typeof renderSeg==='function') renderSeg(); }catch(e){}
+  // Escritura directa por id del item (SIN leer toda la lista → evita timeouts del flujo)
   try{
     await spEscribir('FT_OrdenesFabricacion',{Monitor_Override:next}, ofRec._spId);
-  }catch(e){ if(typeof ftErrNotify==='function') ftErrNotify('ftCycleMonitorVis',e,'FT_OrdenesFabricacion'); }
+    window._moLocal[ofSap] = { val: next, at: Date.now() }; // refrescar TTL tras confirmar
+  }catch(e){
+    ofRec.monitor_override = cur;                            // revertir en error
+    if(window._moLocal) delete window._moLocal[ofSap];
+    if(typeof ftErrNotify==='function') ftErrNotify('ftCycleMonitorVis',e,'FT_OrdenesFabricacion');
+  }finally{
+    if(window._moPending) delete window._moPending[ofSap];   // apaga el spinner
+    try{ if(typeof renderSeg==='function') renderSeg(); }catch(e){}
+  }
 }
 
 function renderSeg(){
@@ -13008,7 +13094,10 @@ function renderSeg(){
       var _visM = _ov==='pin' ? true : (_ov==='hide' ? false : !!_monVis[of.of_sap]);
       var _mLbl = _ov==='pin' ? '📌 Fijada en Monitor' : (_ov==='hide' ? '🚫 Oculta en Monitor' : (_visM ? '📺 En Monitor' : '⚪ Fuera de Monitor'));
       var _mCol = _ov==='pin' ? 'var(--accent-l)' : (_ov==='hide' ? 'var(--red)' : (_visM ? 'var(--green)' : 'var(--dim)'));
-      if(typeof _fabNivel==='function' && _fabNivel()!=='lectura'){
+      var _moPend = window._moPending && window._moPending[of.of_sap];
+      if(_moPend){
+        h+=' <button disabled style="font-size:.66rem;padding:2px 9px;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--dim);white-space:nowrap;opacity:.85;"><span style="display:inline-block;width:9px;height:9px;border:2px solid var(--dim);border-top-color:var(--accent-l);border-radius:50%;animation:moSpin .7s linear infinite;vertical-align:-1px;margin-right:4px;"></span>Guardando…</button>';
+      } else if(typeof _fabNivel==='function' && _fabNivel()!=='lectura'){
         h+=' <button onclick="event.stopPropagation();ftCycleMonitorVis(\''+esc(of.of_sap)+'\')" title="Cambiar visibilidad en Monitor (auto → fijar → ocultar)" style="font-size:.66rem;padding:2px 7px;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:'+_mCol+';cursor:pointer;white-space:nowrap;">'+_mLbl+'</button>';
       } else {
         h+=' <span style="font-size:.66rem;color:'+_mCol+';white-space:nowrap;">'+_mLbl+'</span>';

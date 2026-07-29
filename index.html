@@ -6866,7 +6866,7 @@ async function ftLoadDataFromSP() {
                            _activePage === 'seguimiento'   || _activePage === 'historial');
       if (!_isActivePage) {
         window._coordSlowTick = (window._coordSlowTick || 0) + 1;
-        if (window._coordSlowTick % 4 !== 0) return; // skip 3 of 4 ticks → ~120s
+        if (window._coordSlowTick % 8 !== 0) return; // con tick de 15s, 1 de cada 8 ≈ 120s (igual que antes)
       } else {
         window._coordSlowTick = 0; // reset when back on active page
       }
@@ -6877,10 +6877,12 @@ async function ftLoadDataFromSP() {
         // de contenido; recargamos todo solo si cambió. flowGet() decide internamente
         // Graph directo (si el usuario tiene permiso) o flujo (si no), así que esto
         // ya no recarga todo cada tick para las cuentas sin Graph.
-        // Optimización: la lectura de ops se hace por el flujo (1 ejecución de Power Automate por lectura).
-        // Para no consumir demasiadas ejecuciones, limitamos esta lectura a ~60s (aunque el poll corra cada 30s).
-        // El refresh al volver a la ventana (visibilitychange) garantiza datos frescos cuando el coordinador regresa.
-        if (window._coordLastOpsRead && (Date.now() - window._coordLastOpsRead) < 55000) return;
+        // Throttle adaptativo de la lectura de operaciones:
+        //  • Graph directo (el usuario tiene permiso) → NO consume Power Automate → refresco corto (~12s).
+        //  • Flujo (sin permiso Graph) → cada ejecución cuesta una acción de Power Automate → mantener ~55s.
+        var _opsPorGraph = !!(window._graphCap && window._graphCap['FT_Operaciones'] === true);
+        var _opsThrottle = _opsPorGraph ? 12000 : 55000;
+        if (window._coordLastOpsRead && (Date.now() - window._coordLastOpsRead) < _opsThrottle) return;
         window._coordLastOpsRead = Date.now();
         // Firma de contenido de las operaciones. Antes se usaba lastModifiedDateTime (solo disponible
         // por Graph directo); como FT_Operaciones es lista protegida y se resuelve por el flujo,
@@ -7096,7 +7098,7 @@ async function ftLoadDataFromSP() {
           }
         } catch(e2) { /* silencioso */ }
       }
-    }, 30000); // base tick — adaptive interval logic runs inside
+    }, 15000); // base tick 15s — la frecuencia real la controla el throttle adaptativo (Graph vs flujo)
   }
 
   // ── Page Visibility — pausar coord poll cuando se minimiza el navegador ──

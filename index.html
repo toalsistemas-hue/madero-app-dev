@@ -1448,7 +1448,7 @@ tr:last-child td{border-bottom:none;}
     </div>
     <div class="coord-modal-actions" style="margin-top:16px;">
       <button class="btn btn-ghost btn-sm" onclick="closeCModal('modal-art-edit')">Cancelar</button>
-      <button class="btn btn-primary btn-sm" onclick="ftAdmArtSave()">💾 Guardar</button>
+      <button id="art-save-btn" class="btn btn-primary btn-sm" onclick="ftAdmArtSave()">💾 Guardar</button>
     </div>
   </div>
 </div>
@@ -1480,7 +1480,7 @@ tr:last-child td{border-bottom:none;}
     </div>
     <div class="coord-modal-actions" style="margin-top:16px;">
       <button class="btn btn-ghost btn-sm" onclick="closeCModal('modal-op-edit')">Cancelar</button>
-      <button class="btn btn-primary btn-sm" onclick="ftAdmOpSave()">💾 Guardar</button>
+      <button id="opcat-save-btn" class="btn btn-primary btn-sm" onclick="ftAdmOpSave()">💾 Guardar</button>
     </div>
   </div>
 </div>
@@ -4515,6 +4515,23 @@ function ftAdmArtOpenEdit(num,desc){
   document.getElementById('art-edit-desc').value=desc;
   openCModal('modal-art-edit');
 }
+// Spinner en botones de Guardar (deshabilita + muestra "Guardando…")
+function _btnSpinner(btn, on){
+  if(!btn) return;
+  if(!document.getElementById('idx-spin-style')){
+    var st=document.createElement('style'); st.id='idx-spin-style';
+    st.textContent='@keyframes idxspin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(st);
+  }
+  if(on){
+    if(btn._idleHtml===undefined) btn._idleHtml=btn.innerHTML;
+    btn.disabled=true;
+    btn.innerHTML='<span style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:idxspin .7s linear infinite;vertical-align:middle;margin-right:6px;"></span>Guardando…';
+  } else {
+    btn.disabled=false;
+    if(btn._idleHtml!==undefined) btn.innerHTML=btn._idleHtml;
+  }
+}
 async function ftAdmArtSave(){
   var num=document.getElementById('art-edit-num').value.trim().toUpperCase();
   var desc=document.getElementById('art-edit-desc').value.trim();
@@ -4522,6 +4539,7 @@ async function ftAdmArtSave(){
   // Verificar duplicado (solo al crear)
   var isNew=!document.getElementById('art-edit-num').readOnly;
   if(isNew && DB.articles[num]){alert('El artículo '+num+' ya existe.');return;}
+  var _b=document.getElementById('art-save-btn'); _btnSpinner(_b,true);
   try {
     // Buscar si existe en SP
     var existRes=await flowGet('FT_Articulos','',2000);
@@ -4534,6 +4552,7 @@ async function ftAdmArtSave(){
     closeCModal('modal-art-edit');
     ftAdmArtRender();
   } catch(e){alert('Error al guardar: '+e.message);}
+  finally { _btnSpinner(_b,false); }
 }
 async function ftAdmArtDelete(num){
   if(!confirm('¿Eliminar el artículo '+num+'?'))return;
@@ -4704,6 +4723,7 @@ async function ftAdmOpSave(){
   // Verificar duplicado
   var dup=(DB.opCatalogFull||[]).find(function(o){return o.nombre.toLowerCase()===nombre.toLowerCase()&&o.spId!==spId;});
   if(dup){alert('La operación "'+nombre+'" ya existe.');return;}
+  var _b=document.getElementById('opcat-save-btn'); _btnSpinner(_b,true);
   try{
     var fields={Title:nombre};
     if(artKey) fields.Articulo_Key=artKey;
@@ -4722,6 +4742,7 @@ async function ftAdmOpSave(){
     closeCModal('modal-op-edit');
     ftAdmOpRender();
   }catch(e){alert('Error al guardar: '+e.message);}
+  finally { _btnSpinner(_b,false); }
 }
 async function ftAdmOpDelete(nombre,spId){
   if(!confirm('¿Eliminar la operación "'+nombre+'"?'))return;
@@ -6776,6 +6797,9 @@ async function ftLoadDataFromSP() {
         // ese metadato no llega. Calculamos una firma con el contenido para detectar cambios.
         var opsRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$expand=fields&$top=5000');
         var allOps = (opsRes.value||[]).map(function(i){return i.fields;});
+        // GUARDA: si la lectura vuelve vacía (fallo/lentitud transitoria del flujo protegido),
+        // NO tocar las operaciones en memoria — reconstruir con [] borraría el avance de TODAS las OFs.
+        if (!allOps.length) { console.warn('[Coord poll] Lectura de FT_Operaciones vacía — se conserva el estado actual.'); return; }
         var _opsSig = allOps.map(function(o){return (o.OF_SAP||'')+'~'+(o.Op_ID||o.Title||'')+'~'+(o.Status||'')+'~'+(o.Mins||0)+'~'+(o.Qty_OK||0)+'~'+(o.Qty_Def||0)+'~'+(o.Qty_Chat||0)+'~'+(o.Qty_Rej||0)+'~'+(o.NeedsCal||'')+'~'+(o.CalResult||'');}).sort().join('|');
         if (!window._coordLastOpsMod) {
           // Primer poll — establecer línea base sin recargar
@@ -7286,14 +7310,16 @@ async function ftSavePedidoStatusToSP(pedido) {
     // Find all OFs for this pedido and compute aggregate status
     var pedOFs = DB.activeOFs.filter(function(a){ return a.pedido === pedido; });
     if (!pedOFs.length) return;
-    var totalOps = 0, doneOps = 0, runningOps = 0;
+    var totalOps = 0, doneOps = 0, runningOps = 0, allOps = 0;
     pedOFs.forEach(function(aof){
-      totalOps += aof.ops.length;
+      allOps += aof.ops.length;
+      totalOps += aof.ops.filter(function(o){ return o.status!=='omitida'; }).length; // sin omitidas
       doneOps  += aof.ops.filter(function(o){ return o.status==='done'; }).length;
       runningOps += aof.ops.filter(function(o){ return o.status==='running'; }).length;
     });
-    var pct = totalOps > 0 ? Math.round(doneOps/totalOps*100) : 0;
-    var status = doneOps===totalOps&&totalOps>0 ? 'Completado' : runningOps>0 ? 'En Fabricacion' : 'Planeacion';
+    // Todas omitidas (totalOps=0) pero con operaciones → 100% / Completado
+    var pct = totalOps > 0 ? Math.round(doneOps/totalOps*100) : (allOps>0?100:0);
+    var status = (allOps>0 && doneOps===totalOps) ? 'Completado' : runningOps>0 ? 'En Fabricacion' : 'Planeacion';
     var fields = {
       Title:             pedido,
       Pedido:            pedido,
@@ -12802,13 +12828,15 @@ function renderSeg(){
   var pL={alta:'🔴 ALTA',media:'🟡 MEDIA',normal:'⬜ NORMAL'};
 
   groups.forEach(function(g){
-    var grpDone=0, grpTotal=0;
+    var grpDone=0, grpTotal=0, grpAll=0;
     g.ofs.forEach(function(of){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      if(aof){grpDone+=aof.ops.filter(function(o){return o.status==='done';}).length;grpTotal+=aof.ops.filter(function(o){return o.status!=='omitida';}).length;}
+      if(aof){grpAll+=aof.ops.length;grpDone+=aof.ops.filter(function(o){return o.status==='done';}).length;grpTotal+=aof.ops.filter(function(o){return o.status!=='omitida';}).length;}
     });
-    var grpPct = grpTotal>0?Math.round(grpDone/grpTotal*100):0;
-    var allDone = grpTotal>0 && grpDone===grpTotal;
+    // "Completado" = hay operaciones y todas están done u omitida. grpTotal excluye omitidas,
+    // por lo que grpDone===grpTotal cubre también el caso en que TODAS están omitidas (0===0).
+    var allDone = grpAll>0 && grpDone===grpTotal;
+    var grpPct = grpTotal>0 ? Math.round(grpDone/grpTotal*100) : (allDone?100:0);
 
     var isExpanded = window._segExpanded[g.pedido] !== false; // default open
     h+='<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden;">';
@@ -12856,7 +12884,8 @@ function renderSeg(){
         return;
       }
       var _nOm=aof.ops.filter(function(o){return o.status!=='omitida';}).length;
-        var pct=_nOm>0?Math.round(done/_nOm*100):0;
+        // Si no hay operaciones no-omitidas (todas omitidas) pero sí hay operaciones → 100%
+        var pct=_nOm>0?Math.round(done/_nOm*100):(aof.ops.length>0?100:0);
       h+='<div style="padding:10px 14px;border-bottom:1px solid var(--border);">';
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">';
       h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' · '+esc(of.articulo):'')+'</span>';
@@ -15136,9 +15165,12 @@ function ftRptBuildData(){
     Object.keys(opsPorOfEst[ofSap]).forEach(function(est){
       var ops=opsPorOfEst[ofSap][est];
       var total=ops.length;
+      var omit=ops.filter(function(o){return (o.status||'').toLowerCase()==='omitida';}).length;
+      var noOmit=total-omit; // denominador SIN operaciones omitidas
       var term=ops.filter(function(o){var s=(o.status||'').toLowerCase();return s==='done'||s==='terminada'||s==='terminado';}).length;
       var enProc=ops.some(function(o){var s=(o.status||'').toLowerCase();return s==='running'||s==='paused'||s==='validating';});
-      var pct=total>0?Math.round(term/total*100):0;
+      // Sin operaciones no-omitidas (todas omitidas) pero con operaciones → 100%
+      var pct=noOmit>0?Math.round(term/noOmit*100):(total>0?100:0);
       var opStatus=(pct===100&&total>0)?'Terminada':((enProc||term>0)?'En Proceso':'Planeación');
       var personasSet={};
       ops.forEach(function(o){if(o.tecnico)personasSet[o.tecnico]=true;(o.ayudantes||[]).forEach(function(a){if(a)personasSet[a]=true;});});

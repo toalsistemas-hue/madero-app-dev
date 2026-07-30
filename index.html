@@ -5912,14 +5912,17 @@ async function _spGraphLeerLista(lista, top){
   const sid = await getSiteId();
   const token = await getToken();
   var url='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+encodeURIComponent(lista)+'/items?$expand=fields&$top=200';
-  var out=[], guard=0;
+  var out=[], guard=0, retries=0;
   while(url && guard<500){
     guard++;
     var res=await fetch(url,{headers:{Authorization:'Bearer '+token}});
     // 404 = SharePoint oculta la lista a usuarios sin permiso (no siempre devuelve 403).
     // Tratamos 401/403/404 como "sin acceso Graph" → usar flujo y cachear la decisión.
     if(res.status===401||res.status===403||res.status===404){ var e=new Error('Graph '+res.status+' '+lista); e._authFail=true; throw e; }
+    // 429/503 = throttling de SharePoint → esperar (Retry-After) y reintentar la misma página.
+    if((res.status===429||res.status===503) && retries<4){ retries++; var _ra=parseInt(res.headers.get('Retry-After')||'',10); if(isNaN(_ra))_ra=retries*2; await new Promise(function(r){setTimeout(r,Math.min(_ra,15)*1000);}); continue; }
     if(!res.ok) throw new Error('Graph GET '+lista+' '+res.status);
+    retries=0;
     var data=await res.json();
     (data.value||[]).forEach(function(it){ out.push({ id:String(it.id||''), fields: it.fields||{} }); });
     url = data['@odata.nextLink'] || null;
@@ -6159,6 +6162,14 @@ async function ftLoadDataFromSP() {
     console.info('ftLoadDataFromSP: omitido (modo demo o sin token)');
     return;
   }
+  // Guarda anti-reentrada: evita cargas solapadas (cada carga lee varias listas
+  // paginadas; solaparlas dispara cientos de solicitudes → 429/agotamiento).
+  if (window._fabLoadInProgress && (Date.now() - (window._fabLoadStart||0)) < 30000) {
+    console.log('[ftLoadData] Omitido — ya hay una carga en curso');
+    return;
+  }
+  window._fabLoadInProgress = true;
+  window._fabLoadStart = Date.now();
   window._fabLoading = true;
   // Overlay "Cargando…" solo en la PRIMERA carga y estando en la pantalla de Fabricaciones
   if (!window._fabDatosCargados) { var _fpPg=document.getElementById('page-Fabricaciones'); if(_fpPg && _fpPg.classList.contains('active') && typeof _fabShowLoadOverlay==='function') _fabShowLoadOverlay(); }
@@ -7105,23 +7116,31 @@ async function ftLoadDataFromSP() {
   // Cuando el usuario cambia de pestaña del SO o minimiza el navegador,
   // document.hidden=true y los ticks del poll hacen return arriba.
   // Al volver a la ventana, hacemos refresh inmediato sin esperar el próximo tick.
-  document.addEventListener('visibilitychange', async function() {
-    if (!document.hidden && state.token && FT_SITE_ID && !window._confirmProgRunning) {
-      // Ventana visible de nuevo — refresh inmediato
-      console.log('[Coord] Ventana visible — refresh inmediato');
-      window._coordSlowTick = 0; // reset slow-poll counter
-      try {
-        // Al volver a la ventana recargamos datos frescos (una sola vez, no es un poll repetido)
-        await ftLoadDataFromSP();
-        if (C.currentPage === 'seguimiento') renderSeg();
-        else if (C.currentPage === 'Fabricaciones') (window.renderProg||function(){})();
-      } catch(e) { console.warn('[Coord] Visibility refresh error:', e.message); }
-    }
-  });
+  // IMPORTANTE: registrar el listener UNA SOLA VEZ. Antes se registraba dentro de
+  // ftLoadDataFromSP en cada carga, acumulando decenas de listeners → cada cambio de
+  // foco disparaba N recargas simultáneas → 429 y agotamiento de recursos del navegador.
+  if (!window._coordVisBound) {
+    window._coordVisBound = true;
+    document.addEventListener('visibilitychange', async function() {
+      if (!document.hidden && state.token && FT_SITE_ID && !window._confirmProgRunning) {
+        // Evitar refrescos en ráfaga: máximo uno cada 10s
+        if (window._coordLastVisRefresh && (Date.now() - window._coordLastVisRefresh) < 10000) return;
+        window._coordLastVisRefresh = Date.now();
+        console.log('[Coord] Ventana visible — refresh inmediato');
+        window._coordSlowTick = 0;
+        try {
+          await ftLoadDataFromSP();
+          if (C.currentPage === 'seguimiento') renderSeg();
+          else if (C.currentPage === 'Fabricaciones') (window.renderProg||function(){})();
+        } catch(e) { console.warn('[Coord] Visibility refresh error:', e.message); }
+      }
+    });
+  }
   } catch(e) {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);
   } finally {
     window._fabLoading = false;
+    window._fabLoadInProgress = false;
     window._fabDatosCargados = true;
     if (typeof _fabHideLoadOverlay==='function') _fabHideLoadOverlay();
     if (C && C.currentPage === 'programacion') { try { (window.renderProg||renderProg)(); } catch(_e){} }
@@ -7816,7 +7835,7 @@ function renderCoordFlujos() {
     validating:  'rgba(139,92,246,.18)',
     done:        'rgba(34,197,94,.18)',
     op_concluded:'rgba(34,197,94,.12)',
-    omitida:     'rgba(110,118,129,.15)'
+    omitida:     'rgba(210,153,34,.10)'  // ámbar tenue — distinto del gris de "pendiente"
   };
   var statusBorder = {
     pending:     'rgba(255,255,255,.1)',
@@ -7825,108 +7844,177 @@ function renderCoordFlujos() {
     validating:  '#a78bfa',
     done:        'var(--green)',
     op_concluded:'var(--green)',
-    omitida:     'rgba(110,118,129,.6)'
+    omitida:     '#d29922'  // ámbar — contorno claramente diferente de "pendiente"
   };
   var statusIcon = { pending:'', running:'▶', paused:'⏸', validating:'🔍', done:'✓', op_concluded:'✓', omitida:'🏁' };
+  // Borde punteado solo para omitidas (refuerza la diferencia visual con pendientes)
+  var _brdStyle = function(st, col){ return (st==='omitida' ? '1px dashed ' : '1px solid ') + col; };
+
+  // Fecha de entrega: mismo criterio de color que Tiempo Real
+  var _msDay = 86400000;
+  var _hoy0 = new Date(); _hoy0.setHours(0,0,0,0);
+  function _feMs(fe){
+    if(!fe) return Infinity;
+    var p=String(fe).split('T')[0].split('-'); if(p.length!==3) return Infinity;
+    var d=new Date(+p[0],+p[1]-1,+p[2]); d.setHours(0,0,0,0); var t=d.getTime();
+    return isNaN(t)?Infinity:t;
+  }
+  function _fechaHtml(fe){
+    if(!fe) return '';
+    var _t=_feMs(fe);
+    var _dias=_t===Infinity?null:Math.round((_t-_hoy0.getTime())/_msDay);
+    var _p=String(fe).split('T')[0].split('-');
+    var _txt=_p.length===3?_p[2]+'/'+_p[1]+'/'+_p[0]:fe;
+    var _col='var(--dim)',_tag='';
+    if(_dias!==null){
+      if(_dias<0){_col='var(--red)';_tag=' · ⚠ Vencida '+Math.abs(_dias)+'d';}
+      else if(_dias===0){_col='var(--red)';_tag=' · Hoy';}
+      else if(_dias<=3){_col='var(--yellow)';_tag=' · en '+_dias+'d';}
+    }
+    return ' <span style="font-size:.62rem;color:'+_col+';font-family:\'DM Mono\',monospace;white-space:nowrap;margin-left:auto;">📅 '+_txt+_tag+'</span>';
+  }
+
+  // Reunir OFs a mostrar (programadas hoy, con ops) y agrupar por pedido + cliente
+  var _ofsShow = [];
+  DB.activeOFs.forEach(function(aof){
+    if(!aof.ops || !aof.ops.length) return;
+    var ofRec = DB.ofs ? DB.ofs.find(function(o){ return o.of_sap === aof.of_sap; }) : null;
+    if(!ofRec || ofRec.programadoHoy !== true) return;
+    _ofsShow.push({aof:aof, ofRec:ofRec});
+  });
+  if(!_ofsShow.length){
+    body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim);font-size:.85rem;">Sin OFs programadas para hoy.</div>';
+    return;
+  }
+  var _groups = {}, _order = [];
+  _ofsShow.forEach(function(x){
+    var ped = x.ofRec.pedido || 'SIN_PEDIDO';
+    if(!_groups[ped]){ _groups[ped] = {pedido:ped, cliente:x.ofRec.cliente||'', items:[]}; _order.push(ped); }
+    _groups[ped].items.push(x);
+    if(!_groups[ped].cliente && x.ofRec.cliente) _groups[ped].cliente = x.ofRec.cliente;
+  });
+  // Ordenar pedidos y OFs por urgencia (fecha de entrega más próxima primero)
+  function _grpUrg(ped){ return Math.min.apply(null, _groups[ped].items.map(function(x){return _feMs(x.ofRec.fecha_entrega);}).concat([Infinity])); }
+  _order.sort(function(a,b){ return _grpUrg(a) - _grpUrg(b); });
+  _order.forEach(function(ped){ _groups[ped].items.sort(function(x,y){ return _feMs(x.ofRec.fecha_entrega) - _feMs(y.ofRec.fecha_entrega); }); });
 
   var html = '';
-  DB.activeOFs.forEach(function(aof) {
-    if (!aof.ops || !aof.ops.length) return;
-    // Filtrar: solo OFs con Programado_Hoy === true en FT_OrdenesFabricacion
-    var ofRec = DB.ofs ? DB.ofs.find(function(o){ return o.of_sap === aof.of_sap; }) : null;
-    if (!ofRec || ofRec.programadoHoy !== true) return;
-
-    html += '<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px 14px;margin-bottom:10px;">';
-    // Header
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
-    html += '<span style="font-family:\'DM Mono\',monospace;font-size:.72rem;color:var(--accent-l);font-weight:600;">OF ' + esc(aof.of_sap) + '</span>';
-    if (aof.articulo) html += '<span style="font-size:.65rem;color:var(--text-dim);">· ' + esc(aof.articulo) + '</span>';
-    html += '<span style="font-size:.72rem;color:var(--text);font-weight:600;">' + esc(aof.descripcion ? aof.descripcion.substring(0,50) : '') + '</span>';
-    if (ofRec && ofRec.pedido) html += '<span style="font-size:.62rem;color:var(--text-dim);margin-left:auto;">Pedido ' + esc(ofRec.pedido) + '</span>';
+  _order.forEach(function(ped){
+    var g = _groups[ped];
+    // Encabezado de pedido + cliente
+    html += '<div style="margin-bottom:14px;">';
+    html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:rgba(0,82,139,.08);border:1px solid var(--border);border-radius:8px 8px 0 0;">';
+    html += '<span style="font-family:\'DM Mono\',monospace;font-size:.75rem;color:var(--accent-l);font-weight:600;">Pedido ' + esc(g.pedido) + '</span>';
+    if(g.cliente) html += '<span style="font-size:.8rem;font-weight:600;">' + esc(g.cliente) + '</span>';
     html += '</div>';
+    html += '<div style="border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;padding:10px;">';
 
-    // Flow nodes
-    html += '<div data-flujoscroll="'+esc(aof.of_sap)+'" style="display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding-bottom:4px;">';
+    g.items.forEach(function(x){
+      var aof = x.aof, ofRec = x.ofRec;
+      // Avance (omitidas excluidas del denominador; todas omitidas → 100%)
+      var _done = aof.ops.filter(function(o){ return o.status==='done'||o.status==='op_concluded'; }).length;
+      var _nOm  = aof.ops.filter(function(o){ return o.status!=='omitida'; }).length;
+      var _pct  = _nOm>0 ? Math.round(_done/_nOm*100) : (aof.ops.length>0?100:0);
 
-    // Group ops like renderAppFlujo
-    var grps = []; var i = 0;
-    while (i < aof.ops.length) {
-      if (aof.ops[i].tipo === 'simultanea') {
-        var sg = [aof.ops[i]];
-        while (i+1 < aof.ops.length && aof.ops[i+1].tipo === 'simultanea') { i++; sg.push(aof.ops[i]); }
-        grps.push({type:'sim', ops:sg});
-      } else {
-        grps.push({type:'seq', op:aof.ops[i]});
-      }
-      i++;
-    }
+      html += '<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px 14px;margin-bottom:10px;">';
+      // Header OF + fecha de entrega
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">';
+      html += '<span style="font-family:\'DM Mono\',monospace;font-size:.72rem;color:var(--accent-l);font-weight:600;">OF ' + esc(aof.of_sap) + '</span>';
+      if (aof.articulo) html += '<span style="font-size:.65rem;color:var(--text-dim);">· ' + esc(aof.articulo) + '</span>';
+      html += '<span style="font-size:.72rem;color:var(--text);font-weight:600;">' + esc(aof.descripcion ? aof.descripcion.substring(0,50) : '') + '</span>';
+      html += _fechaHtml(ofRec.fecha_entrega);
+      html += '</div>';
+      // Barra de avance
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;">';
+      html += '<div style="flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden;"><div style="height:100%;width:'+_pct+'%;background:var(--green);border-radius:3px;"></div></div>';
+      html += '<span style="font-size:.62rem;font-family:\'DM Mono\',monospace;color:var(--green);white-space:nowrap;">'+_done+'/'+_nOm+' · '+_pct+'%</span>';
+      html += '</div>';
 
-    grps.forEach(function(g, gi) {
-      // Connector arrow between nodes
-      if (gi > 0) {
-        var prevDone = grps[gi-1].type === 'seq' ? grps[gi-1].op.status === 'done' : false;
-        html += '<div style="display:flex;align-items:center;padding-top:20px;min-width:16px;">';
-        html += '<div style="width:14px;height:2px;background:' + (prevDone ? 'var(--green)' : 'rgba(255,255,255,.12)') + ';"></div>';
-        html += '</div>';
-      }
+      // Flow nodes
+      html += '<div data-flujoscroll="'+esc(aof.of_sap)+'" style="display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding-bottom:4px;">';
 
-      if (g.type === 'seq') {
-        var op = g.op;
-        var key = aof.of_sap + '_' + op.id;
-        var elMins = (op.status === 'running' || op.status === 'paused' || op.status === 'validating') ? (function(){
-          var t = DB.timers[key];
-          if (!t) return op.mins || 0;
-          return Math.floor(((t.elapsed||0) + (t.running ? Date.now()-t.start : 0)) / 60000);
-        })() : (op.mins || 0);
-        var bg  = statusColor[op.status]  || statusColor.pending;
-        var brd = statusBorder[op.status] || statusBorder.pending;
-        var ico = statusIcon[op.status]   || '';
-        var tecLabel = op.tecnico ? ('<div style="font-size:.52rem;color:var(--text-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;">' + esc(op.tecnico) + '</div>') : '';
-
-        html += '<div style="display:flex;flex-direction:column;min-width:96px;max-width:96px;">';
-        html += '<div style="background:' + bg + ';border:1px solid ' + brd + ';border-radius:7px;padding:6px 7px;cursor:default;">';
-        html += '<div style="font-size:.52rem;font-family:\'DM Mono\',monospace;color:var(--accent-l);">' + (gi+1) + (ico ? ' ' + ico : '') + '</div>';
-        html += '<div style="font-size:.6rem;font-weight:600;line-height:1.25;margin-top:1px;">' + esc(op.nombre.substring(0,22)) + '</div>';
-        html += '<div style="font-size:.52rem;color:var(--text-dim);margin-top:1px;">' + esc(op.estacion) + '</div>';
-        if (elMins > 0) {
-          var _isLive = (op.status==='running') && DB.timers[key] && DB.timers[key].running;
-          html += '<div class="' + (_isLive?'ft-timer-chip':'') + '" ' + (_isLive?'data-timer-key="'+key+'"':'') + ' style="font-size:.52rem;color:var(--green);font-family:\'DM Mono\',monospace;margin-top:2px;">' + fmtM(elMins) + '</div>';
+      // Group ops like renderAppFlujo
+      var grps = []; var i = 0;
+      while (i < aof.ops.length) {
+        if (aof.ops[i].tipo === 'simultanea') {
+          var sg = [aof.ops[i]];
+          while (i+1 < aof.ops.length && aof.ops[i+1].tipo === 'simultanea') { i++; sg.push(aof.ops[i]); }
+          grps.push({type:'sim', ops:sg});
+        } else {
+          grps.push({type:'seq', op:aof.ops[i]});
         }
-        if (op.tipo === 'retorno') html += '<div style="font-size:.5rem;color:var(--yellow);background:rgba(212,160,23,.12);border-radius:3px;padding:1px 3px;margin-top:1px;">↩ ret</div>';
-        html += tecLabel;
-        html += '</div></div>';
-
-      } else {
-        // Simultaneous group
-        html += '<div style="display:flex;flex-direction:column;min-width:96px;max-width:96px;">';
-        html += '<div style="font-size:.5rem;color:var(--yellow);text-align:center;margin-bottom:1px;">Sim</div>';
-        g.ops.forEach(function(op2, oi) {
-          if (oi > 0) html += '<div style="width:2px;height:6px;background:rgba(255,255,255,.08);margin:0 auto;"></div>';
-          var bg2  = statusColor[op2.status]  || statusColor.pending;
-          var brd2 = statusBorder[op2.status] || statusBorder.pending;
-          html += '<div style="background:' + bg2 + ';border:1px solid ' + brd2 + ';border-radius:6px;padding:5px 6px;">';
-          html += '<div style="font-size:.58rem;font-weight:600;line-height:1.2;">' + esc(op2.nombre.substring(0,20)) + '</div>';
-          html += '<div style="font-size:.5rem;color:var(--text-dim);">' + esc(op2.estacion) + '</div>';
-          html += '</div>';
-        });
-        html += '</div>';
+        i++;
       }
+
+      grps.forEach(function(gg, gi) {
+        // Connector arrow between nodes
+        if (gi > 0) {
+          var prevDone = grps[gi-1].type === 'seq' ? grps[gi-1].op.status === 'done' : false;
+          html += '<div style="display:flex;align-items:center;padding-top:20px;min-width:16px;">';
+          html += '<div style="width:14px;height:2px;background:' + (prevDone ? 'var(--green)' : 'rgba(255,255,255,.12)') + ';"></div>';
+          html += '</div>';
+        }
+
+        if (gg.type === 'seq') {
+          var op = gg.op;
+          var key = aof.of_sap + '_' + op.id;
+          var elMins = (op.status === 'running' || op.status === 'paused' || op.status === 'validating') ? (function(){
+            var t = DB.timers[key];
+            if (!t) return op.mins || 0;
+            return Math.floor(((t.elapsed||0) + (t.running ? Date.now()-t.start : 0)) / 60000);
+          })() : (op.mins || 0);
+          var bg  = statusColor[op.status]  || statusColor.pending;
+          var brd = statusBorder[op.status] || statusBorder.pending;
+          var ico = statusIcon[op.status]   || '';
+          var tecLabel = op.tecnico ? ('<div style="font-size:.52rem;color:var(--text-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;">' + esc(op.tecnico) + '</div>') : '';
+
+          html += '<div style="display:flex;flex-direction:column;min-width:96px;max-width:96px;">';
+          html += '<div style="background:' + bg + ';border:' + _brdStyle(op.status, brd) + ';border-radius:7px;padding:6px 7px;cursor:default;">';
+          html += '<div style="font-size:.52rem;font-family:\'DM Mono\',monospace;color:var(--accent-l);">' + (gi+1) + (ico ? ' ' + ico : '') + '</div>';
+          html += '<div style="font-size:.6rem;font-weight:600;line-height:1.25;margin-top:1px;' + (op.status==='omitida'?'color:#c9a227;':'') + '">' + esc(op.nombre.substring(0,22)) + (op.status==='omitida'?' <span style="font-size:.5rem;color:#c9a227;font-weight:700;">— Omitida</span>':'') + '</div>';
+          html += '<div style="font-size:.52rem;color:var(--text-dim);margin-top:1px;">' + esc(op.estacion) + '</div>';
+          if (elMins > 0) {
+            var _isLive = (op.status==='running') && DB.timers[key] && DB.timers[key].running;
+            html += '<div class="' + (_isLive?'ft-timer-chip':'') + '" ' + (_isLive?'data-timer-key="'+key+'"':'') + ' style="font-size:.52rem;color:var(--green);font-family:\'DM Mono\',monospace;margin-top:2px;">' + fmtM(elMins) + '</div>';
+          }
+          if (op.tipo === 'retorno') html += '<div style="font-size:.5rem;color:var(--yellow);background:rgba(212,160,23,.12);border-radius:3px;padding:1px 3px;margin-top:1px;">↩ ret</div>';
+          html += tecLabel;
+          html += '</div></div>';
+
+        } else {
+          // Simultaneous group
+          html += '<div style="display:flex;flex-direction:column;min-width:96px;max-width:96px;">';
+          html += '<div style="font-size:.5rem;color:var(--yellow);text-align:center;margin-bottom:1px;">Sim</div>';
+          gg.ops.forEach(function(op2, oi) {
+            if (oi > 0) html += '<div style="width:2px;height:6px;background:rgba(255,255,255,.08);margin:0 auto;"></div>';
+            var bg2  = statusColor[op2.status]  || statusColor.pending;
+            var brd2 = statusBorder[op2.status] || statusBorder.pending;
+            html += '<div style="background:' + bg2 + ';border:' + _brdStyle(op2.status, brd2) + ';border-radius:6px;padding:5px 6px;">';
+            html += '<div style="font-size:.58rem;font-weight:600;line-height:1.2;' + (op2.status==='omitida'?'color:#c9a227;':'') + '">' + esc(op2.nombre.substring(0,20)) + (op2.status==='omitida'?' 🏁':'') + '</div>';
+            html += '<div style="font-size:.5rem;color:var(--text-dim);">' + esc(op2.estacion) + '</div>';
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+      });
+
+      html += '</div>'; // flex row (flow nodes)
+      html += '</div>'; // OF sub-card
     });
 
-    html += '</div>'; // flex row
-
-    // Legend
-    html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:.58rem;color:var(--text-dim);">';
-    html += '<span>⬜ Pendiente</span>';
-    html += '<span style="color:var(--accent-l);">▶ Activa</span>';
-    html += '<span style="color:var(--yellow);">⏸ Pausa</span>';
-    html += '<span style="color:#a78bfa;">🔍 Cal</span>';
-    html += '<span style="color:var(--green);">✓ OK</span>';
-    html += '<span style="color:#8b949e;">🏁 Omitida</span>';
-    html += '</div>';
-
-    html += '</div>'; // card
+    html += '</div>'; // group body
+    html += '</div>'; // group wrapper
   });
+
+  // Leyenda (una sola vez, al final)
+  html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;font-size:.6rem;color:var(--text-dim);">';
+  html += '<span>⬜ Pendiente</span>';
+  html += '<span style="color:var(--accent-l);">▶ Activa</span>';
+  html += '<span style="color:var(--yellow);">⏸ Pausa</span>';
+  html += '<span style="color:#a78bfa;">🔍 Cal</span>';
+  html += '<span style="color:var(--green);">✓ OK</span>';
+  html += '<span style="color:#d29922;">🏁 Omitida (contorno ámbar punteado)</span>';
+  html += '</div>';
 
   // Preservar la posición de scroll horizontal de cada diagrama entre refrescos
   var _scPrev = {};
@@ -8410,10 +8498,17 @@ function addTplOpRow(nombre,estacion,tipo,locked,tecnico,ayudantes,cantidad){
 
   // ── Build technician options for Técnico select ───────────────────────────
   var _tecOpts='<option value="">— Sin técnico —</option>';
+  var _tecFound=false;
   (window._ftTecnicosCache||[]).filter(function(t){return t.Activo;}).forEach(function(t){
     var n=t.Nombre||t.Title||'';
+    if(n===(tecnico||'')) _tecFound=true;
     _tecOpts+='<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===(tecnico||'')?' selected':'')+'>'+n+'</option>';
   });
+  // Si el técnico asignado no está en el caché (aún no cargado o inactivo), agregarlo
+  // igualmente para NO perder la asignación al guardar.
+  if((tecnico||'') && !_tecFound){
+    _tecOpts+='<option value="'+String(tecnico).replace(/"/g,'&quot;')+'" selected>'+tecnico+'</option>';
+  }
 
   // ── Outer wrapper: column container (NOT op-drag-row so CSS doesn't conflict)
   var h='<div id="tpl-op-'+idx+'" style="border:1px solid var(--border);border-radius:5px;margin-bottom:4px;overflow:hidden;'+_rowBg+'">';
@@ -8464,7 +8559,7 @@ function addTplOpRow(nombre,estacion,tipo,locked,tecnico,ayudantes,cantidad){
   // Técnico — dropdown from FT_Tecnicos
   h+='<div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:130px;">';
   h+='<label style="font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;">👷 Técnico</label>';
-  h+='<select class="form-select-sm" id="top-tec-'+idx+'" style="width:100%;font-size:.75rem;'+_dop+'"'+_dis+' title="Técnico por defecto">';
+  h+='<select class="form-select-sm" id="top-tec-'+idx+'" data-tecnico="'+String(tecnico||'').replace(/"/g,'&quot;')+'" style="width:100%;font-size:.75rem;'+_dop+'"'+_dis+' title="Técnico por defecto">';
   h+=_tecOpts;
   h+='</select>';
   h+='</div>';
@@ -8644,14 +8739,20 @@ function _tplRefreshTecnicoDropdowns() {
   var tecList = (window._ftTecnicosCache||[]).filter(function(t){ return t.Activo; });
   // Update all Técnico selects in the modal
   document.querySelectorAll('#tpl-ops-list select[id^="top-tec-"]').forEach(function(sel) {
-    var currentVal = sel.value;
+    // Valor deseado: el actual si existe, si no el guardado en data-tecnico
+    // (evita perder la asignación cuando el caché de técnicos cargó DESPUÉS de armar la fila).
+    var want = sel.value || sel.getAttribute('data-tecnico') || '';
     var newOpts = '<option value="">— Sin técnico —</option>';
+    var found = false;
     tecList.forEach(function(t){
       var n = t.Nombre||t.Title||'';
-      newOpts += '<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===currentVal?' selected':'')+'>'+n+'</option>';
+      if(n===want) found = true;
+      newOpts += '<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===want?' selected':'')+'>'+n+'</option>';
     });
+    // Conservar el técnico asignado aunque no esté en la lista activa (inactivo/eliminado)
+    if(want && !found){ newOpts += '<option value="'+want.replace(/"/g,'&quot;')+'" selected>'+want+'</option>'; }
     sel.innerHTML = newOpts;
-    if (currentVal) sel.value = currentVal;
+    if (want) sel.value = want;
   });
   // Update all Ayudantes input placeholders (input exists, dropdown populated on demand)
 }
@@ -11977,10 +12078,14 @@ function saveTplModal(){
   DB.activeOFs.forEach(function(aof){
     var artKey = getOfArticuloKey(DB.ofs.find(function(o){return o.of_sap===aof.of_sap;})||{});
     if(artKey !== art) return;
-    // Actualizar ops
+    // Actualizar ops — emparejar por nombre+estación y, si no, por nombre (cubre
+    // cambio de estación) para NO perder técnico/estado de la op existente.
+    var _usedIdx = {};
     var newOps = ops.map(function(op,i){
-      var existing = aof.ops.find(function(o){return o.nombre===op.nombre && o.estacion===op.estacion;});
-      return existing || {id:'op_'+aof.of_sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
+      var idxMatch = aof.ops.findIndex(function(o,k){ return !_usedIdx[k] && o.nombre===op.nombre && o.estacion===op.estacion; });
+      if(idxMatch < 0) idxMatch = aof.ops.findIndex(function(o,k){ return !_usedIdx[k] && o.nombre===op.nombre; });
+      if(idxMatch >= 0){ _usedIdx[idxMatch]=true; var ex=aof.ops[idxMatch]; ex.estacion=op.estacion; return ex; }
+      return {id:'op_'+aof.of_sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
         tipo:op.tipo, tecnico:'', qty_total:1, qty_ok:0, qty_def:0, qty_rej:0,
         status:'pending', inicio:null, fin:null, mins:0, isTemplate:true,
         pauseReason:null, valcalNote:null, needsCal:false, calResult:null, calComment:null};
@@ -12717,10 +12822,17 @@ appConfirmValCal = function(){
 
   // ── Build technician options for Técnico select ───────────────────────────
   var _tecOpts='<option value="">— Sin técnico —</option>';
+  var _tecFound=false;
   (window._ftTecnicosCache||[]).filter(function(t){return t.Activo;}).forEach(function(t){
     var n=t.Nombre||t.Title||'';
+    if(n===(tecnico||'')) _tecFound=true;
     _tecOpts+='<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===(tecnico||'')?' selected':'')+'>'+n+'</option>';
   });
+  // Si el técnico asignado no está en el caché (aún no cargado o inactivo), agregarlo
+  // igualmente para NO perder la asignación al guardar.
+  if((tecnico||'') && !_tecFound){
+    _tecOpts+='<option value="'+String(tecnico).replace(/"/g,'&quot;')+'" selected>'+tecnico+'</option>';
+  }
 
   // ── Outer wrapper: column container (NOT op-drag-row so CSS doesn't conflict)
   var h='<div id="tpl-op-'+idx+'" style="border:1px solid var(--border);border-radius:5px;margin-bottom:4px;overflow:hidden;'+_rowBg+'">';
@@ -12771,7 +12883,7 @@ appConfirmValCal = function(){
   // Técnico — dropdown from FT_Tecnicos
   h+='<div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:130px;">';
   h+='<label style="font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;">👷 Técnico</label>';
-  h+='<select class="form-select-sm" id="top-tec-'+idx+'" style="width:100%;font-size:.75rem;'+_dop+'"'+_dis+' title="Técnico por defecto">';
+  h+='<select class="form-select-sm" id="top-tec-'+idx+'" data-tecnico="'+String(tecnico||'').replace(/"/g,'&quot;')+'" style="width:100%;font-size:.75rem;'+_dop+'"'+_dis+' title="Técnico por defecto">';
   h+=_tecOpts;
   h+='</select>';
   h+='</div>';

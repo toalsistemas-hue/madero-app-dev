@@ -11009,61 +11009,148 @@ function monitorShowConfirm(title, msg, onOk, okLabel, cancelLabel) {
 
 // ── Monitor: Solicitar soporte (envío a ntfy → madero-soporte-monitor) ──
 var MON_SOPORTE_TOPIC = 'madero-soporte-monitor';
+// Convierte un texto a ASCII seguro para usarlo en ENCABEZADOS HTTP (ntfy Title).
+function _ntfyAsciiSafe(s){
+  try{ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\x20-\x7E]/g,'').trim(); }
+  catch(e){ return String(s||'').replace(/[^\x20-\x7E]/g,'').trim(); }
+}
+// Estado del chat de soporte en curso
+var _MON_SOP = null; // { ofSap, opId, topic, es, seen }
+
+function _monSopTopic(ofSap, opId){
+  var base = ('madero-sop-'+ofSap+'-'+opId).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+  var rand = Math.random().toString(36).slice(2,6);
+  return (base+'-'+rand).slice(0,64);
+}
+
+function monitorSoporteClose(){
+  if(_MON_SOP && _MON_SOP.es){ try{ _MON_SOP.es.close(); }catch(e){} }
+  _MON_SOP = null;
+  var m = document.getElementById('mon-soporte-modal'); if(m) m.remove();
+}
+
+function _monSopAddMsg(texto, quien){ // quien: 'op' (operador) | 'sop' (asistente)
+  var cont = document.getElementById('mon-soporte-chat'); if(!cont) return;
+  var hint = document.getElementById('mon-soporte-hint'); if(hint) hint.remove();
+  var mine = (quien === 'op');
+  var b = document.createElement('div');
+  b.style.cssText = 'max-width:82%;margin:4px 0;padding:8px 11px;border-radius:12px;font-size:.82rem;line-height:1.35;white-space:pre-wrap;word-break:break-word;'+
+    (mine
+      ? 'align-self:flex-end;background:#1565C0;color:#fff;border-bottom-right-radius:4px;'
+      : 'align-self:flex-start;background:rgba(255,255,255,.09);color:#e6edf3;border-bottom-left-radius:4px;');
+  b.textContent = texto;
+  cont.appendChild(b);
+  cont.scrollTop = cont.scrollHeight;
+}
+
+function _monSopSubscribe(topic){
+  try{
+    var es = new EventSource('https://ntfy.sh/'+encodeURIComponent(topic)+'/sse');
+    es.onmessage = function(ev){
+      try{
+        var d = JSON.parse(ev.data);
+        if(!d || d.event !== 'message') return;      // ignorar open/keepalive
+        if(d.id && _MON_SOP && _MON_SOP.seen[d.id]) return; // eco de nuestro propio mensaje
+        _monSopAddMsg(d.message || '', 'sop');        // mensaje entrante del asistente
+      }catch(e){}
+    };
+    es.onerror = function(){ /* EventSource reintenta solo */ };
+    if(_MON_SOP) _MON_SOP.es = es;
+  }catch(e){ console.warn('[Soporte] SSE error:', e.message); }
+}
+
 function monitorSoporteOpen(ofSap, opId){
   var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
   var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
   if(!op){ return; }
-  var ex = document.getElementById('mon-soporte-modal'); if(ex) ex.remove();
+  monitorSoporteClose(); // cerrar cualquier chat previo
+  _MON_SOP = { ofSap:ofSap, opId:opId, topic:null, es:null, seen:{} };
   var articulo = of.articulo || of.articulo_padre || '';
   var d = document.createElement('div');
   d.id = 'mon-soporte-modal';
   d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:730;display:flex;align-items:center;justify-content:center;padding:16px;';
   d.innerHTML =
-    '<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(400px,94vw);padding:20px;">'+
-      '<div style="font-weight:700;font-size:1rem;color:#f87171;margin-bottom:6px;">🆘 Solicitar soporte</div>'+
-      '<div style="font-size:.76rem;color:#8b949e;margin-bottom:12px;line-height:1.45;">OF '+esc(of.of_sap)+(articulo?' · '+esc(articulo):'')+'<br><strong style="color:#e6edf3;">'+esc(op.nombre)+'</strong>'+(op.estacion?' · '+esc(op.estacion):'')+'</div>'+
-      '<div style="font-size:.7rem;color:#8b949e;margin-bottom:4px;">Describe tu solicitud</div>'+
-      '<textarea id="mon-soporte-txt" rows="4" placeholder="Detalles de la solicitud..." style="width:100%;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px;color:#e6edf3;font-size:.85rem;resize:vertical;"></textarea>'+
-      '<div id="mon-soporte-msg" style="font-size:.78rem;min-height:18px;margin-top:8px;"></div>'+
-      '<div style="display:flex;gap:10px;margin-top:8px;">'+
-        '<button onclick="var m=document.getElementById(\'mon-soporte-modal\');if(m)m.remove();" style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Cancelar</button>'+
-        '<button id="mon-soporte-enviar" data-mon-of="'+esc(ofSap)+'" data-mon-op="'+esc(opId)+'" onclick="var b=this;monitorSoporteEnviar(b.dataset.monOf,b.dataset.monOp)" style="flex:1;background:#dc2626;border:none;border-radius:8px;padding:11px;color:#fff;font-size:.82rem;font-weight:700;cursor:pointer;">Enviar</button>'+
+    '<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(420px,95vw);display:flex;flex-direction:column;max-height:90vh;">'+
+      '<div style="padding:16px 18px 10px 18px;border-bottom:1px solid rgba(255,255,255,.08);">'+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'+
+          '<div style="font-weight:700;font-size:1rem;color:#f87171;">🆘 Soporte</div>'+
+          '<button onclick="monitorSoporteClose()" style="background:none;border:none;color:#8b949e;font-size:1.1rem;cursor:pointer;line-height:1;">✕</button>'+
+        '</div>'+
+        '<div style="font-size:.72rem;color:#8b949e;margin-top:4px;line-height:1.4;">OF '+esc(of.of_sap)+(articulo?' · '+esc(articulo):'')+'<br><strong style="color:#e6edf3;">'+esc(op.nombre)+'</strong>'+(op.estacion?' · '+esc(op.estacion):'')+'</div>'+
+      '</div>'+
+      '<div id="mon-soporte-chat" style="flex:1;overflow-y:auto;min-height:150px;max-height:44vh;padding:12px 14px;display:flex;flex-direction:column;">'+
+        '<div id="mon-soporte-hint" style="text-align:center;color:#6e7681;font-size:.78rem;margin:auto 0;">Escribe tu solicitud y pulsa Enviar.<br>Un asistente podrá responderte aquí mismo.</div>'+
+      '</div>'+
+      '<div id="mon-soporte-msg" style="font-size:.74rem;min-height:16px;padding:0 14px;"></div>'+
+      '<div style="display:flex;gap:8px;padding:10px 14px 14px 14px;border-top:1px solid rgba(255,255,255,.08);">'+
+        '<input id="mon-soporte-txt" type="text" placeholder="Escribe un mensaje..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();monitorSoporteEnviar();}" style="flex:1;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:11px;color:#e6edf3;font-size:.85rem;">'+
+        '<button id="mon-soporte-enviar" onclick="monitorSoporteEnviar()" style="background:#dc2626;border:none;border-radius:8px;padding:11px 18px;color:#fff;font-size:.82rem;font-weight:700;cursor:pointer;">Enviar</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(d);
   setTimeout(function(){ var t=document.getElementById('mon-soporte-txt'); if(t) t.focus(); }, 120);
 }
 
-async function monitorSoporteEnviar(ofSap, opId){
-  var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
-  var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
+async function monitorSoporteEnviar(){
+  var st = _MON_SOP; if(!st) return;
   var txtEl = document.getElementById('mon-soporte-txt');
   var msgEl = document.getElementById('mon-soporte-msg');
   var btn   = document.getElementById('mon-soporte-enviar');
-  var detalles = ((txtEl && txtEl.value) || '').trim();
-  if(!detalles){ if(msgEl){ msgEl.style.color='#f59e0b'; msgEl.textContent='Escribe los detalles de tu solicitud.'; } return; }
-  if(btn){ btn.disabled = true; btn.textContent = 'Enviando...'; }
+  var texto = ((txtEl && txtEl.value) || '').trim();
+  if(!texto){ if(msgEl){ msgEl.style.color='#f59e0b'; msgEl.textContent='Escribe tu mensaje.'; } return; }
+
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===st.ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===st.opId; }) : null;
   var articulo = of ? (of.articulo||of.articulo_padre||'') : '';
   var estacion = op ? (op.estacion||'') : '';
   var opNombre = op ? (op.nombre||'') : '';
-  var cuerpo =
-    'Detalles: '+detalles+'\n'+
-    'Operación: '+opNombre+'\n'+
-    'OF: '+ofSap+'\n'+
-    'Artículo: '+articulo+'\n'+
-    'Estación: '+estacion+
-    (op && op.tecnico ? '\nOperador: '+op.tecnico : '');
-  try{
-    await fetch('https://ntfy.sh/'+MON_SOPORTE_TOPIC, {
-      method: 'POST',
-      headers: { 'Title':'🆘 Soporte Monitor'+(estacion?' — '+estacion:''), 'Priority':'high', 'Tags':'sos,factory' },
-      body: cuerpo
-    });
-  }catch(e){ console.warn('[Soporte] Error ntfy:', e.message); }
-  if(msgEl){ msgEl.style.color='#22c55e'; msgEl.textContent='✅ En breve un asistente atenderá su solicitud.'; }
+
+  // Pintar de inmediato el mensaje del operador
+  _monSopAddMsg(texto, 'op');
   if(txtEl) txtEl.value='';
-  if(btn){ btn.textContent='Enviado'; }
-  setTimeout(function(){ var m=document.getElementById('mon-soporte-modal'); if(m) m.remove(); }, 2400);
+  if(btn){ btn.disabled = true; btn.textContent = '...'; }
+
+  var esPrimero = !st.topic;
+  if(esPrimero){
+    st.topic = _monSopTopic(st.ofSap, st.opId);
+    _monSopSubscribe(st.topic);
+    // Aviso al canal principal con el contexto + el tópico donde responder al operador.
+    var cuerpo =
+      '🆘 Solicitud de soporte\n'+
+      'Detalles: '+texto+'\n'+
+      'Operación: '+opNombre+'\n'+
+      'OF: '+st.ofSap+'\n'+
+      'Artículo: '+articulo+'\n'+
+      'Estación: '+estacion+
+      (op && op.tecnico ? '\nOperador: '+op.tecnico : '')+
+      '\n\nResponder al operador en el tópico: '+st.topic;
+    try{
+      await fetch('https://ntfy.sh/'+MON_SOPORTE_TOPIC, {
+        method: 'POST',
+        headers: {
+          'Title':    _ntfyAsciiSafe('Soporte Monitor' + (estacion ? ' - ' + estacion : '')),
+          'Priority': 'high',
+          'Tags':     'sos,factory',
+          'Actions':  'view, Responder al operador, https://ntfy.sh/'+st.topic
+        },
+        body: cuerpo
+      });
+      if(msgEl){ msgEl.style.color='#22c55e'; msgEl.textContent='✅ En breve un asistente atenderá su solicitud.'; }
+    }catch(e){ console.warn('[Soporte] Error aviso principal:', e.message); if(msgEl){ msgEl.style.color='#f59e0b'; msgEl.textContent='⚠ Falla de conexión al enviar.'; } }
+  }
+
+  // Publicar el mensaje del operador en el tópico de la conversación (para el asistente)
+  try{
+    var r = await fetch('https://ntfy.sh/'+encodeURIComponent(st.topic), {
+      method: 'POST',
+      headers: { 'Title': _ntfyAsciiSafe('Operador'+(opNombre?' '+opNombre:'')), 'Tags':'bust_in_silhouette' },
+      body: texto
+    });
+    var j = await r.json().catch(function(){ return null; });
+    if(j && j.id && _MON_SOP) _MON_SOP.seen[j.id] = true; // evitar duplicar por el eco del SSE
+  }catch(e){ console.warn('[Soporte] Error enviar msg:', e.message); }
+
+  if(btn){ btn.disabled = false; btn.textContent = 'Enviar'; }
 }
 
 // ── Monitor: Fin de Turno (operador termina su turno con PIN) ──────

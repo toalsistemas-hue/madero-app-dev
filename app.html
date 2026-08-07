@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.62</title>
+<title>FabTracker App v2.63</title>
 
 <!-- MSAL Browser -->
 
@@ -10618,6 +10618,13 @@ function monitorRenderOp(of, op) {
 
   card += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
 
+  // Solicitar soporte — disponible en cualquier estado de la operación
+  card += '<button data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
+    'onclick="var b=this;monitorSoporteOpen(b.dataset.monOf,b.dataset.monOp)" '+
+    'style="background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.4);border-radius:8px;'+
+    'padding:9px 14px;color:#f87171;font-size:.78rem;font-weight:600;cursor:pointer;">'+
+    '🆘 Solicitar soporte</button>';
+
   if (isPending) {
     card += '<button data-mon-accion="iniciar" data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
       'onclick="var b=this;monitorCheckQueueThenAskPin(b.dataset.monOf,b.dataset.monOp)" '+
@@ -10917,6 +10924,30 @@ async function monitorPinSubmit() {
       return;
     }
     if (pin !== tec.pin) {
+      // ¿El NIP pertenece a OTRO operador válido? Solo al INICIAR: permitir iniciar
+      // con otro operador (reasignando la operación) previa confirmación Sí/No.
+      var _otro = _MON.technicians.find(function(t){
+        return t.pin && t.pin === pin && t.nombre.trim().toUpperCase() !== op.tecnico.trim().toUpperCase();
+      });
+      if (_otro && ctx.accion === 'iniciar') {
+        var _sOf = ctx.ofSap, _sOp = ctx.opId, _sAcc = ctx.accion, _otroNombre = _otro.nombre, _asignado = op.tecnico;
+        errEl.textContent = '';
+        document.getElementById('monitor-pin-modal').style.display = 'none';
+        _MON.pinDigits = ''; _MON.pinCtx = null;
+        monitorShowConfirm(
+          '⚠ Operador distinto',
+          'Está a punto de iniciar la operación con otro operador ('+_otroNombre+') en lugar de '+_asignado+'.\n\n¿Desea continuar?',
+          function(){
+            var lo = DB.activeOFs.find(function(o){ return o.of_sap===_sOf; });
+            var lop = lo ? lo.ops.find(function(o){ return o.id===_sOp; }) : null;
+            if(!lop){ if(typeof showAppNotif==='function') showAppNotif('info','Operación no encontrada. Actualiza e intenta de nuevo.'); return; }
+            lop.tecnico = _otroNombre; // reasignar al operador que ingresó su NIP
+            monitorExecuteAction(_sAcc, lo, lop, _otroNombre);
+          },
+          'Sí', 'No'
+        );
+        return;
+      }
       errEl.textContent = 'PIN incorrecto. Intenta de nuevo.';
       _MON.pinDigits = ''; monitorPinRefresh(); return;
     }
@@ -10952,9 +10983,11 @@ async function monitorSavePin(tec, pin) {
 }
 
 // ── Execute actions after PIN validated ───────────────────────────
-function monitorShowConfirm(title, msg, onOk) {
+function monitorShowConfirm(title, msg, onOk, okLabel, cancelLabel) {
   var existing = document.getElementById('monitor-confirm-modal');
   if (existing) existing.remove();
+  var _ok = okLabel || '▶ Iniciar de todas formas';
+  var _cancel = cancelLabel || 'Cancelar';
   var d = document.createElement('div');
   d.id = 'monitor-confirm-modal';
   d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:700;display:flex;align-items:center;justify-content:center;';
@@ -10963,15 +10996,74 @@ function monitorShowConfirm(title, msg, onOk) {
     '<div style="font-size:.8rem;color:#e6edf3;line-height:1.6;white-space:pre-line;margin-bottom:18px;">'+msg+'</div>' +
     '<div style="display:flex;gap:10px;">' +
     '<button onclick="document.getElementById(\'monitor-confirm-modal\').remove()" ' +
-      'style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:#8b949e;font-size:.8rem;cursor:pointer;">Cancelar</button>' +
+      'style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:#8b949e;font-size:.8rem;cursor:pointer;">'+_cancel+'</button>' +
     '<button id="monitor-confirm-ok" ' +
-      'style="flex:1;background:#1565C0;border:none;border-radius:8px;padding:10px;color:#fff;font-size:.8rem;font-weight:600;cursor:pointer;">▶ Iniciar de todas formas</button>' +
+      'style="flex:1;background:#1565C0;border:none;border-radius:8px;padding:10px;color:#fff;font-size:.8rem;font-weight:600;cursor:pointer;">'+_ok+'</button>' +
     '</div></div>';
   document.body.appendChild(d);
   document.getElementById('monitor-confirm-ok').onclick = function() {
     d.remove();
     onOk();
   };
+}
+
+// ── Monitor: Solicitar soporte (envío a ntfy → madero-soporte-monitor) ──
+var MON_SOPORTE_TOPIC = 'madero-soporte-monitor';
+function monitorSoporteOpen(ofSap, opId){
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
+  if(!op){ return; }
+  var ex = document.getElementById('mon-soporte-modal'); if(ex) ex.remove();
+  var articulo = of.articulo || of.articulo_padre || '';
+  var d = document.createElement('div');
+  d.id = 'mon-soporte-modal';
+  d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:730;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML =
+    '<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(400px,94vw);padding:20px;">'+
+      '<div style="font-weight:700;font-size:1rem;color:#f87171;margin-bottom:6px;">🆘 Solicitar soporte</div>'+
+      '<div style="font-size:.76rem;color:#8b949e;margin-bottom:12px;line-height:1.45;">OF '+esc(of.of_sap)+(articulo?' · '+esc(articulo):'')+'<br><strong style="color:#e6edf3;">'+esc(op.nombre)+'</strong>'+(op.estacion?' · '+esc(op.estacion):'')+'</div>'+
+      '<div style="font-size:.7rem;color:#8b949e;margin-bottom:4px;">Describe tu solicitud</div>'+
+      '<textarea id="mon-soporte-txt" rows="4" placeholder="Detalles de la solicitud..." style="width:100%;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px;color:#e6edf3;font-size:.85rem;resize:vertical;"></textarea>'+
+      '<div id="mon-soporte-msg" style="font-size:.78rem;min-height:18px;margin-top:8px;"></div>'+
+      '<div style="display:flex;gap:10px;margin-top:8px;">'+
+        '<button onclick="var m=document.getElementById(\'mon-soporte-modal\');if(m)m.remove();" style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Cancelar</button>'+
+        '<button id="mon-soporte-enviar" data-mon-of="'+esc(ofSap)+'" data-mon-op="'+esc(opId)+'" onclick="var b=this;monitorSoporteEnviar(b.dataset.monOf,b.dataset.monOp)" style="flex:1;background:#dc2626;border:none;border-radius:8px;padding:11px;color:#fff;font-size:.82rem;font-weight:700;cursor:pointer;">Enviar</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(d);
+  setTimeout(function(){ var t=document.getElementById('mon-soporte-txt'); if(t) t.focus(); }, 120);
+}
+
+async function monitorSoporteEnviar(ofSap, opId){
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
+  var txtEl = document.getElementById('mon-soporte-txt');
+  var msgEl = document.getElementById('mon-soporte-msg');
+  var btn   = document.getElementById('mon-soporte-enviar');
+  var detalles = ((txtEl && txtEl.value) || '').trim();
+  if(!detalles){ if(msgEl){ msgEl.style.color='#f59e0b'; msgEl.textContent='Escribe los detalles de tu solicitud.'; } return; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Enviando...'; }
+  var articulo = of ? (of.articulo||of.articulo_padre||'') : '';
+  var estacion = op ? (op.estacion||'') : '';
+  var opNombre = op ? (op.nombre||'') : '';
+  var cuerpo =
+    'Detalles: '+detalles+'\n'+
+    'Operación: '+opNombre+'\n'+
+    'OF: '+ofSap+'\n'+
+    'Artículo: '+articulo+'\n'+
+    'Estación: '+estacion+
+    (op && op.tecnico ? '\nOperador: '+op.tecnico : '');
+  try{
+    await fetch('https://ntfy.sh/'+MON_SOPORTE_TOPIC, {
+      method: 'POST',
+      headers: { 'Title':'🆘 Soporte Monitor'+(estacion?' — '+estacion:''), 'Priority':'high', 'Tags':'sos,factory' },
+      body: cuerpo
+    });
+  }catch(e){ console.warn('[Soporte] Error ntfy:', e.message); }
+  if(msgEl){ msgEl.style.color='#22c55e'; msgEl.textContent='✅ En breve un asistente atenderá su solicitud.'; }
+  if(txtEl) txtEl.value='';
+  if(btn){ btn.textContent='Enviado'; }
+  setTimeout(function(){ var m=document.getElementById('mon-soporte-modal'); if(m) m.remove(); }, 2400);
 }
 
 // ── Monitor: Fin de Turno (operador termina su turno con PIN) ──────

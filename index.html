@@ -1226,6 +1226,7 @@ tr:last-child td{border-bottom:none;}
       <div class="page-hdr">
         <div><div class="page-title">🔀 Flujos en proceso</div></div>
       </div>
+      <input id="flujos-search" type="text" oninput="(window.renderCoordFlujos||function(){})()" placeholder="🔍 Buscar por pedido, cliente, OF, artículo o descripción..." style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:9px 12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:var(--text,#e6edf3);font-size:.85rem;outline:none;">
       <div id="coord-flujos-body" style="padding:8px 0;"></div>
     </div>
 
@@ -1730,6 +1731,8 @@ tr:last-child td{border-bottom:none;}
                 <option value="activa">✅ Activa</option>
                 <option value="mantenimiento">🔧 Mantenimiento</option>
               </select></div>
+            <div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">📹 Cámara — canal del DVR (1–16, opcional)</label>
+              <input class="form-input" id="ft-est-camara" type="number" min="1" max="16" placeholder="Ej: 3" style="width:100%;"></div>
             <label style="display:flex;align-items:center;gap:8px;font-size:.8rem;cursor:pointer;">
               <input type="checkbox" id="ft-est-activa" checked> Activa en catálogo
             </label>
@@ -5794,6 +5797,7 @@ function ftOpenEstacion(spId) {
   document.getElementById('ft-est-nombre').value = '';
   document.getElementById('ft-est-status').value = 'activa';
   document.getElementById('ft-est-activa').checked = true;
+  var _camEl0=document.getElementById('ft-est-camara'); if(_camEl0) _camEl0.value='';
   document.getElementById('ft-est-sp-id').textContent = spId || '';
   // If editing, pre-fill data from loaded items
   if (spId) {
@@ -5803,6 +5807,7 @@ function ftOpenEstacion(spId) {
       document.getElementById('ft-est-nombre').value = est.Nombre || est.Title || '';
       document.getElementById('ft-est-status').value = est.Status || 'activa';
       document.getElementById('ft-est-activa').checked = est.Activa !== false && est.Activa !== 0;
+      var _camEl1=document.getElementById('ft-est-camara'); if(_camEl1) _camEl1.value=(est.Camara_Canal!=null?est.Camara_Canal:'');
     }
   }
   openCModal('ft-modal-estacion');
@@ -5812,6 +5817,8 @@ async function ftSaveEstacion() {
   const nombre = document.getElementById('ft-est-nombre').value.trim();
   const status = document.getElementById('ft-est-status').value;
   const activa = document.getElementById('ft-est-activa').checked;
+  var _camEl = document.getElementById('ft-est-camara');
+  var _camVal = _camEl ? String(_camEl.value||'').trim() : '';
   if (!nombre) { alert('El nombre es requerido.'); return; }
   try {
     const siteId = await getSiteId();
@@ -5820,6 +5827,13 @@ async function ftSaveEstacion() {
       window._ftEstColumnasConocidas = ['Title','Nombre','Status','Activa','Activo'];
     }
     const fields = { Title: nombre, Nombre: nombre, Status: status, Activa: activa };
+    // Canal de cámara (columna Camara_Canal). Se envía como número; vacío = quitar.
+    if (_camVal !== '') fields.Camara_Canal = parseInt(_camVal, 10) || null;
+    else fields.Camara_Canal = null;
+    // Reflejar en memoria de inmediato para el botón 📹
+    window.CAMARA_CANALES = window.CAMARA_CANALES || {};
+    if (_camVal !== '') window.CAMARA_CANALES[nombre] = _camVal;
+    else delete window.CAMARA_CANALES[nombre];
     if (_ftEditEstId) {
       await spEscribir('FT_Estaciones', fields, _ftEditEstId);
     } else {
@@ -6460,6 +6474,16 @@ async function ftLoadDataFromSP() {
 
     // Estaciones → STATIONS array
     window.STATIONS = (estRes.value||[]).map(i=>i.fields).filter(e=>e.Activa!==false && e.Activa!==0).map(e=>e.Nombre||e.Title||'');
+    // Mapa estación → canal de cámara (columna Camara_Canal de FT_Estaciones)
+    (function(){
+      var _cc={};
+      (estRes.value||[]).map(function(i){return i.fields;}).forEach(function(e){
+        var nom=e.Nombre||e.Title||'';
+        var canal=(e.Camara_Canal!=null)?String(e.Camara_Canal).trim():'';
+        if(nom && canal) _cc[nom]=canal;
+      });
+      window.CAMARA_CANALES=_cc;
+    })();
     // Init station status
     window.DB_STATION_STATUS = window.DB_STATION_STATUS || {};
     (stStatusRes.value||[]).forEach(i => {
@@ -7882,8 +7906,22 @@ function renderCoordFlujos() {
     if(!ofRec || ofRec.programadoHoy !== true) return;
     _ofsShow.push({aof:aof, ofRec:ofRec});
   });
+  // Filtro de búsqueda (pedido, cliente, OF, artículo o descripción)
+  var _fq = ((document.getElementById('flujos-search')||{}).value||'').trim().toLowerCase();
+  if(_fq){
+    _ofsShow = _ofsShow.filter(function(x){
+      var o=x.ofRec, a=x.aof;
+      return String(o.pedido||'').toLowerCase().indexOf(_fq)>=0
+        || String(o.cliente||'').toLowerCase().indexOf(_fq)>=0
+        || String(a.of_sap||'').toLowerCase().indexOf(_fq)>=0
+        || String(a.articulo||'').toLowerCase().indexOf(_fq)>=0
+        || String(a.descripcion||'').toLowerCase().indexOf(_fq)>=0;
+    });
+  }
   if(!_ofsShow.length){
-    body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim);font-size:.85rem;">Sin OFs programadas para hoy.</div>';
+    body.innerHTML = _fq
+      ? '<div style="text-align:center;padding:40px;color:var(--text-dim);font-size:.85rem;">Sin resultados para “'+esc(_fq)+'”.</div>'
+      : '<div style="text-align:center;padding:40px;color:var(--text-dim);font-size:.85rem;">Sin OFs programadas para hoy.</div>';
     return;
   }
   var _groups = {}, _order = [];
@@ -7898,7 +7936,17 @@ function renderCoordFlujos() {
   _order.sort(function(a,b){ return _grpUrg(a) - _grpUrg(b); });
   _order.forEach(function(ped){ _groups[ped].items.sort(function(x,y){ return _feMs(x.ofRec.fecha_entrega) - _feMs(y.ofRec.fecha_entrega); }); });
 
+  // Leyenda arriba (fija, siempre visible)
   var html = '';
+  html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:8px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:9px;font-size:.6rem;color:var(--text-dim);align-items:center;">';
+  html += '<span>⬜ Pendiente</span>';
+  html += '<span style="color:var(--accent-l);">▶ Activa</span>';
+  html += '<span style="color:var(--yellow);">⏸ Pausa</span>';
+  html += '<span style="color:#a78bfa;">🔍 Cal</span>';
+  html += '<span style="color:var(--green);">✓ OK</span>';
+  html += '<span style="color:#d29922;">🏁 Omitida (contorno ámbar punteado)</span>';
+  html += '</div>';
+
   _order.forEach(function(ped){
     var g = _groups[ped];
     // Encabezado de pedido + cliente
@@ -8005,16 +8053,6 @@ function renderCoordFlujos() {
     html += '</div>'; // group body
     html += '</div>'; // group wrapper
   });
-
-  // Leyenda (una sola vez, al final)
-  html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;font-size:.6rem;color:var(--text-dim);">';
-  html += '<span>⬜ Pendiente</span>';
-  html += '<span style="color:var(--accent-l);">▶ Activa</span>';
-  html += '<span style="color:var(--yellow);">⏸ Pausa</span>';
-  html += '<span style="color:#a78bfa;">🔍 Cal</span>';
-  html += '<span style="color:var(--green);">✓ OK</span>';
-  html += '<span style="color:#d29922;">🏁 Omitida (contorno ámbar punteado)</span>';
-  html += '</div>';
 
   // Preservar la posición de scroll horizontal de cada diagrama entre refrescos
   var _scPrev = {};
@@ -8964,6 +9002,7 @@ function renderHist(){
       h+='<span style="background:rgba(46,160,67,.08);color:var(--green);border:1px solid rgba(46,160,67,.2);border-radius:6px;padding:2px 8px;font-size:.65rem;font-weight:700;">✅ Disponible</span>';
     }
     if(_fabNivel()!=='lectura') h+='<button onclick="openQueueMgr(\''+esc(st)+'\')" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:var(--dim);border-radius:6px;padding:3px 9px;font-size:.68rem;cursor:pointer;font-weight:600;white-space:nowrap;">≡ Cola</button>';
+    h+=_camaraBtnHtml(st);
     h+='</div>';
     // Progress bar — only show when there are active ops
     if(activeOps){
@@ -12985,6 +13024,41 @@ appConfirmValCal = function(){
   }
   
   // Check if moving would displace a running op
+// ═══ Cámaras de estación (visor WebRTC vía puente go2rtc/Cloudflare) ═══
+// Base del puente: hostname HTTPS del túnel (ej. 'https://camaras.tudominio.com').
+// Se puede fijar aquí, o sobrescribir con localStorage 'madero_camara_base' (pruebas).
+window.CAMARA_BASE_URL = window.CAMARA_BASE_URL || '';
+window.CAMARA_CANALES  = window.CAMARA_CANALES || {}; // { 'Nombre Estación': canal }
+function _camaraBase(){ try{ return (localStorage.getItem('madero_camara_base')||'').trim() || window.CAMARA_BASE_URL || ''; }catch(e){ return window.CAMARA_BASE_URL||''; } }
+function _camaraCanal(estacion){ if(!estacion) return null; var c=window.CAMARA_CANALES[estacion]; return (c!=null && String(c).trim()!=='') ? String(c).trim() : null; }
+function _camaraDisponible(estacion){ return !!(_camaraBase() && _camaraCanal(estacion)); }
+// HTML de un botón compacto de cámara (o '' si la estación no tiene cámara configurada)
+function _camaraBtnHtml(estacion){
+  if(!_camaraDisponible(estacion)) return '';
+  return '<button onclick="event.stopPropagation();abrirCamara(\''+esc(String(estacion).replace(/'/g,"\\'"))+'\')" title="Ver cámara de la estación" '+
+    'style="background:rgba(31,111,235,.12);border:1px solid rgba(31,111,235,.3);color:var(--accent-l);border-radius:6px;padding:3px 9px;font-size:.68rem;cursor:pointer;font-weight:600;white-space:nowrap;">📹 Cámara</button>';
+}
+function abrirCamara(estacion){
+  var base=_camaraBase(), canal=_camaraCanal(estacion);
+  if(!base){ if(typeof showToast==='function') showToast('No está configurada la URL del puente de cámaras.'); else alert('No está configurada la URL del puente de cámaras (Camara_Base_URL).'); return; }
+  if(canal==null){ if(typeof showToast==='function') showToast('La estación no tiene cámara asignada.'); else alert('La estación "'+estacion+'" no tiene cámara asignada (Camara_Canal en FT_Estaciones).'); return; }
+  var url = base.replace(/\/+$/,'') + '/stream.html?src=cam' + encodeURIComponent(canal);
+  var ex=document.getElementById('cam-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='cam-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML='<div style="background:#0d1117;border:1px solid var(--border);border-radius:12px;width:min(940px,96vw);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);">'+
+        '<div style="font-weight:600;font-size:.85rem;color:var(--text);">📹 '+esc(estacion)+' · Cámara '+esc(canal)+'</div>'+
+        '<button onclick="var m=document.getElementById(\'cam-modal\');if(m)m.remove();" style="background:none;border:none;color:var(--dim);font-size:1.25rem;cursor:pointer;line-height:1;">✕</button>'+
+      '</div>'+
+      '<div style="position:relative;width:100%;background:#000;aspect-ratio:16/9;">'+
+        '<iframe src="'+url+'" allow="autoplay; fullscreen" style="position:absolute;inset:0;width:100%;height:100%;border:0;"></iframe>'+
+      '</div>'+
+    '</div>';
+  d.addEventListener('click', function(e){ if(e.target===d) d.remove(); });
+  document.body.appendChild(d);
+}
+
 // ═══ Visibilidad en Monitor (misma fórmula que app.html) ═══════════════
 // Por estación se muestran solo las N OFs más urgentes por fecha de entrega.
 // Las ops ya iniciadas nunca se ocultan; override 'pin'=siempre, 'hide'=nunca.
@@ -13247,7 +13321,7 @@ function renderSeg(){
         h+='<span style="color:'+sCol+';font-size:.7rem;margin-top:2px;flex-shrink:0;">'+sIco+'</span>';
         h+='<div style="flex:1;min-width:0;">';
         h+='<div style="font-size:.76rem;font-weight:500;line-height:1.3;'+(_esOmit?'color:#8b949e;':'')+'">'+esc(op.nombre)+(_esOmit?' <span style="color:#6e7681;font-weight:700;font-size:.7rem;">— Omitida</span>':'')+'</div>';
-        if(op.estacion) h+='<div style="font-size:.66rem;color:var(--accent-l);margin-top:1px;">📍 '+esc(op.estacion)+(op.qty_total?' · 📦 '+op.qty_total+' pzas':'')+'</div>';
+        if(op.estacion) h+='<div style="font-size:.66rem;color:var(--accent-l);margin-top:1px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;"><span>📍 '+esc(op.estacion)+(op.qty_total?' · 📦 '+op.qty_total+' pzas':'')+'</span>'+_camaraBtnHtml(op.estacion)+'</div>';
         if(op.status==='op_concluded') h+='<div style="font-size:.64rem;color:#f59e0b;margin-top:2px;">⏳ Aguarda confirmación Supervisor</div>';
         h+='</div>';
         if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);white-space:nowrap;">👷 '+esc(op.tecnico)+'</span>';
@@ -14097,6 +14171,7 @@ function renderHist(){
       h2+='<span style="background:rgba(46,160,67,.08);color:var(--green);border:1px solid rgba(46,160,67,.2);border-radius:6px;padding:2px 8px;font-size:.65rem;font-weight:700;">✅ Disponible</span>';
     }
     if(_fabNivel()!=='lectura') h2+='<button onclick="openQueueMgr(\''+esc(st)+'\')" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:var(--dim);border-radius:6px;padding:3px 9px;font-size:.68rem;cursor:pointer;font-weight:600;white-space:nowrap;">≡ Cola</button>';
+    h2+=_camaraBtnHtml(st);
     h2+='</div>';
     if(activeOps2){
       h2+='<div style="display:flex;gap:3px;align-items:center;margin-bottom:7px;">';

@@ -8012,12 +8012,14 @@ function _appGraphCapSave(){ try{ localStorage.setItem(_appGraphCapKey(), JSON.s
 async function _appSpGraphLeerLista(lista, top){
   var sid=await appGetSiteId(); var token=await appGetToken();
   var url='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+encodeURIComponent(lista)+'/items?$expand=fields&$top=200';
-  var out=[], guard=0;
+  var out=[], guard=0, retries=0;
   while(url && guard<500){
     guard++;
     var res=await fetch(url,{headers:{Authorization:'Bearer '+token}});
     if(res.status===401||res.status===403||res.status===404){ var e=new Error('Graph '+res.status+' '+lista); e._authFail=true; throw e; }
+    if((res.status===429||res.status===503) && retries<4){ retries++; var _ra=parseInt(res.headers.get('Retry-After')||'',10); if(isNaN(_ra))_ra=retries*2; await new Promise(function(r){setTimeout(r,Math.min(_ra,15)*1000);}); continue; }
     if(!res.ok) throw new Error('Graph GET '+lista+' '+res.status);
+    retries=0;
     var data=await res.json();
     (data.value||[]).forEach(function(it){ out.push({ id:String(it.id||''), fields: it.fields||{} }); });
     url=data['@odata.nextLink']||null;
@@ -10587,12 +10589,16 @@ function monitorRenderOp(of, op) {
   // Action buttons
   var ofSap = of.of_sap, opId = op.id;
 
-  // Inicio/Fin times (full date+time)
+  // Inicio/Fin times (full date+time) — usar la fecha REAL guardada en SP
+  // (Fecha_Inicio / Fecha_Fin → op.fecha_inicio_real / op.fecha_fin_real, formato "DD/MM/AAAA HH:MM").
+  // Antes se usaba op.fechaInicio (campo inexistente) y caía a la fecha de HOY, mostrando
+  // siempre el día actual en operaciones en proceso/pausadas.
   if (op.inicio || op.fin) {
     card += '<div style="display:flex;gap:12px;margin-bottom:8px;font-size:.68rem;color:#8b949e;flex-wrap:wrap;">';
-    var _today = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'});
-    if (op.inicio) card += '<span>INICIO: <span style="color:#58a6ff;">'+(op.fechaInicio||_today)+' '+esc(op.inicio)+'</span></span>';
-    if (op.fin)    card += '<span>FIN: <span style="color:#22c55e;">'+(op.fechaFin||_today)+' '+esc(op.fin)+'</span></span>';
+    var _fIni = op.fecha_inicio_real ? String(op.fecha_inicio_real).split(' ')[0] : '';
+    var _fFin = op.fecha_fin_real    ? String(op.fecha_fin_real).split(' ')[0]    : '';
+    if (op.inicio) card += '<span>INICIO: <span style="color:#58a6ff;">'+(_fIni?_fIni+' ':'')+esc(op.inicio)+'</span></span>';
+    if (op.fin)    card += '<span>FIN: <span style="color:#22c55e;">'+(_fFin?_fFin+' ':'')+esc(op.fin)+'</span></span>';
     card += '</div>';
   }
 

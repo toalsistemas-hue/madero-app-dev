@@ -13030,18 +13030,35 @@ appConfirmValCal = function(){
 window.CAMARA_BASE_URL = window.CAMARA_BASE_URL || '';
 window.CAMARA_CANALES  = window.CAMARA_CANALES || {}; // { 'Nombre Estación': canal }
 function _camaraBase(){ try{ return (localStorage.getItem('madero_camara_base')||'').trim() || window.CAMARA_BASE_URL || ''; }catch(e){ return window.CAMARA_BASE_URL||''; } }
-function _camaraCanal(estacion){ if(!estacion) return null; var c=window.CAMARA_CANALES[estacion]; return (c!=null && String(c).trim()!=='') ? String(c).trim() : null; }
+function _camaraCanal(estacion){
+  if(!estacion) return null;
+  var map = window.CAMARA_CANALES || {};
+  // 1) coincidencia exacta
+  var c = map[estacion];
+  if(c!=null && String(c).trim()!=='') return String(c).trim();
+  // 2) coincidencia tolerante (recorta espacios, ignora mayúsculas) — op.estacion
+  //    puede no coincidir carácter a carácter con el nombre del catálogo.
+  var key = String(estacion).trim().toLowerCase();
+  var found = null;
+  Object.keys(map).forEach(function(k){
+    if(String(k).trim().toLowerCase() === key){ var v=String(map[k]).trim(); if(v!=='') found=v; }
+  });
+  return found;
+}
 function _camaraDisponible(estacion){ return !!(_camaraBase() && _camaraCanal(estacion)); }
-// HTML de un botón compacto de cámara (o '' si la estación no tiene cámara configurada)
+// HTML de un botón compacto de cámara. Se muestra SIEMPRE; si la estación no tiene
+// cámara asignada, al pulsarlo avisa. (Se atenúa un poco cuando no hay cámara.)
 function _camaraBtnHtml(estacion){
-  if(!_camaraDisponible(estacion)) return '';
-  return '<button onclick="event.stopPropagation();abrirCamara(\''+esc(String(estacion).replace(/'/g,"\\'"))+'\')" title="Ver cámara de la estación" '+
-    'style="background:rgba(31,111,235,.12);border:1px solid rgba(31,111,235,.3);color:var(--accent-l);border-radius:6px;padding:3px 9px;font-size:.68rem;cursor:pointer;font-weight:600;white-space:nowrap;">📹 Cámara</button>';
+  var disp = _camaraDisponible(estacion);
+  var _op = disp ? '' : 'opacity:.55;';
+  return '<button onclick="event.stopPropagation();abrirCamara(\''+esc(String(estacion||'').replace(/'/g,"\\'"))+'\')" title="'+(disp?'Ver cámara de la estación':'Sin cámara asignada')+'" '+
+    'style="background:rgba(31,111,235,.12);border:1px solid rgba(31,111,235,.3);color:var(--accent-l);border-radius:6px;padding:3px 9px;font-size:.68rem;cursor:pointer;font-weight:600;white-space:nowrap;'+_op+'">📹 Cámara</button>';
 }
 function abrirCamara(estacion){
   var base=_camaraBase(), canal=_camaraCanal(estacion);
-  if(!base){ if(typeof showToast==='function') showToast('No está configurada la URL del puente de cámaras.'); else alert('No está configurada la URL del puente de cámaras (Camara_Base_URL).'); return; }
-  if(canal==null){ if(typeof showToast==='function') showToast('La estación no tiene cámara asignada.'); else alert('La estación "'+estacion+'" no tiene cámara asignada (Camara_Canal en FT_Estaciones).'); return; }
+  function _avisar(msg){ if(typeof showToast==='function') showToast(msg); else alert(msg); }
+  if(canal==null){ _avisar('📹 Esta estación no tiene cámara asignada.'); return; }
+  if(!base){ _avisar('📹 El visor de cámaras aún no está configurado.'); return; }
   var url = base.replace(/\/+$/,'') + '/stream.html?src=cam' + encodeURIComponent(canal);
   var ex=document.getElementById('cam-modal'); if(ex) ex.remove();
   var d=document.createElement('div'); d.id='cam-modal';

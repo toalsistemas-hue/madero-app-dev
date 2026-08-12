@@ -1076,6 +1076,7 @@ tr:last-child td{border-bottom:none;}
         <div><div class="page-title">📅 Programación</div><div class="page-sub">Gestiona qué OFs se fabrican hoy</div></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm" onclick="openPrioModal()" id="btn-prio">⚡ Prioridades</button>
+          <button class="btn btn-ghost btn-sm fab-read-only-hide" onclick="ftAbrirAgrupar()" id="btn-agrupar" title="Agrupar OFs del mismo artículo para fabricar en lote">🔗 Agrupar</button>
           <button class="btn btn-primary btn-sm fab-read-only-hide" onclick="startEditMode()" id="btn-prog">✏ Editar Programación</button>
           <button class="btn btn-success btn-sm" onclick="abrirRevisionProgramacion()" id="btn-confirm-prog" style="display:none;">✓ Confirmar</button>
           <button class="btn btn-ghost btn-sm" onclick="cancelEditMode()" id="btn-cancel-prog" style="display:none;">✕ Cancelar</button>
@@ -6253,6 +6254,8 @@ async function ftLoadDataFromSP() {
         return _sp;
       })(),
       _spId: f._spId!=null ? f._spId : null,
+      grupo:     String(f.Grupo_Fabricacion||'').trim(),
+      grupoModo: String(f.Grupo_Modo||'').toLowerCase().trim(),
     }));
     // Restaurar pedidos cerrados desde localStorage
     // SOLO aplicar a OFs cuyo status en SP NO es activo (evita ocultar OFs recién cargadas)
@@ -6418,6 +6421,8 @@ async function ftLoadDataFromSP() {
           prioridad:   (f.Prioridad||'Normal').toLowerCase(),
           programadoHoy: f.Programado_Hoy === true,
           status:      f.Status || '',
+          grupo:       String(f.Grupo_Fabricacion||'').trim(),
+          grupoModo:   String(f.Grupo_Modo||'').toLowerCase().trim(),
           padre:       null,
           subarts:     [],
           ops: useSpOps ? spOps
@@ -8173,7 +8178,7 @@ function renderProg(){
         h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":of.programadoHoy?"✓":"")+"</div>";
       }
       h+="<div style='flex:1;min-width:0;'>";
-      h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+"</div>";
+      h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+(of.grupo?" <span style='background:rgba(147,51,234,.15);border:1px solid rgba(147,51,234,.35);color:#c084fc;border-radius:5px;padding:0 6px;font-size:.62rem;'>🔗 "+esc(of.grupo)+" · "+(of.grupoModo==='lote'?'Lote':'Serie')+"</span>":"")+"</div>";
       h+="<div style='font-size:.8rem;font-weight:500;'>"+esc(of.descripcion.substring(0,55))+"</div>";
       // Fecha entrega y cantidad — editables en modo edición, visibles siempre
       if(C.editingMode && !ofCancelada){
@@ -10633,6 +10638,99 @@ function cancelEditMode() {
 }
 
 // -- renderProg con PENDING reflejado visualmente ----------
+// ═══ Agrupación de OFs para fabricación en lote (Fase 1) ═══════════════
+function ftAbrirAgrupar(){
+  if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return;
+  var ex=document.getElementById('modal-agrupar'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='modal-agrupar';
+  d.className='coord-modal-bg'; d.style.display='flex';
+  d.innerHTML='<div class="coord-modal-box" style="max-width:640px;max-height:88vh;display:flex;flex-direction:column;">'+
+     '<div class="coord-modal-title">🔗 Agrupar órdenes de fabricación</div>'+
+     '<div style="font-size:.75rem;color:var(--dim);margin-bottom:10px;">Selecciona OFs del <strong>mismo artículo</strong> para fabricarlas en lote. Sus operaciones se verán agrupadas en el Monitor.</div>'+
+     '<div id="agrupar-body" style="overflow:auto;flex:1;"></div>'+
+     '<div class="coord-modal-actions"><button class="btn btn-ghost btn-sm" onclick="closeCModal(\'modal-agrupar\')">Cerrar</button></div>'+
+   '</div>';
+  document.body.appendChild(d);
+  ftRenderAgrupar();
+}
+function ftRenderAgrupar(){
+  var body=document.getElementById('agrupar-body'); if(!body) return;
+  var html='';
+  // Grupos existentes
+  var grupos={};
+  (DB.ofs||[]).forEach(function(o){ if(o.grupo){ (grupos[o.grupo]=grupos[o.grupo]||[]).push(o); } });
+  var gkeys=Object.keys(grupos);
+  if(gkeys.length){
+    html+='<div style="font-weight:600;font-size:.8rem;margin-bottom:6px;">Grupos actuales</div>';
+    gkeys.forEach(function(gk){
+      var arr=grupos[gk], art=arr[0].articulo, modo=arr[0].grupoModo||'serie';
+      html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:6px;margin-bottom:5px;">';
+      html+='<div style="flex:1;min-width:0;font-size:.75rem;"><strong>🔗 '+esc(gk)+'</strong> · '+esc(art)+' · '+arr.length+' OFs · <span style="color:var(--accent-l);">'+(modo==='lote'?'Lote único':'Serie')+'</span><div style="color:var(--dim);font-size:.68rem;">'+arr.map(function(o){return esc(o.of_sap);}).join(', ')+'</div></div>';
+      html+='<button class="btn btn-ghost btn-sm" onclick="ftDesagrupar(\''+esc(gk)+'\')" style="color:var(--red);white-space:nowrap;">✕ Desagrupar</button>';
+      html+='</div>';
+    });
+    html+='<hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">';
+  }
+  // Nuevo grupo — OFs programadas sin grupo, por artículo (mín. 2 por artículo)
+  html+='<div style="font-weight:600;font-size:.8rem;margin-bottom:6px;">Crear un grupo nuevo</div>';
+  var cand=(DB.ofs||[]).filter(function(o){ return o.programadoHoy && !o.grupo && !o.pedidoCerrado && o.status!=='Cerrado' && o.status!=='Pedido Cancelado'; });
+  var porArt={};
+  cand.forEach(function(o){ if(!o.articulo) return; (porArt[o.articulo]=porArt[o.articulo]||[]).push(o); });
+  var arts=Object.keys(porArt).filter(function(a){ return porArt[a].length>=2; }).sort();
+  if(!arts.length){
+    html+='<div style="color:var(--dim);font-size:.75rem;padding:10px 0;">No hay artículos con 2 o más OFs programadas sin agrupar.</div>';
+  } else {
+    html+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">';
+    html+='<label style="font-size:.72rem;color:var(--dim);">Modo del grupo:</label>';
+    html+='<select id="agrupar-modo" class="form-select-sm"><option value="serie">Serie (una tras otra)</option><option value="lote">Lote único (una corrida)</option></select>';
+    html+='<button class="btn btn-primary btn-sm" onclick="ftCrearGrupo()">🔗 Crear grupo con seleccionadas</button>';
+    html+='</div>';
+    arts.forEach(function(a){
+      html+='<div style="margin-bottom:10px;"><div style="font-size:.74rem;font-weight:600;color:var(--accent-l);margin-bottom:4px;">'+esc(a)+(DB.articles[a]?' · '+esc(DB.articles[a]):'')+'</div>';
+      porArt[a].forEach(function(o){
+        html+='<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;font-size:.74rem;cursor:pointer;">';
+        html+='<input type="checkbox" class="agrupar-chk" data-sap="'+esc(o.of_sap)+'" data-art="'+esc(a)+'">';
+        html+='<span>OF '+esc(o.of_sap)+' · Pedido '+esc(o.pedido)+(o.cantidad?' · '+o.cantidad+' pzas':'')+(o.fecha_entrega?' · 📅 '+esc(o.fecha_entrega):'')+'</span>';
+        html+='</label>';
+      });
+      html+='</div>';
+    });
+  }
+  body.innerHTML=html;
+}
+async function ftCrearGrupo(){
+  var chks=document.querySelectorAll('.agrupar-chk:checked');
+  if(chks.length<2){ alert('Selecciona al menos 2 OFs del mismo artículo.'); return; }
+  var arts={}, saps=[];
+  chks.forEach(function(c){ arts[c.dataset.art]=true; saps.push(c.dataset.sap); });
+  if(Object.keys(arts).length>1){ alert('Solo puedes agrupar OFs del MISMO artículo.'); return; }
+  var modo=((document.getElementById('agrupar-modo')||{}).value)||'serie';
+  var grupo='G'+Date.now().toString(36).slice(-5).toUpperCase();
+  for(var i=0;i<saps.length;i++){
+    var ofRec=(DB.ofs||[]).find(function(o){return o.of_sap===saps[i];});
+    if(!ofRec) continue;
+    ofRec.grupo=grupo; ofRec.grupoModo=modo;
+    var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===saps[i];});
+    if(aof){ aof.grupo=grupo; aof.grupoModo=modo; }
+    try{ if(ofRec._spId!=null) await spEscribir('FT_OrdenesFabricacion',{Grupo_Fabricacion:grupo,Grupo_Modo:modo}, ofRec._spId); }
+    catch(e){ console.warn('[Agrupar] SP', saps[i], e.message); }
+  }
+  ftRenderAgrupar();
+  if(typeof renderProg==='function') renderProg();
+}
+async function ftDesagrupar(grupo){
+  var miembros=(DB.ofs||[]).filter(function(o){return o.grupo===grupo;});
+  for(var i=0;i<miembros.length;i++){
+    var ofRec=miembros[i];
+    ofRec.grupo=''; ofRec.grupoModo='';
+    var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===ofRec.of_sap;});
+    if(aof){ aof.grupo=''; aof.grupoModo=''; }
+    try{ if(ofRec._spId!=null) await spEscribir('FT_OrdenesFabricacion',{Grupo_Fabricacion:'',Grupo_Modo:''}, ofRec._spId); }catch(e){}
+  }
+  ftRenderAgrupar();
+  if(typeof renderProg==='function') renderProg();
+}
+
 function renderProg(){
   // Debug: verificar datos en primera OF
   if(DB.ofs && DB.ofs.length > 0){
@@ -10702,7 +10800,7 @@ function renderProg(){
         h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":ofEnCierre?"rgba(212,160,23,.4)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":ofEnCierre?"🔒":of.programadoHoy?"✓":"")+"</div>";
       }
       h+="<div style='flex:1;min-width:0;'>";
-      h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+"</div>";
+      h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+(of.grupo?" <span style='background:rgba(147,51,234,.15);border:1px solid rgba(147,51,234,.35);color:#c084fc;border-radius:5px;padding:0 6px;font-size:.62rem;'>🔗 "+esc(of.grupo)+" · "+(of.grupoModo==='lote'?'Lote':'Serie')+"</span>":"")+"</div>";
       h+="<div style='font-size:.8rem;font-weight:500;'>"+esc(of.descripcion.substring(0,55))+"</div>";
       // Fecha entrega y cantidad — editables en modo edición, visibles siempre
       if(C.editingMode && !ofCancelada){

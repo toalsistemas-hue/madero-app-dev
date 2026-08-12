@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.63</title>
+<title>FabTracker App v2.64</title>
 
 <!-- MSAL Browser -->
 
@@ -8361,6 +8361,8 @@ async function _appLoadDataFromSP_impl() {
         Status:               f.Status || f.Status_SAP || 'Sin programar',
         Fecha_Entrega:        f.Fecha_Entrega || f.FechaEntrega || null,
         Monitor_Override:     f.Monitor_Override || f.MonitorOverride || '',
+        Grupo_Fabricacion:    f.Grupo_Fabricacion || f.GrupoFabricacion || '',
+        Grupo_Modo:           f.Grupo_Modo || f.GrupoModo || '',
       };
     };
     // Normalize Op fields
@@ -8497,6 +8499,8 @@ async function _appLoadDataFromSP_impl() {
       ofv:         f.OFV||f.Rotacion||'',
       fecha_entrega: (String(f.Fecha_Entrega||f.FechaEntrega||'').split('T')[0]) || '',
       monitor_override: String(f.Monitor_Override||f.MonitorOverride||'').toLowerCase().trim(),
+      grupo:     String(f.Grupo_Fabricacion||f.GrupoFabricacion||'').trim(),
+      grupoModo: String(f.Grupo_Modo||f.GrupoModo||'').toLowerCase().trim(),
       sub_articulos: f.Sub_Articulos ? f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean) : [],
       ops: allOps.filter(o=>o.OF_SAP===(f.OF_SAP||f.Title)).sort((a,b)=>(a.Secuencia||0)-(b.Secuencia||0)).map(o => ({
         id: o.Op_ID||('op_'+(o.ID||'')),
@@ -10509,7 +10513,22 @@ function monitorRender() {
     h += '<div style="font-size:.65rem;font-weight:700;color:#58a6ff;letter-spacing:.08em;';
     h += 'text-transform:uppercase;padding:0 4px;margin-bottom:8px;border-left:3px solid #58a6ff;padding-left:8px;">';
     h += est + '</div>';
+    // Agrupación por lote: ops con el mismo grupo + misma operación se muestran juntas.
+    var _grpHecho = {};
     ops.forEach(function(item) {
+      var _g = item.of.grupo || '';
+      var _gk = _g ? (_g + '|' + (item.op.nombre||'')) : '';
+      if (_gk) {
+        if (_grpHecho[_gk]) return; // ya se renderizó este lote
+        var _miembros = ops.filter(function(x){
+          return (x.of.grupo||'') && ((x.of.grupo + '|' + (x.op.nombre||'')) === _gk);
+        });
+        if (_miembros.length >= 2) {
+          _grpHecho[_gk] = true;
+          h += monitorRenderGrupo(_miembros, est);
+          return;
+        }
+      }
       h += monitorRenderOp(item.of, item.op);
     });
     h += '</div>';
@@ -10526,6 +10545,40 @@ function monitorRender() {
   // Update subtitle
   var sub = document.getElementById('monitor-header-sub');
   if (sub) sub.textContent = estaciones.join(' · ');
+}
+
+// Tarjeta agrupada de un lote (misma operación en varias OFs del grupo)
+function monitorRenderGrupo(items, est){
+  var of0 = items[0].of, op0 = items[0].op;
+  var grupo = of0.grupo || '', modo = (of0.grupoModo === 'lote') ? 'lote' : 'serie';
+  var _ACT = { running:1, paused:1, validating:1, op_concluded:1, retrabajo:1, chatarra:1 };
+  var totalPz = items.reduce(function(s,x){ return s + (x.op.qty_total||0); }, 0);
+  var pendientes = items.filter(function(x){ return x.op.status === 'pending'; });
+  var enCurso    = items.filter(function(x){ return _ACT[x.op.status]; });
+  var card = '<div style="background:rgba(147,51,234,.06);border:1px solid rgba(147,51,234,.4);border-radius:12px;padding:11px 12px;margin-bottom:10px;">';
+  card += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
+  card += '<div style="min-width:0;">';
+  card += '<div style="font-size:.66rem;color:#c084fc;font-weight:700;letter-spacing:.03em;">🔗 LOTE '+esc(grupo)+' · '+(modo==='lote'?'LOTE ÚNICO':'EN SERIE')+'</div>';
+  card += '<div style="font-weight:700;font-size:.9rem;color:#e6edf3;line-height:1.3;">'+esc(op0.nombre)+'</div>';
+  card += '<div style="font-size:.68rem;color:#8b949e;margin-top:1px;">'+esc(est)+' · '+items.length+' órdenes · 📦 '+totalPz+' pzas'+
+          ' · <span style="color:#22c55e;">'+enCurso.length+' en curso</span> · <span style="color:#f59e0b;">'+pendientes.length+' pendientes</span></div>';
+  card += '</div>';
+  if (pendientes.length) {
+    var next = pendientes[0];
+    card += '<button onclick="monitorCheckQueueThenAskPin(\''+esc(next.of.of_sap)+'\',\''+esc(next.op.id)+'\')" '+
+      'style="background:#7c3aed;border:none;border-radius:8px;padding:10px 16px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">'+
+      '▶ Iniciar lote'+(modo==='serie'?' (siguiente)':'')+'</button>';
+  } else {
+    card += '<span style="font-size:.72rem;color:#22c55e;font-weight:600;white-space:nowrap;">✓ Sin pendientes</span>';
+  }
+  card += '</div>';
+  // Individuales (colapsable)
+  card += '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:.72rem;color:#8b949e;padding:4px 0;">Ver / iniciar órdenes individuales ('+items.length+')</summary>';
+  card += '<div style="margin-top:8px;">';
+  items.forEach(function(x){ card += monitorRenderOp(x.of, x.op); });
+  card += '</div></details>';
+  card += '</div>';
+  return card;
 }
 
 function monitorRenderOp(of, op) {
@@ -11346,6 +11399,25 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
       tecnico: tecNombre, operador: tecNombre
     }).catch(function(){});
     console.log('[Monitor] Concluida:', op.nombre, 'por', tecNombre);
+    // Avance automático de LOTE EN SERIE: al concluir, iniciar la siguiente OF pendiente
+    // del mismo grupo + misma operación + misma estación, con el mismo operador (sin re-PIN).
+    try {
+      if (of.grupo && of.grupoModo === 'serie') {
+        var _sig = null;
+        (DB.activeOFs||[]).forEach(function(aof2){
+          if (aof2.grupo !== of.grupo) return;
+          (aof2.ops||[]).forEach(function(o2){
+            if (!_sig && o2.status === 'pending' && o2.nombre === op.nombre && o2.estacion === op.estacion) {
+              _sig = { of: aof2, op: o2 };
+            }
+          });
+        });
+        if (_sig) {
+          console.log('[Lote] Auto-avance en serie →', _sig.of.of_sap, op.nombre);
+          monitorDoIniciar(_sig.of, _sig.op, tecNombre);
+        }
+      }
+    } catch(e){ console.warn('[Lote] auto-avance error:', e.message); }
 
   } else if (accion === 'valcal') {
     op.status   = 'validating';

@@ -10643,7 +10643,7 @@ function ftAbrirAgrupar(){
   if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return;
   var ex=document.getElementById('modal-agrupar'); if(ex) ex.remove();
   var d=document.createElement('div'); d.id='modal-agrupar';
-  d.className='coord-modal-bg'; d.style.display='flex';
+  d.className='coord-modal-bg show'; // 'show' = visible (mismo mecanismo que closeCModal)
   d.innerHTML='<div class="coord-modal-box" style="max-width:640px;max-height:88vh;display:flex;flex-direction:column;">'+
      '<div class="coord-modal-title">🔗 Agrupar órdenes de fabricación</div>'+
      '<div style="font-size:.75rem;color:var(--dim);margin-bottom:10px;">Selecciona OFs del <strong>mismo artículo</strong> para fabricarlas en lote. Sus operaciones se verán agrupadas en el Monitor.</div>'+

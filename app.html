@@ -10547,6 +10547,12 @@ function monitorRender() {
   if (sub) sub.textContent = estaciones.join(' · ');
 }
 
+// Recuerda qué lotes están desplegados para no colapsarlos en el auto-refresh
+function _monGrpToggle(el){
+  window._monGrpOpen = window._monGrpOpen || {};
+  var k = el.getAttribute('data-gk'); if(!k) return;
+  if(el.open) window._monGrpOpen[k] = true; else delete window._monGrpOpen[k];
+}
 // Tarjeta agrupada de un lote (misma operación en varias OFs del grupo)
 function monitorRenderGrupo(items, est){
   var of0 = items[0].of, op0 = items[0].op;
@@ -10572,8 +10578,10 @@ function monitorRenderGrupo(items, est){
     card += '<span style="font-size:.72rem;color:#22c55e;font-weight:600;white-space:nowrap;">✓ Sin pendientes</span>';
   }
   card += '</div>';
-  // Individuales (colapsable)
-  card += '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:.72rem;color:#8b949e;padding:4px 0;">Ver / iniciar órdenes individuales ('+items.length+')</summary>';
+  // Individuales (colapsable) — se conserva el estado abierto/cerrado entre auto-refrescos
+  var _gkOpen = grupo + '|' + (op0.nombre||'') + '|' + est;
+  var _openAttr = (window._monGrpOpen && window._monGrpOpen[_gkOpen]) ? ' open' : '';
+  card += '<details data-gk="'+esc(_gkOpen)+'" ontoggle="_monGrpToggle(this)"'+_openAttr+' style="margin-top:8px;"><summary style="cursor:pointer;font-size:.72rem;color:#8b949e;padding:4px 0;">Ver / iniciar órdenes individuales ('+items.length+')</summary>';
   card += '<div style="margin-top:8px;">';
   items.forEach(function(x){ card += monitorRenderOp(x.of, x.op); });
   card += '</div></details>';

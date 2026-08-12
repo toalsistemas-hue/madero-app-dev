@@ -2648,6 +2648,28 @@ var _APP_NTFY_DEST_ROLES = {
 async function appNtfyNotificar(evento, data) {
   var m = _APP_NTFY_MENSAJES[evento];
   if (!m) { console.warn('[ntfy app] Evento desconocido:', evento); return; }
+  // PRUEBA (dev): una sola notificación al tópico de prueba, sin consultar usuarios
+  // ni enviar a canales de producción.
+  if (ENV === 'dev') {
+    var _c = m.titulo;
+    if (data) {
+      if (data.of_sap)    _c += '\nOF: ' + data.of_sap;
+      if (data.op_nombre) _c += '\nOp: ' + data.op_nombre;
+      if (data.estacion)  _c += '\nEstación: ' + data.estacion;
+      if (data.nota)      _c += '\nNota: ' + data.nota;
+      if (data.resultado) _c += '\nResultado: ' + (data.resultado === 'liberado' ? '✅ Liberado' : '❌ Rechazado');
+      if (data.operador)  _c += '\nOperador: ' + data.operador;
+    }
+    _c += '\n\n[PRUEBA/DEV · evento: ' + evento + ']';
+    var _t = (typeof _ntfyAsciiSafe === 'function') ? _ntfyAsciiSafe(m.titulo) : String(m.titulo||'').replace(/[^\x20-\x7E]/g,'');
+    fetch('https://ntfy.sh/' + DEV_NTFY_TOPIC, {
+      method: 'POST',
+      headers: { 'Title': _t, 'Priority': m.prioridad || 'high', 'Tags': 'factory,bell,test' },
+      body: _c
+    }).then(function(){ console.log('[ntfy app] DEV →', DEV_NTFY_TOPIC, '· evento:', evento); })
+      .catch(function(e){ console.warn('[ntfy app] DEV error:', e.message); });
+    return;
+  }
   var destRoles = _APP_NTFY_DEST_ROLES[evento] || [];
   if (!destRoles.length) return;
   console.log('[ntfy app] Notificando evento:', evento, '→ roles:', destRoles);
@@ -7616,6 +7638,11 @@ const ENVIRONMENTS = {
 const ACTIVE = ENVIRONMENTS[ENV];
 try { console.info('[ENV] App móvil — entorno:', ENV, '→ sitio', ACTIVE.sitePath); } catch(e){}
 
+// En la versión de PRUEBA (dev), todas las notificaciones ntfy se desvían a un único
+// tópico de prueba, para no molestar a los canales/usuarios de producción.
+const DEV_NTFY_TOPIC = 'madero-notificaciones-prueba';
+function _ntfyDestino(topic){ return (ENV === 'dev') ? DEV_NTFY_TOPIC : topic; }
+
 // ── Distintivo visual del ambiente de PRUEBA (solo en dev) ──────────
 // Etiqueta fija visible en login y ya dentro de la app. No bloquea clics.
 if (ENV === 'dev') {
@@ -11125,7 +11152,7 @@ async function monitorSoporteEnviar(){
       (op && op.tecnico ? '\nOperador: '+op.tecnico : '')+
       '\n\nResponder al operador en el tópico: '+st.topic;
     try{
-      await fetch('https://ntfy.sh/'+MON_SOPORTE_TOPIC, {
+      await fetch('https://ntfy.sh/'+_ntfyDestino(MON_SOPORTE_TOPIC), {
         method: 'POST',
         headers: {
           'Title':    _ntfyAsciiSafe('Soporte Monitor' + (estacion ? ' - ' + estacion : '')),

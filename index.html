@@ -2149,6 +2149,10 @@ const ENVIRONMENTS = {
 const ACTIVE = ENVIRONMENTS[ENV];
 try { console.info('[ENV] Entorno activo:', ENV, '→ sitio', ACTIVE.sitePath); } catch(e){}
 
+// En la versión de PRUEBA (dev), TODAS las notificaciones ntfy se desvían a un único
+// tópico de prueba, para no molestar a los canales/usuarios de producción.
+const DEV_NTFY_TOPIC = 'madero-notificaciones-prueba';
+
 // ── Distintivo visual del ambiente de PRUEBA (solo en dev) ──────────
 // Etiqueta fija visible en login y ya dentro de la plataforma. No bloquea clics.
 if (ENV === 'dev') {
@@ -14919,6 +14923,17 @@ async function ntfyCargarCanales() {
 
 // Enviar a un canal ntfy
 async function ntfySend(canal, titulo, cuerpo, prioridad) {
+  // PRUEBA (dev): desviar todas las notificaciones a un único tópico de prueba.
+  // Como una misma notificación puede ir a varios destinatarios, se evita duplicar
+  // el mismo mensaje al tópico de prueba dentro de una ventana corta.
+  if (ENV === 'dev') {
+    var _dk = (titulo||'') + '|' + (cuerpo||'');
+    window._ntfyDevSeen = window._ntfyDevSeen || {};
+    var _dnow = Date.now();
+    if (window._ntfyDevSeen[_dk] && (_dnow - window._ntfyDevSeen[_dk]) < 4000) return;
+    window._ntfyDevSeen[_dk] = _dnow;
+    canal = DEV_NTFY_TOPIC;
+  }
   if (!canal) return;
   // Strip accidental prefix
   canal = canal.replace(/^https?:\/\/ntfy\.sh\//i,'').replace(/^ntfy\.sh\//i,'').replace(/[^a-z0-9\-_]/g,'');

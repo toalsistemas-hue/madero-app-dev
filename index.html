@@ -8212,7 +8212,7 @@ function renderProg(){
   if(!h) h = window._fabLoading
     ? "<div style='text-align:center;padding:34px 20px;color:var(--dim);font-size:.85rem'><span class='fab-spinner'></span><div style='margin-top:12px'>Cargando programación…</div></div>"
     : "<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
-  document.getElementById("prog-list").innerHTML = h;
+  document.getElementById("prog-list").innerHTML = (window._fabLoading ? '' : _ftSugerenciaAgrupar()) + h;
   // KPIs — excluir cerrados y cancelados
   var _ofsActivas = DB.ofs.filter(function(o){return o.status!=='Pedido Cancelado'&&o.status!=='Cerrado'&&!o.pedidoCerrado;});
   document.getElementById("fabp-kpi-total").textContent = _ofsActivas.length;
@@ -10639,6 +10639,21 @@ function cancelEditMode() {
 
 // -- renderProg con PENDING reflejado visualmente ----------
 // ═══ Agrupación de OFs para fabricación en lote (Fase 1) ═══════════════
+// Sugerencia automática: banner cuando hay ≥2 OFs del mismo artículo programadas sin agrupar.
+function _ftSugerenciaAgrupar(){
+  if(window._agruparSugerenciaOculta) return '';
+  if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return '';
+  var cand=(DB.ofs||[]).filter(function(o){ return o.programadoHoy && !o.grupo && !o.pedidoCerrado && o.status!=='Cerrado' && o.status!=='Pedido Cancelado'; });
+  var porArt={}; cand.forEach(function(o){ if(o.articulo) (porArt[o.articulo]=porArt[o.articulo]||[]).push(o); });
+  var arts=Object.keys(porArt).filter(function(a){ return porArt[a].length>=2; });
+  if(!arts.length) return '';
+  var totalOfs=arts.reduce(function(s,a){ return s+porArt[a].length; },0);
+  return '<div style="display:flex;align-items:center;gap:10px;background:rgba(147,51,234,.1);border:1px solid rgba(147,51,234,.35);border-radius:9px;padding:9px 12px;margin-bottom:12px;flex-wrap:wrap;">'+
+    '<span style="font-size:.8rem;color:#c084fc;flex:1;min-width:180px;">💡 Hay <strong>'+arts.length+'</strong> artículo(s) con varias OFs programadas sin agrupar ('+totalOfs+' órdenes). Agrúpalas para fabricarlas en lote.</span>'+
+    '<button class="btn btn-primary btn-sm" onclick="ftAbrirAgrupar()">🔗 Agrupar</button>'+
+    '<button class="btn btn-ghost btn-sm" onclick="window._agruparSugerenciaOculta=true;renderProg();">Ocultar</button>'+
+  '</div>';
+}
 function ftAbrirAgrupar(){
   if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return;
   var ex=document.getElementById('modal-agrupar'); if(ex) ex.remove();
@@ -10715,8 +10730,38 @@ async function ftCrearGrupo(){
     try{ if(ofRec._spId!=null) await spEscribir('FT_OrdenesFabricacion',{Grupo_Fabricacion:grupo,Grupo_Modo:modo}, ofRec._spId); }
     catch(e){ console.warn('[Agrupar] SP', saps[i], e.message); }
   }
+  // Cola contigua: reordenar la cola de cada estación para juntar las ops del grupo
+  ftReordenarColaGrupo(saps);
+  for(var j=0;j<saps.length;j++){ try{ if(typeof ftSaveQueueToSP==='function') await ftSaveQueueToSP(saps[j]); }catch(e){} }
   ftRenderAgrupar();
   if(typeof renderProg==='function') renderProg();
+}
+// Reordena la cola de cada estación para que las operaciones de las OFs del grupo
+// queden contiguas (agrupadas por operación, luego por OF). Best-effort.
+function ftReordenarColaGrupo(memberSaps){
+  try{
+    if(typeof sqPurge==='function') sqPurge();
+    var set={}; (memberSaps||[]).forEach(function(s){ set[s]=true; });
+    function _op(item){ var a=(DB.activeOFs||[]).find(function(x){return x.of_sap===item.of_sap;}); return a?a.ops.find(function(o){return o.id===item.op_id;}):null; }
+    (window.STATIONS||[]).forEach(function(st){
+      var q=(window.DB_STATION_QUEUE&&window.DB_STATION_QUEUE[st])||[];
+      var grp=q.filter(function(it){ return set[it.of_sap]; });
+      if(grp.length<2) return;
+      grp.sort(function(a,b){
+        var oa=_op(a), ob=_op(b);
+        var na=(oa&&oa.nombre)||'', nb=(ob&&ob.nombre)||'';
+        if(na!==nb) return na<nb?-1:1;
+        return String(a.of_sap).localeCompare(String(b.of_sap));
+      });
+      var newQ=[], inserted=false;
+      q.forEach(function(it){
+        if(set[it.of_sap]){ if(!inserted){ grp.forEach(function(g){ newQ.push(g); }); inserted=true; } }
+        else newQ.push(it);
+      });
+      window.DB_STATION_QUEUE[st]=newQ;
+    });
+    if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
+  }catch(e){ console.warn('[Agrupar] reordenar cola:', e.message); }
 }
 async function ftDesagrupar(grupo){
   var miembros=(DB.ofs||[]).filter(function(o){return o.grupo===grupo;});
@@ -10848,7 +10893,7 @@ function renderProg(){
   if(!h) h = window._fabLoading
     ? "<div style='text-align:center;padding:34px 20px;color:var(--dim);font-size:.85rem'><span class='fab-spinner'></span><div style='margin-top:12px'>Cargando programación…</div></div>"
     : "<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
-  document.getElementById("prog-list").innerHTML = h;
+  document.getElementById("prog-list").innerHTML = (window._fabLoading ? '' : _ftSugerenciaAgrupar()) + h;
 
   // ── Sección pedidos cancelados ──
   var _cancelados = DB.ofs.filter(function(o){return o.status==='Pedido Cancelado';});
@@ -13410,6 +13455,7 @@ function renderSeg(){
       h+='<div style="padding:10px 14px;border-bottom:1px solid var(--border);">';
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">';
       h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' · '+esc(of.articulo):'')+'</span>';
+      if(of.grupo) h+=' <span style="background:rgba(147,51,234,.15);border:1px solid rgba(147,51,234,.35);color:#c084fc;border-radius:5px;padding:0 6px;font-size:.62rem;white-space:nowrap;">🔗 '+esc(of.grupo)+' · '+(of.grupoModo==='lote'?'Lote':'Serie')+'</span>';
       h+=' <span style="font-size:.78rem;font-weight:500;">'+esc(of.descripcion||'')+'</span>';
       // Fecha de entrega con color según urgencia
       if(of.fecha_entrega){

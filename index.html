@@ -10698,7 +10698,7 @@ function ftRenderAgrupar(){
     html+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">';
     html+='<label style="font-size:.72rem;color:var(--dim);">Modo del grupo:</label>';
     html+='<select id="agrupar-modo" class="form-select-sm"><option value="serie">Serie (una tras otra)</option><option value="lote">Lote único (una corrida)</option></select>';
-    html+='<button class="btn btn-primary btn-sm" onclick="ftCrearGrupo()">🔗 Crear grupo con seleccionadas</button>';
+    html+='<button id="agrupar-crear-btn" class="btn btn-primary btn-sm" onclick="ftCrearGrupo()">🔗 Crear grupo con seleccionadas</button>';
     html+='</div>';
     arts.forEach(function(a){
       html+='<div style="margin-bottom:10px;"><div style="font-size:.74rem;font-weight:600;color:var(--accent-l);margin-bottom:4px;">'+esc(a)+(DB.articles[a]?' · '+esc(DB.articles[a]):'')+'</div>';
@@ -10721,6 +10721,8 @@ async function ftCrearGrupo(){
   if(Object.keys(arts).length>1){ alert('Solo puedes agrupar OFs del MISMO artículo.'); return; }
   var modo=((document.getElementById('agrupar-modo')||{}).value)||'serie';
   var grupo='G'+Date.now().toString(36).slice(-5).toUpperCase();
+  var _crearBtn=document.getElementById('agrupar-crear-btn');
+  if(_crearBtn){ _crearBtn.disabled=true; _crearBtn.innerHTML='<span class="fab-spinner" style="width:12px;height:12px;border-width:2px;vertical-align:-1px;"></span> Creando grupo…'; }
   for(var i=0;i<saps.length;i++){
     var ofRec=(DB.ofs||[]).find(function(o){return o.of_sap===saps[i];});
     if(!ofRec) continue;
@@ -10785,7 +10787,20 @@ async function ftDesagrupar(grupo){
   if(typeof renderProg==='function') renderProg();
 }
 
+// renderProg con debounce + spinner: colapsa llamadas rápidas (al enfocar/navegar)
+// en una sola y muestra un loop de carga, para que la pantalla no se congele con
+// muchos registros. El trabajo pesado real está en _renderProgBody().
+var _progRenderT = null;
 function renderProg(){
+  var list = document.getElementById('prog-list');
+  // Spinner inmediato si aún no hay contenido o se está recargando
+  if (list && (window._fabLoading || !list.children.length)) {
+    list.innerHTML = '<div style="text-align:center;padding:34px 20px;color:var(--dim);font-size:.85rem"><span class="fab-spinner"></span><div style="margin-top:12px">Cargando programación…</div></div>';
+  }
+  if (_progRenderT) clearTimeout(_progRenderT);
+  _progRenderT = setTimeout(function(){ _progRenderT = null; try { _renderProgBody(); } catch(e){ console.warn('[renderProg]', e.message); } }, 45);
+}
+function _renderProgBody(){
   // Debug: verificar datos en primera OF
   if(DB.ofs && DB.ofs.length > 0){
     console.log('[renderProg] Primera OF:', DB.ofs[0].of_sap, '| fecha_entrega:', DB.ofs[0].fecha_entrega, '| cantidad:', DB.ofs[0].cantidad);
@@ -13185,6 +13200,8 @@ appConfirmValCal = function(){
 // Se puede fijar aquí, o sobrescribir con localStorage 'madero_camara_base' (pruebas).
 window.CAMARA_BASE_URL = window.CAMARA_BASE_URL || '';
 window.CAMARA_CANALES  = window.CAMARA_CANALES || {}; // { 'Nombre Estación': canal }
+// Badge compacto de grupo/lote para las filas de "Carga por estación"
+function _grpBadgeCarga(aof){ return (aof&&aof.grupo)?' <span style="background:rgba(147,51,234,.18);border:1px solid rgba(147,51,234,.4);color:#c084fc;border-radius:4px;padding:0 5px;font-size:.58rem;font-weight:700;white-space:nowrap;">🔗 '+esc(aof.grupo)+(aof.grupoModo==="lote"?" · Lote":" · Serie")+'</span>':""; }
 function _camaraBase(){ try{ return (localStorage.getItem('madero_camara_base')||'').trim() || window.CAMARA_BASE_URL || ''; }catch(e){ return window.CAMARA_BASE_URL||''; } }
 function _camaraCanal(estacion){
   if(!estacion) return null;
@@ -14369,7 +14386,7 @@ function renderHist(){
     running.forEach(function(x){
       h2+='<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:rgba(46,160,67,.08);border-radius:5px;margin-bottom:3px;font-size:.72rem;">';
       h2+='<span style="color:var(--green);font-weight:700;">▶</span>';
-      h2+='<span style="flex:1;">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+'</span>';
+      h2+='<span style="flex:1;">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+_grpBadgeCarga(x.aof)+'</span>';
       h2+='<span style="font-family:\'DM Mono\',monospace;font-size:.65rem;color:var(--accent-l);">OF'+esc(x.aof.of_sap)+'</span>';
       if(x.op.tecnico) h2+='<span style="font-size:.65rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
       var el2=getEl(x.aof.of_sap+'_'+x.op.id);
@@ -14379,7 +14396,7 @@ function renderHist(){
     paused2.forEach(function(x){
       h2+='<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:5px;margin-bottom:3px;font-size:.72rem;">';
       h2+='<span style="color:var(--yellow);font-weight:700;">⏸</span>';
-      h2+='<span style="flex:1;color:var(--yellow);">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+'</span>';
+      h2+='<span style="flex:1;color:var(--yellow);">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+_grpBadgeCarga(x.aof)+'</span>';
       h2+='<span style="font-family:\'DM Mono\',monospace;font-size:.65rem;color:var(--accent-l);">OF'+esc(x.aof.of_sap)+'</span>';
       if(x.op.tecnico) h2+='<span style="font-size:.65rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
       h2+='</div>';
@@ -14389,7 +14406,7 @@ function renderHist(){
       pending.forEach(function(x,qi2){
         h2+='<div style="display:flex;align-items:center;gap:5px;padding:3px 6px;background:rgba(255,255,255,.03);border-radius:5px;margin-bottom:2px;font-size:.7rem;">';
         h2+='<span style="min-width:18px;height:18px;background:rgba(31,111,235,.2);color:var(--accent-l);border-radius:4px;font-size:.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;">'+(qi2+1)+'</span>';
-        h2+='<span style="flex:1;">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+'</span>';
+        h2+='<span style="flex:1;">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+_grpBadgeCarga(x.aof)+'</span>';
         h2+='<span style="font-family:\'DM Mono\',monospace;font-size:.62rem;color:var(--dim);">OF'+esc(x.aof.of_sap)+'</span>';
         if(x.op.tecnico) h2+='<span style="font-size:.62rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
         h2+='</div>';

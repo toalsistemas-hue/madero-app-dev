@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.66</title>
+<title>FabTracker App v2.67</title>
 
 <!-- MSAL Browser -->
 
@@ -10604,7 +10604,7 @@ function monitorRenderGrupo(items, est){
     // Serie: iniciar la siguiente pendiente (avanza automáticamente al concluir).
     if (pendientes.length) {
       var next = pendientes[0];
-      card += '<button onclick="monitorCheckQueueThenAskPin(\''+esc(next.of.of_sap)+'\',\''+esc(next.op.id)+'\')" style="'+_bS('#7c3aed')+'padding:10px 16px;font-size:.8rem;">▶ Iniciar lote (siguiente)</button>';
+      card += '<button onclick="monitorCheckQueueThenAskPin(\''+esc(next.of.of_sap)+'\',\''+esc(next.op.id)+'\')" style="'+_bS('#7c3aed')+'padding:10px 16px;font-size:.78rem;">▶ Iniciar fabricación en serie (siguiente)</button>';
     } else {
       card += '<span style="font-size:.72rem;color:#22c55e;font-weight:600;white-space:nowrap;">✓ Sin pendientes</span>';
     }

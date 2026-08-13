@@ -10765,6 +10765,15 @@ function ftReordenarColaGrupo(memberSaps){
 }
 async function ftDesagrupar(grupo){
   var miembros=(DB.ofs||[]).filter(function(o){return o.grupo===grupo;});
+  // No desagrupar si el lote tiene operaciones en proceso: el tiempo es compartido y
+  // el reparto solo ocurre al "Concluir lote". Desagrupar a medias inflaría el tiempo.
+  var _activas={running:1,paused:1,validating:1,op_concluded:1,retrabajo:1,chatarra:1};
+  var _hayActivas=false;
+  miembros.forEach(function(ofRec){
+    var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===ofRec.of_sap;});
+    if(aof && (aof.ops||[]).some(function(op){return _activas[op.status];})) _hayActivas=true;
+  });
+  if(_hayActivas){ alert('No se puede desagrupar: el lote tiene operaciones en proceso.\nConcluye o termina el lote antes de desagruparlo.'); return; }
   for(var i=0;i<miembros.length;i++){
     var ofRec=miembros[i];
     ofRec.grupo=''; ofRec.grupoModo='';

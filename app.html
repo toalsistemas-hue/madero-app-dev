@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.65</title>
+<title>FabTracker App v2.66</title>
 
 <!-- MSAL Browser -->
 
@@ -10455,8 +10455,15 @@ function monitorRender() {
   // Collect all ops for selected stations
   var opsActivas = [], opsTerminadas = [];
   var _monOF = _MON.filtroOF ? String(_MON.filtroOF).toLowerCase() : '';
+  // Si el filtro coincide con una OF que pertenece a un grupo, incluir el grupo completo.
+  var _grposFiltro = {};
+  if (_monOF) {
+    (DB.activeOFs || []).forEach(function(of){
+      if (of.grupo && String(of.of_sap||'').toLowerCase().indexOf(_monOF) >= 0) _grposFiltro[of.grupo] = true;
+    });
+  }
   (DB.activeOFs || []).forEach(function(of) {
-    if (_monOF && String(of.of_sap||'').toLowerCase().indexOf(_monOF) < 0) return; // filtro por N° de OF
+    if (_monOF && String(of.of_sap||'').toLowerCase().indexOf(_monOF) < 0 && !(of.grupo && _grposFiltro[of.grupo])) return; // filtro por N° de OF (grupo completo)
     (of.ops || []).forEach(function(op) {
       if (!estaciones.includes(op.estacion)) return;
       var item = { of: of, op: op };
@@ -10569,30 +10576,35 @@ function monitorRenderGrupo(items, est){
   card += '<div style="font-size:.68rem;color:#8b949e;margin-top:1px;">'+esc(est)+' · '+items.length+' órdenes · 📦 '+totalPz+' pzas'+
           ' · <span style="color:#22c55e;">'+enCurso.length+' en curso</span> · <span style="color:#f59e0b;">'+pendientes.length+' pendientes</span></div>';
   card += '</div>';
+  var _bS = function(bg){ return 'background:'+bg+';border:none;border-radius:8px;padding:9px 13px;color:#fff;font-size:.76rem;font-weight:700;cursor:pointer;white-space:nowrap;'; };
   if (modo === 'lote') {
-    // Lote único: iniciar TODAS juntas; si ya están en curso, concluir el lote.
+    // Lote único: TODAS las acciones son a nivel lote (aplican a todas las órdenes).
     var corriendo = items.filter(function(x){ return x.op.status === 'running'; });
+    var pausados  = items.filter(function(x){ return x.op.status === 'paused'; });
+    card += '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">';
     if (corriendo.length) {
-      var _kL = corriendo[0].of.of_sap + '_' + corriendo[0].op.id;
+      var _r0 = corriendo[0];
+      var _kL = _r0.of.of_sap + '_' + _r0.op.id;
       var _tL = DB.timers && DB.timers[_kL];
       var _mL = _tL ? Math.floor(((_tL.elapsed||0) + (_tL.running && _tL.start ? (Date.now()-_tL.start) : 0))/60000) : 0;
-      card += '<button onclick="monitorAskPin(\'concluir_lote\',\''+esc(corriendo[0].of.of_sap)+'\',\''+esc(corriendo[0].op.id)+'\')" '+
-        'style="background:#dc2626;border:none;border-radius:8px;padding:10px 16px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">'+
-        '⏹ Concluir lote ('+corriendo.length+') · '+_mL+'m</button>';
+      card += '<button onclick="monitorAskPin(\'concluir_lote\',\''+esc(_r0.of.of_sap)+'\',\''+esc(_r0.op.id)+'\')" style="'+_bS('#dc2626')+'">⏹ Concluir lote ('+corriendo.length+') · '+_mL+'m</button>';
+      card += '<button onclick="monitorAskPin(\'valcal_lote\',\''+esc(_r0.of.of_sap)+'\',\''+esc(_r0.op.id)+'\')" style="'+_bS('#8b5cf6')+'">🔍 Val.Cal.</button>';
+      card += '<button onclick="monitorAskPin(\'finturno_lote\',\''+esc(_r0.of.of_sap)+'\',\''+esc(_r0.op.id)+'\')" style="'+_bS('#f59e0b')+'">🌙 Fin de Turno</button>';
+      card += '<button onclick="monitorAskPin(\'comida_lote\',\''+esc(_r0.of.of_sap)+'\',\''+esc(_r0.op.id)+'\')" style="'+_bS('#0891b2')+'">🍽 Comida</button>';
+    } else if (pausados.length) {
+      var _p0 = pausados[0];
+      card += '<button onclick="monitorAskPin(\'reanudar_lote\',\''+esc(_p0.of.of_sap)+'\',\''+esc(_p0.op.id)+'\')" style="'+_bS('#16a34a')+'">▶ Reanudar lote ('+pausados.length+')</button>';
     } else if (pendientes.length) {
-      card += '<button onclick="monitorAskPin(\'iniciar_lote\',\''+esc(pendientes[0].of.of_sap)+'\',\''+esc(pendientes[0].op.id)+'\')" '+
-        'style="background:#7c3aed;border:none;border-radius:8px;padding:10px 16px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">'+
-        '▶ Iniciar lote ('+pendientes.length+')</button>';
+      card += '<button onclick="monitorAskPin(\'iniciar_lote\',\''+esc(pendientes[0].of.of_sap)+'\',\''+esc(pendientes[0].op.id)+'\')" style="'+_bS('#7c3aed')+'">▶ Iniciar lote ('+pendientes.length+')</button>';
     } else {
-      card += '<span style="font-size:.72rem;color:#22c55e;font-weight:600;white-space:nowrap;">✓ Sin pendientes</span>';
+      card += '<span style="font-size:.72rem;color:#22c55e;font-weight:600;">✓ Sin pendientes</span>';
     }
+    card += '</div>';
   } else {
     // Serie: iniciar la siguiente pendiente (avanza automáticamente al concluir).
     if (pendientes.length) {
       var next = pendientes[0];
-      card += '<button onclick="monitorCheckQueueThenAskPin(\''+esc(next.of.of_sap)+'\',\''+esc(next.op.id)+'\')" '+
-        'style="background:#7c3aed;border:none;border-radius:8px;padding:10px 16px;color:#fff;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap;">'+
-        '▶ Iniciar lote (siguiente)</button>';
+      card += '<button onclick="monitorCheckQueueThenAskPin(\''+esc(next.of.of_sap)+'\',\''+esc(next.op.id)+'\')" style="'+_bS('#7c3aed')+'padding:10px 16px;font-size:.8rem;">▶ Iniciar lote (siguiente)</button>';
     } else {
       card += '<span style="font-size:.72rem;color:#22c55e;font-weight:600;white-space:nowrap;">✓ Sin pendientes</span>';
     }
@@ -10603,13 +10615,14 @@ function monitorRenderGrupo(items, est){
   var _openAttr = (window._monGrpOpen && window._monGrpOpen[_gkOpen]) ? ' open' : '';
   card += '<details data-gk="'+esc(_gkOpen)+'" ontoggle="_monGrpToggle(this)"'+_openAttr+' style="margin-top:8px;"><summary style="cursor:pointer;font-size:.72rem;color:#8b949e;padding:4px 0;">Ver / iniciar órdenes individuales ('+items.length+')</summary>';
   card += '<div style="margin-top:8px;">';
-  items.forEach(function(x){ card += monitorRenderOp(x.of, x.op); });
+  // En LOTE ÚNICO las acciones son únicas por lote → ocultar los botones individuales.
+  items.forEach(function(x){ card += monitorRenderOp(x.of, x.op, (modo === 'lote')); });
   card += '</div></details>';
   card += '</div>';
   return card;
 }
 
-function monitorRenderOp(of, op) {
+function monitorRenderOp(of, op, hideActions) {
   var statusColors = {
     pending: '#8b949e', running: '#22c55e', op_concluded: '#f59e0b',
     validating: '#a78bfa', paused: '#f59e0b'
@@ -10724,6 +10737,7 @@ function monitorRenderOp(of, op) {
     card += '</div>';
   }
 
+  if (!hideActions) {
   card += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
 
   // Solicitar soporte — disponible en cualquier estado de la operación
@@ -10811,7 +10825,9 @@ function monitorRenderOp(of, op) {
     card += '<div style="padding:8px 12px;background:'+calBg+';border:1px solid rgba(255,255,255,.1);border-radius:8px;font-size:.75rem;color:'+calCol+';">'+calLbl+calExtra+'</div>';
   }
 
-  card += '</div></div>';
+  card += '</div>'; // cierra fila de acciones
+  } // fin if(!hideActions)
+  card += '</div>'; // cierra tarjeta de operación
   return card;
 }
 
@@ -10907,8 +10923,8 @@ function monitorAskPin(accion, ofSap, opId) {
   var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
   if (!op) return;
 
-  var icons   = { iniciar:'▶', concluir:'⏹', valcal:'🔍', reanudar:'▶', finturno:'🌙', comida:'🍽', iniciar_lote:'▶', concluir_lote:'⏹' };
-  var titles  = { iniciar:'Iniciar operación', concluir:'Concluir operación', valcal:'Solicitar validación de calidad', reanudar:'Reanudar operación', finturno:'Fin de turno', comida:'Iniciar tiempo de comida', iniciar_lote:'Iniciar lote', concluir_lote:'Concluir lote' };
+  var icons   = { iniciar:'▶', concluir:'⏹', valcal:'🔍', reanudar:'▶', finturno:'🌙', comida:'🍽', iniciar_lote:'▶', concluir_lote:'⏹', valcal_lote:'🔍', comida_lote:'🍽', reanudar_lote:'▶', finturno_lote:'🌙' };
+  var titles  = { iniciar:'Iniciar operación', concluir:'Concluir operación', valcal:'Solicitar validación de calidad', reanudar:'Reanudar operación', finturno:'Fin de turno', comida:'Iniciar tiempo de comida', iniciar_lote:'Iniciar lote', concluir_lote:'Concluir lote', valcal_lote:'Val. calidad del lote', comida_lote:'Comida (lote)', reanudar_lote:'Reanudar lote', finturno_lote:'Fin de turno (lote)' };
   var subs    = {
     iniciar:  op.tecnico ? ('PIN de '+op.tecnico) : 'PIN de operador (o nuevo operador)',
     concluir: op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
@@ -10918,6 +10934,10 @@ function monitorAskPin(accion, ofSap, opId) {
     comida:   op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
     iniciar_lote:  op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN de operador (o nuevo operador)',
     concluir_lote: op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
+    valcal_lote:   op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
+    comida_lote:   op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
+    reanudar_lote: op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
+    finturno_lote: op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
   };
 
   _MON.pinCtx = { accion: accion, ofSap: ofSap, opId: opId, of: of, op: op };
@@ -11359,6 +11379,77 @@ async function monFinTurnoConfirm(){
   console.log('[Monitor] Fin de turno:', op.nombre, '| turno', turnoNum, '| OK', pzOk, 'Def', pzDef, 'Rest', pzRest);
 }
 
+// ── Fin de Turno de un LOTE (captura total y reparte por OF) ──────────────
+var _monLoteFTCtx = null;
+function monLoteFinTurnoOpen(of, op, tecNombre){
+  var grupo=of.grupo, nombre=op.nombre, est=op.estacion;
+  var corr=[];
+  (DB.activeOFs||[]).forEach(function(aof2){ if(aof2.grupo!==grupo) return; (aof2.ops||[]).forEach(function(o2){ if(o2.status==='running'&&o2.nombre===nombre&&o2.estacion===est) corr.push({of:aof2,op:o2}); }); });
+  if(!corr.length) return;
+  _monLoteFTCtx={ grupo:grupo, nombre:nombre, est:est, tecnico:tecNombre };
+  var totalMeta=corr.reduce(function(s,x){ return s+(x.op.qty_total||0); },0);
+  var ex=document.getElementById('mon-lote-ft-modal'); if(ex) ex.remove();
+  var inp='width:100%;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:9px;font-size:1rem;text-align:center;';
+  var d=document.createElement('div'); d.id='mon-lote-ft-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:720;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML='<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(380px,92vw);padding:20px;">'+
+    '<div style="font-weight:700;font-size:1rem;color:#f59e0b;margin-bottom:6px;">🌙 Fin de Turno — Lote '+esc(grupo)+'</div>'+
+    '<div style="font-size:.78rem;color:#e6edf3;margin-bottom:10px;line-height:1.4;"><strong>'+esc(nombre)+'</strong><br>'+esc(est)+' · '+corr.length+' órdenes · Meta total: '+totalMeta+' pzas</div>'+
+    '<div style="font-size:.7rem;color:#8b949e;margin-bottom:8px;">Captura el TOTAL producido en el turno; se reparte entre las '+corr.length+' órdenes según su cantidad.</div>'+
+    '<div style="display:flex;gap:10px;margin-bottom:10px;">'+
+      '<div style="flex:1;"><div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Total OK</div><input id="mon-lft-ok" type="number" min="0" value="0" inputmode="numeric" style="'+inp+'color:#22c55e;"></div>'+
+      '<div style="flex:1;"><div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Total defecto</div><input id="mon-lft-def" type="number" min="0" value="0" inputmode="numeric" style="'+inp+'color:#f59e0b;"></div>'+
+    '</div>'+
+    '<div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Motivo (opcional)</div>'+
+    '<input id="mon-lft-reason" placeholder="Fin de turno" style="width:100%;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:9px;color:#e6edf3;font-size:.85rem;margin-bottom:16px;">'+
+    '<div style="display:flex;gap:10px;">'+
+      '<button onclick="var m=document.getElementById(\'mon-lote-ft-modal\');if(m)m.remove();" style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Cancelar</button>'+
+      '<button onclick="monLoteFinTurnoConfirm()" style="flex:1;background:#f59e0b;border:none;border-radius:8px;padding:11px;color:#000;font-size:.82rem;font-weight:700;cursor:pointer;">🌙 Terminar turno</button>'+
+    '</div></div>';
+  document.body.appendChild(d);
+}
+async function monLoteFinTurnoConfirm(){
+  var ctx=_monLoteFTCtx; if(!ctx) return;
+  var corr=[];
+  (DB.activeOFs||[]).forEach(function(aof2){ if(aof2.grupo!==ctx.grupo) return; (aof2.ops||[]).forEach(function(o2){ if(o2.status==='running'&&o2.nombre===ctx.nombre&&o2.estacion===ctx.est) corr.push({of:aof2,op:o2}); }); });
+  if(!corr.length){ var m0=document.getElementById('mon-lote-ft-modal'); if(m0)m0.remove(); return; }
+  var totOk=parseInt((document.getElementById('mon-lft-ok')||{}).value)||0;
+  var totDef=parseInt((document.getElementById('mon-lft-def')||{}).value)||0;
+  var reason=(((document.getElementById('mon-lft-reason')||{}).value)||'').trim()||'Fin de turno';
+  var _k0=corr[0].of.of_sap+'_'+corr[0].op.id;
+  var _t0=DB.timers&&DB.timers[_k0];
+  var totalMs=_t0?((_t0.elapsed||0)+(_t0.running&&_t0.start?(Date.now()-_t0.start):0)):0;
+  var totalMin=Math.round(totalMs/60000);
+  var totalQty=corr.reduce(function(s,x){ return s+(x.op.qty_total||0); },0);
+  var _okRem=totOk, _defRem=totDef, fechaHoy=new Date().toLocaleDateString('es-MX');
+  corr.forEach(function(mm, idx){
+    var o2=mm.op, key=mm.of.of_sap+'_'+o2.id;
+    var peso = totalQty>0 ? (o2.qty_total||0)/totalQty : (1/corr.length);
+    var okShare, defShare;
+    if(idx===corr.length-1){ okShare=Math.max(0,_okRem); defShare=Math.max(0,_defRem); }
+    else { okShare=Math.round(totOk*peso); defShare=Math.round(totDef*peso); _okRem-=okShare; _defRem-=defShare; }
+    var minsShare=Math.max(0,Math.round(totalMin*peso));
+    if(DB.timers[key]){ DB.timers[key].running=false; DB.timers[key].start=0; DB.timers[key]._frozenAt=Date.now(); DB.timers[key].elapsed=minsShare*60000; }
+    o2.mins=minsShare;
+    var pzProd=okShare+defShare, pzRest=Math.max(0,(o2.qty_total||0)-pzProd);
+    if(!o2.turnos) o2.turnos=[];
+    o2.turnos.push({ turno:o2.turnos.length+1, tecnico:o2.tecnico||ctx.tecnico, ayudantes:(o2.ayudantes||[]).slice(),
+      inicio:o2.inicioTurnoActual||o2.inicio, fin:nowT(), mins:minsShare,
+      qty_ok:okShare, qty_def:defShare, qty_rest:pzRest, fecha:fechaHoy,
+      fecha_inicio:(o2.fecha_inicio_real?String(o2.fecha_inicio_real).split(' ')[0]:fechaHoy), fecha_fin:fechaHoy });
+    o2.status='paused';
+    o2.pauseReason='🌙 Fin de turno — '+reason+(pzProd>0?' · '+pzProd+' pzas, '+pzRest+' restantes':'');
+    o2._pauseTipo='turno'; o2._pzasRestantes=pzRest; o2.inicioTurnoActual=null;
+    o2.turnoData=JSON.stringify({_turnosArray:true, turnos:o2.turnos});
+    o2._localStatus='paused'; o2._localStatusAt=Date.now();
+  });
+  var m=document.getElementById('mon-lote-ft-modal'); if(m) m.remove();
+  monitorRender();
+  (async function(){ for(var i=0;i<corr.length;i++){ try{ await appSaveOpToSP(corr[i].of.of_sap, corr[i].op.id); if(typeof appSaveTimerToSP==='function') appSaveTimerToSP(corr[i].of.of_sap+'_'+corr[i].op.id).catch(function(){}); }catch(e){} } })();
+  console.log('[Lote] Fin de turno lote', ctx.grupo, '×', corr.length, '· OK', totOk, 'Def', totDef);
+  _monLoteFTCtx=null;
+}
+
 async function monitorDoIniciar(of, op, tecNombre) {
   op.status  = 'running';
   op.inicio  = nowT();
@@ -11458,6 +11549,56 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
     })();
     appNtfyNotificar('mon_op_concluida', { of_sap: of.of_sap, op_nombre: _nC, estacion: _eC, tecnico: tecNombre, operador: tecNombre }).catch(function(){});
     console.log('[Lote] Concluido lote', _gC, _nC, '×', _corr.length, '· total', _totalMin, 'min');
+    return;
+
+  } else if (accion === 'valcal_lote' || accion === 'comida_lote' || accion === 'reanudar_lote') {
+    // Acciones de lote que aplican a TODOS los miembros en curso/pausa del grupo+operación.
+    var _gX = of.grupo, _nX = op.nombre, _eX = op.estacion;
+    var _wantRunning = (accion !== 'reanudar_lote'); // valcal/comida operan sobre running; reanudar sobre paused
+    var _miem = [];
+    (DB.activeOFs||[]).forEach(function(aof2){
+      if (aof2.grupo !== _gX) return;
+      (aof2.ops||[]).forEach(function(o2){
+        if (o2.nombre === _nX && o2.estacion === _eX && (_wantRunning ? o2.status==='running' : o2.status==='paused')) _miem.push({ of: aof2, op: o2 });
+      });
+    });
+    if (!_miem.length) { monitorRender(); return; }
+    var _nowT = nowT();
+    _miem.forEach(function(mm){
+      var o2 = mm.op, key = mm.of.of_sap + '_' + o2.id;
+      if (accion === 'valcal_lote') {
+        o2.status = 'validating'; o2.needsCal = true; o2.calResult = null;
+        o2.valcalNote = 'Solicitado desde Monitor (lote) — ' + tecNombre;
+        o2._localStatus = 'validating'; o2._localStatusAt = Date.now();
+        var t = DB.timers && DB.timers[key];
+        if (t && t.running) { t.elapsed = (t.elapsed||0) + (Date.now()-(t.start||Date.now())); t.running = false; t.start = 0; }
+      } else if (accion === 'comida_lote') {
+        o2.status = 'paused'; o2.pauseReason = '🍽 Comida'; o2._pauseTipo = 'normal';
+        o2._localStatus = 'paused'; o2._localStatusAt = Date.now();
+        var t2 = DB.timers && DB.timers[key];
+        if (t2 && t2.running) { t2.elapsed = (t2.elapsed||0) + (Date.now()-(t2.start||Date.now())); t2.running = false; t2.start = 0; }
+      } else { // reanudar_lote
+        o2.status = 'running'; o2.pauseReason = ''; o2._pauseTipo = null;
+        o2._localStatus = 'running'; o2._localStatusAt = Date.now();
+        if (typeof DB.timers === 'undefined') DB.timers = {};
+        var t3 = DB.timers[key] || { elapsed: 0 };
+        t3.running = true; t3.start = Date.now();
+        DB.timers[key] = t3;
+      }
+    });
+    monitorRender();
+    (async function(){
+      for (var i=0;i<_miem.length;i++){
+        try { await appSaveOpToSP(_miem[i].of.of_sap, _miem[i].op.id); if (typeof appSaveTimerToSP==='function') appSaveTimerToSP(_miem[i].of.of_sap+'_'+_miem[i].op.id).catch(function(){}); } catch(e){}
+      }
+    })();
+    if (accion === 'valcal_lote') appNtfyNotificar('mon_op_valcal', { of_sap: of.of_sap, op_nombre: _nX, estacion: _eX, tecnico: tecNombre, operador: tecNombre }).catch(function(){});
+    console.log('[Lote] Acción', accion, _gX, _nX, '×', _miem.length);
+    return;
+
+  } else if (accion === 'finturno_lote') {
+    // Fin de turno del LOTE — modal que captura el total OK/def y lo reparte por OF.
+    monLoteFinTurnoOpen(of, op, tecNombre);
     return;
 
   } else if (accion === 'finturno') {

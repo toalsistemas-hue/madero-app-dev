@@ -7803,14 +7803,39 @@ function groupByPedido(ofs){
   arr.sort(function(a,b){var p={alta:0,media:1,normal:2};return (p[a.prioridad]||2)-(p[b.prioridad]||2);});
   return arr;
 }
-function pedidoIsComplete(pedido){
-  var ofs=DB.ofs.filter(function(o){return o.pedido===pedido;});
-  if(!ofs.length)return false;
-  return ofs.every(function(of){
-    var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-    if(!aof||!aof.ops.length)return false;
-    return aof.ops.every(function(op){return op.status==="done"||op.status==="omitida";});
+// ¿Una OF cuenta como "completa" para poder cerrar el pedido?
+// Completa = Finalizada manualmente, o ya en cierre/cerrada, o producida al 100%
+// (todas sus operaciones done/omitida). Una OF "sin programar" NO cuenta (bloquea el cierre).
+function _ofCompletaParaCierre(of){
+  if(!of) return false;
+  var st=of.status||'';
+  if(st==='Finalizada'||st==='Cerrado'||st==='En proceso de cierre') return true;
+  var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===of.of_sap;});
+  if(aof && aof.ops && aof.ops.length){ return aof.ops.every(function(op){return op.status==='done'||op.status==='omitida';}); }
+  return false;
+}
+// El pedido puede cerrarse solo si TODAS sus OFs (excepto canceladas) están completas.
+function pedidoPuedeCerrar(pedido){
+  var ofs=(DB.ofs||[]).filter(function(o){ var s=o.status||''; return o.pedido===pedido && s!=='Pedido Cancelado' && s!=='Cancelada'; });
+  if(!ofs.length) return false;
+  return ofs.every(_ofCompletaParaCierre);
+}
+// Resumen de OFs del pedido para mostrar en Tiempo Real
+function _pedidoResumen(pedido){
+  var ofs=(DB.ofs||[]).filter(function(o){ var s=o.status||''; return o.pedido===pedido && s!=='Pedido Cancelado' && s!=='Cancelada'; });
+  var prog=0, sinProg=0, fin=0;
+  ofs.forEach(function(o){
+    var s=o.status||'';
+    if(s==='Finalizada'){ fin++; return; }
+    var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===o.of_sap;});
+    var tieneOps=aof && aof.ops && aof.ops.length;
+    if(o.programadoHoy===true || tieneOps || s==='En Fabricacion' || s==='En proceso de cierre' || s==='Cerrado') prog++;
+    else sinProg++;
   });
+  return { total:ofs.length, prog:prog, sinProg:sinProg, fin:fin };
+}
+function pedidoIsComplete(pedido){
+  return pedidoPuedeCerrar(pedido);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -10787,6 +10812,35 @@ async function ftDesagrupar(grupo){
   if(typeof renderProg==='function') renderProg();
 }
 
+// Finalizar una OF sin producir (cuenta para poder cerrar el pedido)
+async function ftFinalizarOF(of_sap){
+  if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return;
+  var of=(DB.ofs||[]).find(function(o){return o.of_sap===of_sap;});
+  if(!of) return;
+  showInfoModal('Finalizar OF '+of_sap,
+    '¿Marcar la OF '+of_sap+' como FINALIZADA sin producir?\nContará como completa para poder cerrar el pedido.',
+    '✓ Finalizar',
+    async function(){
+      closeCModal('modal-info');
+      of.status='Finalizada'; of.programadoHoy=false;
+      var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===of_sap;}); if(aof) aof.programadoHoy=false;
+      renderProg(); if(typeof renderSeg==='function') renderSeg();
+      try{ if(of._spId!=null) await spEscribir('FT_OrdenesFabricacion',{Status:'Finalizada', Programado_Hoy:false}, of._spId); }
+      catch(e){ console.warn('[ftFinalizarOF] SP:', e.message); }
+    }
+  );
+}
+// Reabrir una OF finalizada (vuelve a "Sin programar")
+async function ftReabrirOF(of_sap){
+  if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return;
+  var of=(DB.ofs||[]).find(function(o){return o.of_sap===of_sap;});
+  if(!of) return;
+  of.status='Sin programar';
+  renderProg(); if(typeof renderSeg==='function') renderSeg();
+  try{ if(of._spId!=null) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar'}, of._spId); }
+  catch(e){ console.warn('[ftReabrirOF] SP:', e.message); }
+}
+
 // renderProg con debounce + spinner: colapsa llamadas rápidas (al enfocar/navegar)
 // en una sola y muestra un loop de carga, para que la pantalla no se congele con
 // muchos registros. El trabajo pesado real está en _renderProgBody().
@@ -10893,20 +10947,25 @@ function _renderProgBody(){
       if(total>0){h+="<div style='height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:120px'><div style='height:100%;width:"+pct+"%;background:var(--green);border-radius:2px;'></div></div>";}
       h+="</div>";
       // columna derecha — status + botones
-      var _stLabel=ofCancelada?"Cancelada":ofEnCierre?"En cierre":of.programadoHoy?"Programada":"Sin programar";
-      var _stClass=ofCancelada?"c-cancel":ofEnCierre?"chip prio-media":of.programadoHoy?"c-ep":"c-plan";
+      var _finalizada = of.status==='Finalizada';
+      var _stLabel=ofCancelada?"Cancelada":ofEnCierre?"En cierre":_finalizada?"Finalizada":of.programadoHoy?"Programada":"Sin programar";
+      var _stClass=ofCancelada?"c-cancel":ofEnCierre?"chip prio-media":_finalizada?"c-done":of.programadoHoy?"c-ep":"c-plan";
       h+="<div style='display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;'>";
-      h+="<span class='chip "+_stClass+"' style='font-size:.64rem;'>"+_stLabel+"</span>";
-      h+="<div style='display:flex;gap:3px;'>";
+      h+="<span class='chip "+_stClass+"' style='font-size:.64rem;'>"+(_finalizada?"✓ ":"")+_stLabel+"</span>";
+      h+="<div style='display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end;'>";
       if(ofCancelada){
         h+="<button onclick=\"restaurarOrden('"+esc(of.of_sap)+"')\" style='background:rgba(46,160,67,.12);border:1px solid rgba(46,160,67,.25);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--green);white-space:nowrap;'>↩ Restaurar</button>";
       } else if(ofEnCierre){
         h+="<span style='font-size:.68rem;color:var(--yellow);padding:2px 6px;'>🔒 En cierre</span>";
+      } else if(_finalizada){
+        if(_fabNivel()!=='lectura') h+="<button onclick=\"ftReabrirOF('"+esc(of.of_sap)+"')\" style='background:rgba(212,160,23,.12);border:1px solid rgba(212,160,23,.3);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--yellow);white-space:nowrap;'>↩ Reabrir</button>";
       } else {
         if(_fabNivel()!=='lectura') h+="<button onclick=\"openOFOpsModal('"+esc(of.of_sap)+"')\" style='background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--accent-l);white-space:nowrap;'>👷 Ops</button>";
+        // Finalizar: solo para OFs SIN PROGRAMAR (no se van a producir) — cuentan para poder cerrar el pedido
+        if(!of.programadoHoy && _fabNivel()!=='lectura') h+="<button onclick=\"ftFinalizarOF('"+esc(of.of_sap)+"')\" title='Marcar como finalizada sin producir (cuenta para cerrar el pedido)' style='background:rgba(46,160,67,.12);border:1px solid rgba(46,160,67,.3);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--green);white-space:nowrap;'>✓ Finalizar</button>";
         if(_fabNivel()!=='lectura') h+="<button onclick=\"cancelarOrden('"+esc(of.of_sap)+"','"+esc(g.pedido)+"')\" style='background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar</button>";
       }
-      if(!ofEnCierre && _fabNivel()!=='lectura') h+="<button class='btn-sm-ghost' onclick=\"handleConfigClick('"+esc(of.of_sap)+"')\" style='padding:2px 6px;font-size:.68rem;'>⚙</button>";
+      if(!ofEnCierre && !_finalizada && _fabNivel()!=='lectura') h+="<button class='btn-sm-ghost' onclick=\"handleConfigClick('"+esc(of.of_sap)+"')\" style='padding:2px 6px;font-size:.68rem;'>⚙</button>";
       h+="</div></div>";
       h+="</div>"; // cierre prog-of-row
 
@@ -13437,14 +13496,16 @@ function renderSeg(){
       'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;cursor:pointer;'+
       'user-select:none;">';
     h+='<div><div style="font-family:\'DM Mono\',monospace;font-size:.78rem;color:var(--accent-l);font-weight:600;">Pedido '+esc(g.pedido)+'</div>';
-    h+='<div style="font-size:.82rem;font-weight:600;">'+esc(g.cliente)+'</div></div>';
+    h+='<div style="font-size:.82rem;font-weight:600;">'+esc(g.cliente)+'</div>';
+    h+=(function(){var r=_pedidoResumen(g.pedido);return '<div style="font-size:.66rem;color:var(--dim);margin-top:2px;">📦 <strong style="color:var(--text);">'+r.prog+'</strong> programada'+(r.prog!==1?'s':'')+' · <strong style="color:'+(r.sinProg>0?'var(--yellow)':'var(--text)')+';">'+r.sinProg+'</strong> sin programar'+(r.fin?' · <strong style="color:var(--green);">'+r.fin+'</strong> finalizada'+(r.fin!==1?'s':''):'')+'</div>';})();
+    h+='</div>';
     h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
     h+='<span class="'+pC[g.prioridad]+'">'+pL[g.prioridad]+'</span>';
     h+='<div style="text-align:right;"><div style="font-family:\'DM Mono\',monospace;font-size:.76rem;color:var(--green);">'+grpDone+'/'+grpTotal+' ops · '+grpPct+'%</div>';
     h+='<div style="width:120px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:3px;"><div style="height:100%;width:'+grpPct+'%;background:var(--green);border-radius:3px;"></div></div></div>';
     h+='<span style="color:var(--dim);font-size:.9rem;transition:.2s;transform:rotate('+(isExpanded?'0':'180')+'deg);display:inline-block;">▲</span>';
-    // -- 12: Botones de cierre --
-    if(filterStatus==='activos' && allDone){
+    // -- 12: Botones de cierre -- (solo si TODAS las OFs del pedido están completas)
+    if(filterStatus==='activos' && pedidoPuedeCerrar(g.pedido)){
       h+='<div style="display:flex;gap:5px;">';
       if(_fabNivel()!=='lectura') h+='<button class="btn btn-sm" style="background:rgba(212,160,23,.15);color:var(--yellow);border:1px solid rgba(212,160,23,.3);" onclick="movePedidoCierre(\''+g.pedido+'\')" title="Iniciar proceso de cierre">🟡 En proceso de cierre</button>';
       h+='<button class="btn btn-sm btn-success" onclick="cerrarPedido(\''+g.pedido+'\')" title="Cerrar pedido definitivamente">✅ Cerrar pedido</button>';

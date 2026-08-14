@@ -1237,6 +1237,7 @@ tr:last-child td{border-bottom:none;}
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button onclick="ftRptExportPDF()" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">📄 Descargar PDF</button>
           <button onclick="ftRptExportExcel()" style="background:rgba(34,197,94,.12);color:#4ade80;border:1px solid rgba(34,197,94,.25);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">📊 Excel con detalle</button>
+          <button onclick="ftRptExportPDFCodigos()" title="PDF con detalle y código QR por operación para entregar al operador" style="background:rgba(147,51,234,.15);color:#c084fc;border:1px solid rgba(147,51,234,.35);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">🔳 PDF con códigos</button>
           <button onclick="ftRptLoad()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 12px;font-size:.78rem;cursor:pointer;color:var(--text);">🔄 Actualizar</button>
         </div>
       </div>
@@ -16030,6 +16031,79 @@ function ftRptExportExcel(){
   if(window.XLSX){doExcel();}
   else{var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=doExcel;document.head.appendChild(s);}
 }
+
+// ── PDF con detalle + código QR por operación (para entregar al operador) ──
+// El QR codifica "FT|OF_SAP|Op_ID" para que el Monitor lo escanee y abra acciones rápidas.
+function ftRptExportPDFCodigos(){
+  function _trunc(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-1)+'.' : s; }
+  function build(){
+    var jPDF=window.jspdf.jsPDF; var doc=new jPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    // Mismos filtros que el reporte en pantalla
+    var filtEst=(document.getElementById('rpt-filtro-estacion')||{}).value||'';
+    var filtStatus=(document.getElementById('rpt-filtro-status')||{}).value||'';
+    var filtDesde=(document.getElementById('rpt-desde')||{}).value||'';
+    var filtHasta=(document.getElementById('rpt-hasta')||{}).value||'';
+    var filtQ=((document.getElementById('rpt-buscar')||{}).value||'').toLowerCase().trim();
+    var built=ftRptBuildData(); var porEstacion=built.porEstacion;
+    var items=[];
+    Object.keys(porEstacion).forEach(function(est){
+      if(filtEst && est!==filtEst) return;
+      porEstacion[est].forEach(function(r){
+        if(filtDesde && r.fProg && r.fProg<filtDesde) return;
+        if(filtHasta && r.fProg && r.fProg>filtHasta) return;
+        if(filtStatus){var fs=filtStatus.toLowerCase();
+          if(fs==='en proceso'&&r.opStatus!=='En Proceso')return;
+          if(fs==='planeacion'&&r.opStatus!=='Planeación')return;
+          if(fs==='terminada'&&r.opStatus!=='Terminada')return;}
+        if(filtQ){var hay=(r.of.of_sap+' '+r.of.pedido+' '+r.of.cliente+' '+r.of.descripcion+' '+r.operador).toLowerCase(); if(hay.indexOf(filtQ)<0) return;}
+        (r.ops||[]).slice().sort(function(a,b){return (a.secuencia||0)-(b.secuencia||0);}).forEach(function(op){
+          if((op.status||'').toLowerCase()==='omitida') return;
+          items.push({est:est, of:r.of, op:op});
+        });
+      });
+    });
+    if(!items.length){ alert('No hay operaciones con los filtros seleccionados.'); return; }
+    // Generar todos los QR (async) y luego dibujar
+    var proms=items.map(function(it){
+      var payload='FT|'+(it.of.of_sap||'')+'|'+(it.op.op_id||'');
+      return window.QRCode.toDataURL(payload,{margin:1,width:220,errorCorrectionLevel:'M'}).then(function(url){ it._qr=url; });
+    });
+    Promise.all(proms).then(function(){
+      var pageW=210, pageH=297, mL=10, mT=18, gap=6;
+      var cols=2, cardW=(pageW-mL*2-gap)/cols, cardH=50, rowGap=4;
+      var rowsPerPage=Math.max(1, Math.floor((pageH-mT-8)/(cardH+rowGap)));
+      var perPage=cols*rowsPerPage;
+      var now=new Date().toLocaleDateString('es-MX');
+      function header(){ doc.setTextColor(20);doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text('Operaciones con código QR'+(filtEst?' — '+filtEst:''),mL,11); doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90);doc.text('Generado: '+now+'  ·  '+items.length+' operaciones  ·  Escanea el QR en el Monitor',mL,15.5); }
+      header();
+      items.forEach(function(it,i){
+        var posInPage=i%perPage;
+        if(i>0 && posInPage===0){ doc.addPage(); header(); }
+        var col=posInPage%cols, row=Math.floor(posInPage/cols);
+        var x=mL+col*(cardW+gap), y=mT+row*(cardH+rowGap);
+        doc.setDrawColor(210);doc.setLineWidth(0.2);doc.roundedRect(x,y,cardW,cardH,2,2);
+        var qrSize=30;
+        if(it._qr){ try{ doc.addImage(it._qr,'PNG',x+3,y+4,qrSize,qrSize); }catch(e){} }
+        doc.setTextColor(20);doc.setFontSize(6.5);doc.setFont('helvetica','bold');
+        doc.text('OF '+(it.of.of_sap||'')+' · Op '+(it.op.op_id||''), x+3, y+4+qrSize+3);
+        var tx=x+3+qrSize+4, tw=cardW-(qrSize+10), ty=y+8;
+        doc.setTextColor(20);doc.setFontSize(9);doc.setFont('helvetica','bold');
+        var nameLines=doc.splitTextToSize(String(it.op.nombre||'—'),tw).slice(0,2);
+        doc.text(nameLines,tx,ty); ty+=nameLines.length*4.4+1.5;
+        doc.setFontSize(7.4);doc.setFont('helvetica','normal');doc.setTextColor(70);
+        doc.text('Estacion: '+_trunc(it.est||'—',30),tx,ty); ty+=4.3;
+        doc.text('Articulo: '+_trunc(it.of.articulo||'—',18)+'   Cant: '+(it.op.qty_total||it.of.cantidad||'—'),tx,ty); ty+=4.3;
+        doc.text('Cliente: '+_trunc(it.of.cliente||'—',30),tx,ty); ty+=4.3;
+        doc.text('Tecnico: '+_trunc(it.op.tecnico||'(sin asignar)',28),tx,ty);
+      });
+      doc.save('Operaciones_QR_'+new Date().toISOString().slice(0,10)+'.pdf');
+    }).catch(function(e){ alert('Error generando los códigos QR: '+(e&&e.message||e)); });
+  }
+  function ensureQR(cb){ if(window.QRCode && window.QRCode.toDataURL){ cb(); return; } var s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js'; s.onload=cb; s.onerror=function(){ alert('No se pudo cargar la librería de códigos QR.'); }; document.head.appendChild(s); }
+  function ensureJsPDF(cb){ if(window.jspdf&&window.jspdf.jsPDF){ cb(); return; } var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=cb; s.onerror=function(){ alert('No se pudo cargar jsPDF.'); }; document.head.appendChild(s); }
+  ensureJsPDF(function(){ ensureQR(function(){ build(); }); });
+}
+window.ftRptExportPDFCodigos = ftRptExportPDFCodigos;
 
 
 

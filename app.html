@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.69</title>
+<title>FabTracker App v2.70</title>
 
 <!-- MSAL Browser -->
 
@@ -10672,6 +10672,42 @@ function monitorQuickActions(ofSap, opId){
   document.body.appendChild(d);
 }
 
+// ── Serie por QR: tras concluir, tarjeta con la SIGUIENTE operación del grupo ──
+function monitorSerieStartNext(){
+  var n = window._monSerieNext; window._monSerieNext = null;
+  monitorQAClose();
+  if(!n) return;
+  var of = (DB.activeOFs||[]).find(function(o){ return o.of_sap===n.ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===n.opId; }) : null;
+  if(of && op && op.status==='pending'){ monitorDoIniciar(of, op, n.tec); }
+  else if(typeof showAppNotif==='function'){ showAppNotif('info','La siguiente operación ya no está disponible. Actualiza el Monitor.'); }
+}
+function monitorSerieNextCard(nextOf, nextOp, tecNombre, prevOp){
+  window._monSerieNext = { ofSap: nextOf.of_sap, opId: nextOp.id, tec: tecNombre };
+  var _mem=[];
+  (DB.activeOFs||[]).forEach(function(aof2){ if(aof2.grupo!==nextOf.grupo) return;
+    (aof2.ops||[]).forEach(function(o2){ if(o2.nombre===nextOp.nombre && o2.estacion===nextOp.estacion) _mem.push(o2); }); });
+  var _tot=_mem.length;
+  var _hechas=_mem.filter(function(o2){ return o2.status!=='pending'; }).length;
+  var _totPz=_mem.reduce(function(s,o2){ return s+(o2.qty_total||0); },0);
+  var _desc = nextOf.descripcion_padre || nextOf.descripcion || '';
+  var ex=document.getElementById('mon-qa-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='mon-qa-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:745;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML='<div style="background:#1a2332;border:1px solid rgba(34,197,94,.45);border-radius:14px;width:min(360px,94vw);padding:18px;max-height:92vh;overflow:auto;">'+
+    '<div style="font-size:.74rem;color:#22c55e;font-weight:700;">✓ Concluida: '+esc(prevOp.nombre)+'</div>'+
+    '<div style="font-size:.66rem;color:#c084fc;font-weight:700;margin-top:10px;letter-spacing:.03em;">🔗 SERIE '+esc(nextOf.grupo||'')+' · siguiente '+(_hechas+1)+' de '+_tot+'</div>'+
+    '<div style="font-size:.66rem;color:#58a6ff;font-family:monospace;margin-top:6px;">OF '+esc(nextOf.of_sap)+((nextOf.articulo||nextOf.articulo_padre)?' · '+esc(nextOf.articulo||nextOf.articulo_padre):'')+'</div>'+
+    (_desc?'<div style="font-size:.74rem;color:#c9d1d9;margin-top:1px;line-height:1.35;">'+esc(_desc)+'</div>':'')+
+    '<div style="font-weight:700;font-size:.95rem;color:#e6edf3;margin:5px 0 2px;">'+esc(nextOp.nombre)+'</div>'+
+    '<div style="font-size:.72rem;color:#8b949e;">'+esc(nextOp.estacion||'')+' · 📦 <strong style="color:#c9d1d9;">'+(nextOp.qty_total||0)+'</strong> pzas · Total serie: <strong style="color:#c9d1d9;">'+_totPz+'</strong> pzas</div>'+
+    '<div style="height:16px;"></div>'+
+    '<button onclick="monitorSerieStartNext()" style="width:100%;background:#7c3aed;border:none;border-radius:8px;padding:13px;color:#fff;font-size:.9rem;font-weight:700;cursor:pointer;margin-bottom:8px;">▶ Iniciar de inmediato</button>'+
+    '<button onclick="window._monSerieNext=null;monitorQAClose();" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Ahora no</button>'+
+  '</div>';
+  document.body.appendChild(d);
+}
+
 // Recuerda qué lotes están desplegados para no colapsarlos en el auto-refresh
 function _monGrpToggle(el){
   window._monGrpOpen = window._monGrpOpen || {};
@@ -11755,8 +11791,9 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
       tecnico: tecNombre, operador: tecNombre
     }).catch(function(){});
     console.log('[Monitor] Concluida:', op.nombre, 'por', tecNombre);
-    // Avance automático de LOTE EN SERIE: al concluir, iniciar la siguiente OF pendiente
-    // del mismo grupo + misma operación + misma estación, con el mismo operador (sin re-PIN).
+    // LOTE EN SERIE: al concluir, ofrecer la SIGUIENTE OF pendiente del grupo
+    // (misma operación + estación) con una tarjeta para iniciar de inmediato,
+    // sin re-teclear el NIP (mismo operador continúa la serie).
     try {
       if (of.grupo && of.grupoModo === 'serie') {
         var _sig = null;
@@ -11769,11 +11806,13 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
           });
         });
         if (_sig) {
-          console.log('[Lote] Auto-avance en serie →', _sig.of.of_sap, op.nombre);
-          monitorDoIniciar(_sig.of, _sig.op, tecNombre);
+          console.log('[Lote] Serie — ofrecer siguiente →', _sig.of.of_sap, op.nombre);
+          monitorSerieNextCard(_sig.of, _sig.op, tecNombre, op);
+        } else {
+          if (typeof showAppNotif === 'function') showAppNotif('success', '✓ Serie completada: ' + op.nombre + ' en todas las órdenes del grupo.');
         }
       }
-    } catch(e){ console.warn('[Lote] auto-avance error:', e.message); }
+    } catch(e){ console.warn('[Lote] serie-siguiente error:', e.message); }
 
   } else if (accion === 'valcal') {
     op.status   = 'validating';

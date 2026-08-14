@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.74</title>
+<title>FabTracker App v2.75</title>
 
 <!-- MSAL Browser -->
 
@@ -3682,6 +3682,7 @@ function renderAppHoy(){
       h+="<div class='app-of-num'>OF "+esc(of.of_sap)+(of.articulo?"<span class='app-of-art'> · "+esc(of.articulo)+"</span>":"")+"</div>";
       h+="<div class='app-of-desc'>"+esc(of.descripcion.substring(0,54))+"</div>";
       h+="<div class='app-of-meta'>";
+      if(of.grupo)h+="<span class='app-chip' style='background:rgba(147,51,234,.15);border:1px solid rgba(147,51,234,.4);color:#c084fc;font-weight:700;' title='Grupo "+esc(of.grupo)+"'>🔗 "+(of.grupoModo==='lote'?'LOTE ÚNICO':'SERIE')+"</span>";
       if(runC>0)h+="<span class='app-chip app-c-ep'><span class='app-c-dot'></span>"+runC+" activa"+(runC>1?"s":"")+"</span>";
       if(valC>0)h+="<span class='app-chip app-c-pur'>🔍 "+valC+"</span>";
       h+="<span class='app-chip app-c-plan'>"+done+"/"+of.ops.length+"</span>";
@@ -3903,7 +3904,7 @@ function renderAppOFs(){
       h+="<div class='app-ofc'><div class='app-ofc-hdr' style='cursor:default;'><div style='flex:1;'>";
       h+="<div class='app-of-num'>OF "+esc(o.of_sap)+(o.articulo?"<span class='app-of-art'> · "+esc(o.articulo)+"</span>":"")+"</div>";
       h+="<div class='app-of-desc'>"+esc((o.descripcion||'').substring(0,50))+"</div>";
-      h+="<div class='app-of-meta'><span class='app-chip app-c-ep'><span class='app-c-dot'></span>En Día</span></div>";
+      h+="<div class='app-of-meta'>"+(o.grupo?"<span class='app-chip' style='background:rgba(147,51,234,.15);border:1px solid rgba(147,51,234,.4);color:#c084fc;font-weight:700;' title='Grupo "+esc(o.grupo)+"'>🔗 "+(o.grupoModo==='lote'?'LOTE ÚNICO':'SERIE')+"</span>":"")+"<span class='app-chip app-c-ep'><span class='app-c-dot'></span>En Día</span></div>";
       h+="</div></div></div>";
     });
     h+="</div>";
@@ -3920,7 +3921,7 @@ function renderAppOFs(){
       h+="<div class='app-ofc'><div class='app-ofc-hdr' style='cursor:default;'><div style='flex:1;'>";
       h+="<div class='app-of-num'>OF "+esc(o.of_sap)+(o.articulo?"<span class='app-of-art'> · "+esc(o.articulo)+"</span>":"")+"</div>";
       h+="<div class='app-of-desc'>"+esc((o.descripcion||'').substring(0,50))+"</div>";
-      h+="<div class='app-of-meta'><span class='app-chip app-c-plan'>PLANEACIÓN</span></div>";
+      h+="<div class='app-of-meta'>"+(o.grupo?"<span class='app-chip' style='background:rgba(147,51,234,.15);border:1px solid rgba(147,51,234,.4);color:#c084fc;font-weight:700;' title='Grupo "+esc(o.grupo)+"'>🔗 "+(o.grupoModo==='lote'?'LOTE ÚNICO':'SERIE')+"</span>":"")+"<span class='app-chip app-c-plan'>PLANEACIÓN</span></div>";
       h+="</div></div></div>";
     });
     h+="</div>";
@@ -8417,6 +8418,8 @@ async function _appLoadDataFromSP_impl() {
       rotacion: f.Rotacion||'', sub_articulos: f.Sub_Articulos?f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean):[],
       programadoHoy: f.Programado_Hoy===true || f.Programado_Hoy==='true' || f.Programado_Hoy===1 || f.Programado_Hoy==='1',
       status: f.Status||'Sin programar',
+      grupo:     String(f.Grupo_Fabricacion||f.GrupoFabricacion||'').trim(),
+      grupoModo: String(f.Grupo_Modo||f.GrupoModo||'').toLowerCase().trim(),
     }));
     // Deduplicar ops de SP: si hay duplicados por OF_SAP+Op_ID,
     // priorizar: running > paused > validating > done > pending
@@ -13558,6 +13561,7 @@ function renderAppHoy(){
       h+="<div class='app-of-num'>OF "+esc(of.of_sap)+(of.articulo?"<span class='app-of-art'> · "+esc(of.articulo)+"</span>":"")+"</div>";
       h+="<div class='app-of-desc'>"+esc(of.descripcion.substring(0,54))+"</div>";
       h+="<div class='app-of-meta'>";
+      if(of.grupo)h+="<span class='app-chip' style='background:rgba(147,51,234,.15);border:1px solid rgba(147,51,234,.4);color:#c084fc;font-weight:700;' title='Grupo "+esc(of.grupo)+"'>🔗 "+(of.grupoModo==='lote'?'LOTE ÚNICO':'SERIE')+"</span>";
       if(runC>0)h+="<span class='app-chip app-c-ep'><span class='app-c-dot'></span>"+runC+" activa"+(runC>1?"s":"")+"</span>";
       if(valC>0)h+="<span class='app-chip app-c-pur'>🔍 "+valC+"</span>";
       h+="<span class='app-chip app-c-plan'>"+done+"/"+of.ops.length+"</span>";

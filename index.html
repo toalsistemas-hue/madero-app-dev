@@ -16063,12 +16063,11 @@ function ftRptExportPDFCodigos(){
       });
     });
     if(!items.length){ alert('No hay operaciones con los filtros seleccionados.'); return; }
-    // Generar todos los QR (async) y luego dibujar
-    var proms=items.map(function(it){
-      var payload='FT|'+(it.of.of_sap||'')+'|'+(it.op.op_id||'');
-      return window.QRCode.toDataURL(payload,{margin:1,width:220,errorCorrectionLevel:'M'}).then(function(url){ it._qr=url; });
+    // Generar todos los QR (QRious, síncrono → dataURL)
+    items.forEach(function(it){
+      try{ var payload='FT|'+(it.of.of_sap||'')+'|'+(it.op.op_id||''); it._qr=new window.QRious({value:payload,size:220,level:'M'}).toDataURL('image/png'); }catch(e){}
     });
-    Promise.all(proms).then(function(){
+    (function(){
       var pageW=210, pageH=297, mL=10, mT=18, gap=6;
       var cols=2, cardW=(pageW-mL*2-gap)/cols, cardH=50, rowGap=4;
       var rowsPerPage=Math.max(1, Math.floor((pageH-mT-8)/(cardH+rowGap)));
@@ -16097,9 +16096,9 @@ function ftRptExportPDFCodigos(){
         doc.text('Tecnico: '+_trunc(it.op.tecnico||'(sin asignar)',28),tx,ty);
       });
       doc.save('Operaciones_QR_'+new Date().toISOString().slice(0,10)+'.pdf');
-    }).catch(function(e){ alert('Error generando los códigos QR: '+(e&&e.message||e)); });
+    })();
   }
-  function ensureQR(cb){ if(window.QRCode && window.QRCode.toDataURL){ cb(); return; } var s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js'; s.onload=cb; s.onerror=function(){ alert('No se pudo cargar la librería de códigos QR.'); }; document.head.appendChild(s); }
+  function ensureQR(cb){ if(window.QRious){ cb(); return; } var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js'; s.onload=cb; s.onerror=function(){ alert('No se pudo cargar la librería de códigos QR.'); }; document.head.appendChild(s); }
   function ensureJsPDF(cb){ if(window.jspdf&&window.jspdf.jsPDF){ cb(); return; } var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=cb; s.onerror=function(){ alert('No se pudo cargar jsPDF.'); }; document.head.appendChild(s); }
   ensureJsPDF(function(){ ensureQR(function(){ build(); }); });
 }

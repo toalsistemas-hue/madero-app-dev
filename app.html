@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.73</title>
+<title>FabTracker App v2.74</title>
 
 <!-- MSAL Browser -->
 
@@ -3640,7 +3640,7 @@ function renderAppHoy(){
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
-  if(_appRole==='supervisor'||_appRole==='calidad_lin')h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
+  if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -10661,34 +10661,36 @@ function ftScanQuickActions(ofSap, opId){
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;
   if(!op) return;
   var role = APP.role || 'readonly';
-  var _rr  = (role==='readonly') ? 'supervisor' : role;
+  var _isAdmin = !!(APP_USER_PROFILE && APP_USER_PROFILE.esAdmin);
+  // El Administrador General siempre opera con los accesos de Supervisor en el escáner.
+  var _rr  = (role==='readonly' || _isAdmin) ? 'supervisor' : role;
   var _q="'"+ofSap+"','"+opId+"'";
   var _b=function(bg,label,act){ return '<button onclick="ftScanQAClose();'+act+'" style="width:100%;background:'+bg+';border:none;border-radius:8px;padding:12px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;margin-bottom:8px;">'+label+'</button>'; };
   var _note=function(col,txt){ return '<div style="color:'+col+';font-size:.82rem;text-align:center;padding:10px;">'+txt+'</div>'; };
   var body='', st=op.status;
-  var canFinish = (typeof appCan==='function' && appCan('finish')) && (op.calResult==='liberado' || (st!=='validating' && !op.needsCal));
-  if(role==='calidad_lin' && (typeof appCan!=='function' || appCan('cal'))){
+  var canFinish = (_isAdmin || (typeof appCan==='function' && appCan('finish'))) && (op.calResult==='liberado' || (st!=='validating' && !op.needsCal));
+  if(role==='calidad_lin' && !_isAdmin && (typeof appCan!=='function' || appCan('cal'))){
     // Calidad de Línea (encargado de calidad de piso) — liberar / rechazar validaciones.
     if(st==='validating') body += _b('#8b5cf6','🏭 Responder validación (liberar / rechazar)','openCalResp('+_q+')');
     else if(op.calResult) body += _note('#22c55e','✅ Validación ya respondida: '+esc(op.calResult));
     else body += _note('#8b949e','Esta operación no está en validación de calidad.');
-  } else if((typeof appCan==='function' && appCan('start')) || _rr==='supervisor'){
-    // Supervisor — mismas acciones que en el panel de FabTracker.
+  } else if(_isAdmin || (typeof appCan==='function' && appCan('start')) || _rr==='supervisor'){
+    // Supervisor (y Administrador General) — mismas acciones que en el panel de FabTracker.
     if(st==='omitida'){ body += _note('#8b949e','⊘ Operación omitida'); }
     else if(st==='pending'){
       body += _b('#1565C0','▶ Iniciar','appStartOp('+_q+')');
       body += _b('#6b7280','⊘ Omitir','appOmitirOp('+_q+')');
       body += _b('rgba(255,255,255,.10)','👷 Asignar técnico','appOpenQuickAssign('+_q+')');
     } else if(st==='running'){
-      if(typeof appCan!=='function'||appCan('pause')) body += _b('#f59e0b','⏸ Pausar','appOpenPause('+_q+')');
+      if(_isAdmin||typeof appCan!=='function'||appCan('pause')) body += _b('#f59e0b','⏸ Pausar','appOpenPause('+_q+')');
       if(canFinish) body += _b('#22c55e','✓ Terminar','appOpenFinish('+_q+')');
-      if(typeof appCan!=='function'||appCan('requestCal')) body += _b('#8b5cf6','🔍 Val.Cal.','appOpenValCal('+_q+')');
+      if(_isAdmin||typeof appCan!=='function'||appCan('requestCal')) body += _b('#8b5cf6','🔍 Val.Cal.','appOpenValCal('+_q+')');
     } else if(st==='paused'){
-      if(typeof appCan!=='function'||appCan('resume')) body += _b('#16a34a','▶ Reanudar','appResumeOp('+_q+')');
+      if(_isAdmin||typeof appCan!=='function'||appCan('resume')) body += _b('#16a34a','▶ Reanudar','appResumeOp('+_q+')');
       if(canFinish) body += _b('#22c55e','✓ Terminar','appOpenFinish('+_q+')');
-      if(typeof appCan!=='function'||appCan('requestCal')) body += _b('#8b5cf6','🔍 Val.Cal.','appOpenValCal('+_q+')');
+      if(_isAdmin||typeof appCan!=='function'||appCan('requestCal')) body += _b('#8b5cf6','🔍 Val.Cal.','appOpenValCal('+_q+')');
     } else if(st==='op_concluded'){
-      if(_rr==='supervisor' || (typeof appCan==='function'&&appCan('finish'))){
+      if(_isAdmin || _rr==='supervisor' || (typeof appCan==='function'&&appCan('finish'))){
         body += _b('#22c55e','✓ Confirmar conclusión','monitorConfirmOp('+_q+')');
         body += _b('#ef4444','↩ Devolver a activa','monitorRevertOp('+_q+')');
       } else body += _note('#f59e0b','⏳ Aguarda confirmación del Supervisor');
@@ -13514,7 +13516,7 @@ function renderAppHoy(){
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
-  if(_appRole==='supervisor'||_appRole==='calidad_lin')h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
+  if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.70</title>
+<title>FabTracker App v2.72</title>
 
 <!-- MSAL Browser -->
 
@@ -3620,12 +3620,15 @@ function updateAppBadge(){
 function renderAppHoy(){
   var now=new Date();
   var days=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"],months=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  var allOps=[];DB.activeOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
+  // Ocultar en FabTracker (Supervisor / Calidad de Línea / Analista) las OFs cerradas
+  // individualmente por el Coordinador — se depuran igual que en Tiempo Real.
+  var _visOFs=DB.activeOFs.filter(function(o){return !o.ofCerrada;});
+  var allOps=[];_visOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
   var doneOps=allOps.filter(function(o){return o.status==="done";}).length;
   var runOps=allOps.filter(function(o){return o.status==="running"||o.status==="paused";}).length;
 
   var h="<div class='app-ds'><div><div class='app-ds-time'>"+now.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"})+"</div><div class='app-ds-day'>"+days[now.getDay()]+" "+now.getDate()+" "+months[now.getMonth()]+"</div></div>";
-  h+="<div class='app-ds-kpis'><div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--aaccent)'>"+DB.activeOFs.length+"</div><div class='app-ds-kl'>OFs</div></div>";
+  h+="<div class='app-ds-kpis'><div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--aaccent)'>"+_visOFs.length+"</div><div class='app-ds-kl'>OFs</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--agreen)'>"+doneOps+"</div><div class='app-ds-kl'>OK</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--ayellow)'>"+runOps+"</div><div class='app-ds-kl'>Act.</div></div></div></div>";
 
@@ -3648,13 +3651,13 @@ function renderAppHoy(){
       h+="<div class='app-notif-b'><div class='app-ndot'></div><div style='flex:1'><div class='app-ntxt'><strong>🔍 OF "+esc(n.of_sap)+"</strong> — "+esc(op.nombre)+"<br><span style='color:var(--adim);font-size:.68rem'>"+esc(n.note||"")+"</span></div><div style='display:flex;gap:5px;margin-top:6px;'><button class='app-ob app-ob-lib' onclick='openCalResp(\""+n.of_sap+"\",\""+n.op_id+"\")'>Responder</button></div></div></div>";
     });
   }
-  if(DB.activeOFs.length===0){
+  if(_visOFs.length===0){
     h+="<div class='app-empty'><p>Sin OFs asignadas para hoy.</p><p style='margin-top:5px;color:var(--adim);font-size:.7rem'>El Coordinador programa las OFs desde la plataforma web.</p></div>";
     return h;
   }
-  h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+DB.activeOFs.length+"</span></div>";
+  h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+_visOFs.length+"</span></div>";
   h+=_appFiltroBarHTML(true);
-  var _hoySrc=(DB.activeOFs||[]).filter(Boolean);
+  var _hoySrc=(_visOFs||[]).filter(Boolean);
   var _fOF=(APP.searchOF||'').trim().toLowerCase(), _fTec=(APP.searchTec||'').trim().toLowerCase(), _fEst=(APP.searchEst||'').trim().toLowerCase();
   if(_fOF)  _hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_fOF)>=0;});
   if(_fTec) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.tecnico||'').toLowerCase().indexOf(_fTec)>=0;});});
@@ -8506,6 +8509,7 @@ async function _appLoadDataFromSP_impl() {
       monitor_override: String(f.Monitor_Override||f.MonitorOverride||'').toLowerCase().trim(),
       grupo:     String(f.Grupo_Fabricacion||f.GrupoFabricacion||'').trim(),
       grupoModo: String(f.Grupo_Modo||f.GrupoModo||'').toLowerCase().trim(),
+      ofCerrada: (f.OF_Cerrada===true)||(String(f.OF_Cerrada||'').toLowerCase()==='true')||(String(f.OF_Cerrada||'').toLowerCase()==='si')||(String(f.OF_Cerrada||'')==='1'),
       sub_articulos: f.Sub_Articulos ? f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean) : [],
       ops: allOps.filter(o=>o.OF_SAP===(f.OF_SAP||f.Title)).sort((a,b)=>(a.Secuencia||0)-(b.Secuencia||0)).map(o => ({
         id: o.Op_ID||('op_'+(o.ID||'')),
@@ -10679,7 +10683,8 @@ function monitorSerieStartNext(){
   if(!n) return;
   var of = (DB.activeOFs||[]).find(function(o){ return o.of_sap===n.ofSap; });
   var op = of ? of.ops.find(function(o){ return o.id===n.opId; }) : null;
-  if(of && op && op.status==='pending'){ monitorDoIniciar(of, op, n.tec); }
+  // Iniciar la siguiente op de la serie CON NIP (mismo flujo que "Iniciar" normal).
+  if(of && op && op.status==='pending'){ monitorCheckQueueThenAskPin(n.ofSap, n.opId); }
   else if(typeof showAppNotif==='function'){ showAppNotif('info','La siguiente operación ya no está disponible. Actualiza el Monitor.'); }
 }
 function monitorSerieNextCard(nextOf, nextOp, tecNombre, prevOp){
@@ -13374,12 +13379,15 @@ function updateAppBadge(){
 function renderAppHoy(){
   var now=new Date();
   var days=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"],months=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  var allOps=[];DB.activeOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
+  // Ocultar en FabTracker (Supervisor / Calidad de Línea / Analista) las OFs cerradas
+  // individualmente por el Coordinador — se depuran igual que en Tiempo Real.
+  var _visOFs=DB.activeOFs.filter(function(o){return !o.ofCerrada;});
+  var allOps=[];_visOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
   var doneOps=allOps.filter(function(o){return o.status==="done";}).length;
   var runOps=allOps.filter(function(o){return o.status==="running"||o.status==="paused";}).length;
 
   var h="<div class='app-ds'><div><div class='app-ds-time'>"+now.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"})+"</div><div class='app-ds-day'>"+days[now.getDay()]+" "+now.getDate()+" "+months[now.getMonth()]+"</div></div>";
-  h+="<div class='app-ds-kpis'><div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--aaccent)'>"+DB.activeOFs.length+"</div><div class='app-ds-kl'>OFs</div></div>";
+  h+="<div class='app-ds-kpis'><div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--aaccent)'>"+_visOFs.length+"</div><div class='app-ds-kl'>OFs</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--agreen)'>"+doneOps+"</div><div class='app-ds-kl'>OK</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--ayellow)'>"+runOps+"</div><div class='app-ds-kl'>Act.</div></div></div></div>";
 
@@ -13402,13 +13410,13 @@ function renderAppHoy(){
       h+="<div class='app-notif-b'><div class='app-ndot'></div><div style='flex:1'><div class='app-ntxt'><strong>🔍 OF "+esc(n.of_sap)+"</strong> — "+esc(op.nombre)+"<br><span style='color:var(--adim);font-size:.68rem'>"+esc(n.note||"")+"</span></div><div style='display:flex;gap:5px;margin-top:6px;'><button class='app-ob app-ob-lib' onclick='openCalResp(\""+n.of_sap+"\",\""+n.op_id+"\")'>Responder</button></div></div></div>";
     });
   }
-  if(DB.activeOFs.length===0){
+  if(_visOFs.length===0){
     h+="<div class='app-empty'><p>Sin OFs asignadas para hoy.</p><p style='margin-top:5px;color:var(--adim);font-size:.7rem'>El Coordinador programa las OFs desde la plataforma web.</p></div>";
     return h;
   }
-  h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+DB.activeOFs.length+"</span></div>";
+  h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+_visOFs.length+"</span></div>";
   h+=_appFiltroBarHTML(true);
-  var _hoySrc=(DB.activeOFs||[]).filter(Boolean);
+  var _hoySrc=(_visOFs||[]).filter(Boolean);
   var _fOF=(APP.searchOF||'').trim().toLowerCase(), _fTec=(APP.searchTec||'').trim().toLowerCase(), _fEst=(APP.searchEst||'').trim().toLowerCase();
   if(_fOF)  _hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_fOF)>=0;});
   if(_fTec) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.tecnico||'').toLowerCase().indexOf(_fTec)>=0;});});

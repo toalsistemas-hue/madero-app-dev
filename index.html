@@ -6257,6 +6257,21 @@ async function ftLoadDataFromSP() {
       _spId: f._spId!=null ? f._spId : null,
       grupo:     String(f.Grupo_Fabricacion||'').trim(),
       grupoModo: String(f.Grupo_Modo||'').toLowerCase().trim(),
+      ofCerrada: (function(){
+        var _st=f.Status||'';
+        if(_st==='Cerrado'||_st==='En proceso de cierre') return false; // el pedido ya avanzó
+        var _sap=f.OF_SAP||f.Title||'';
+        var _v=f.OF_Cerrada;
+        var _sp=(_v===true)||(String(_v||'').toLowerCase()==='true')||(String(_v||'').toLowerCase()==='si')||(String(_v||'')==='1');
+        // Guarda local (TTL 120s) para no revertir mientras SP confirma el cambio.
+        var _g=window._ofcLocal && window._ofcLocal[_sap];
+        if(_g){
+          if(_g.val===_sp){ delete window._ofcLocal[_sap]; return _sp; }
+          if(Date.now()-_g.at < 120000) return _g.val;
+          delete window._ofcLocal[_sap];
+        }
+        return _sp;
+      })(),
     }));
     // Restaurar pedidos cerrados desde localStorage
     // SOLO aplicar a OFs cuyo status en SP NO es activo (evita ocultar OFs recién cargadas)
@@ -7809,6 +7824,7 @@ function groupByPedido(ofs){
 // (todas sus operaciones done/omitida). Una OF "sin programar" NO cuenta (bloquea el cierre).
 function _ofCompletaParaCierre(of){
   if(!of) return false;
+  if(of.ofCerrada===true) return true; // cerrada individualmente = ya completa
   var st=of.status||'';
   if(st==='Finalizada'||st==='Cerrado'||st==='En proceso de cierre') return true;
   var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===of.of_sap;});
@@ -13409,15 +13425,18 @@ function renderSeg(){
 
   // -- 12: Filtro de estado --
   h+='<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">';
-  ['activos','cierre','cerrados'].forEach(function(f){
-    var labels={activos:'🟢 En proceso',cierre:'🟡 En proceso de cierre',cerrados:'✅ Cerrados'};
-    h+='<button class="btn btn-sm '+(filterStatus===f?'btn-primary':'btn-ghost')+'" onclick="C.segFilter=\''+f+'\';renderSeg()">'+labels[f]+'</button>';
+  ['activos','ofcerradas','cierre','cerrados'].forEach(function(f){
+    var labels={activos:'🟢 En proceso',ofcerradas:'🔒 OF Cerradas',cierre:'🟡 En proceso de cierre',cerrados:'✅ Cerrados'};
+    var _cnt = (f==='ofcerradas') ? DB.ofs.filter(function(o){return o.ofCerrada && !o.pedidoCerrado && !o.pedidoCierre;}).length : 0;
+    h+='<button class="btn btn-sm '+(filterStatus===f?'btn-primary':'btn-ghost')+'" onclick="C.segFilter=\''+f+'\';renderSeg()">'+labels[f]+(f==='ofcerradas'&&_cnt>0?' ('+_cnt+')':'')+'</button>';
   });
   h+='</div>';
 
   var pedidos_to_show;
   if(filterStatus==='activos'){
-    pedidos_to_show = DB.ofs.filter(function(o){return o.programadoHoy && !o.pedidoCerrado && !o.pedidoCierre;});
+    pedidos_to_show = DB.ofs.filter(function(o){return o.programadoHoy && !o.pedidoCerrado && !o.pedidoCierre && !o.ofCerrada;});
+  } else if(filterStatus==='ofcerradas'){
+    pedidos_to_show = DB.ofs.filter(function(o){return o.ofCerrada && !o.pedidoCerrado && !o.pedidoCierre;});
   } else if(filterStatus==='cierre'){
     pedidos_to_show = DB.ofs.filter(function(o){return o.pedidoCierre && !o.pedidoCerrado;});
   } else {
@@ -13506,7 +13525,7 @@ function renderSeg(){
     h+='<div style="width:120px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:3px;"><div style="height:100%;width:'+grpPct+'%;background:var(--green);border-radius:3px;"></div></div></div>';
     h+='<span style="color:var(--dim);font-size:.9rem;transition:.2s;transform:rotate('+(isExpanded?'0':'180')+'deg);display:inline-block;">▲</span>';
     // -- 12: Botones de cierre -- (solo si TODAS las OFs del pedido están completas)
-    if(filterStatus==='activos' && pedidoPuedeCerrar(g.pedido)){
+    if((filterStatus==='activos' || filterStatus==='ofcerradas') && pedidoPuedeCerrar(g.pedido)){
       h+='<div style="display:flex;gap:5px;">';
       if(_fabNivel()!=='lectura') h+='<button class="btn btn-sm" style="background:rgba(212,160,23,.15);color:var(--yellow);border:1px solid rgba(212,160,23,.3);" onclick="movePedidoCierre(\''+g.pedido+'\')" title="Iniciar proceso de cierre">🟡 En proceso de cierre</button>';
       h+='<button class="btn btn-sm btn-success" onclick="cerrarPedido(\''+g.pedido+'\')" title="Cerrar pedido definitivamente">✅ Cerrar pedido</button>';
@@ -13571,6 +13590,14 @@ function renderSeg(){
         h+=' <button onclick="event.stopPropagation();ftCycleMonitorVis(\''+esc(of.of_sap)+'\')" title="Cambiar visibilidad en Monitor (auto → fijar → ocultar)" style="font-size:.66rem;padding:2px 7px;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:'+_mCol+';cursor:pointer;white-space:nowrap;">'+_mLbl+'</button>';
       } else {
         h+=' <span style="font-size:.66rem;color:'+_mCol+';white-space:nowrap;">'+_mLbl+'</span>';
+      }
+      // Cerrar / Reabrir orden individual (depuración de OFs finalizadas del pedido)
+      if(typeof _fabNivel==='function' && _fabNivel()!=='lectura'){
+        if(filterStatus==='activos' && !of.ofCerrada && _ofCompletaParaCierre(of)){
+          h+=' <button onclick="event.stopPropagation();cerrarOrdenIndividual(\''+esc(of.of_sap)+'\')" title="Cerrar esta orden y moverla a OF Cerradas" style="font-size:.66rem;padding:2px 8px;border-radius:6px;border:1px solid rgba(46,160,67,.4);background:rgba(46,160,67,.14);color:var(--green);cursor:pointer;white-space:nowrap;">🔒 Cerrar Orden</button>';
+        } else if(filterStatus==='ofcerradas'){
+          h+=' <button onclick="event.stopPropagation();reabrirOrdenIndividual(\''+esc(of.of_sap)+'\')" title="Reabrir esta orden (regresar a En proceso)" style="font-size:.66rem;padding:2px 8px;border-radius:6px;border:1px solid rgba(212,160,23,.4);background:rgba(212,160,23,.14);color:var(--yellow);cursor:pointer;white-space:nowrap;">↩ Reabrir</button>';
+        }
       }
       h+='</div>';
       h+='<span style="font-size:.72rem;color:var(--dim);font-family:\'DM Mono\',monospace;">'+done+'/'+_nOm+' · '+pct+'%</span></div>';
@@ -13682,7 +13709,7 @@ function renderSeg(){
   });
   if(!h || h.indexOf('prog-card') === -1 && groups.length===0){
     h+='<div style="text-align:center;padding:30px;color:var(--muted);font-size:.82rem;">'+
-      (_sq?'Sin resultados para la búsqueda.':(filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.')))+'</div>';
+      (_sq?'Sin resultados para la búsqueda.':(filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='ofcerradas'?'Sin OFs cerradas. Cierra órdenes finalizadas desde 🟢 En proceso para depurar la vista.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.'))))+'</div>';
   }
   document.getElementById('seg-list').innerHTML=h;
   // Update Carga por Estacion in historial page too
@@ -13699,11 +13726,49 @@ function renderSeg(){
   document.getElementById('seg-kpi-val').textContent=allOps.filter(function(o){return o.status==='validating';}).length;
 }
 
+// -- Cierre INDIVIDUAL de OF (depuración) — persistido en SP col. OF_Cerrada
+async function _ofCerradaSetSP(of, val){
+  window._ofcLocal = window._ofcLocal || {};
+  window._ofcLocal[of.of_sap] = { val: val, at: Date.now() }; // guard anti-revert
+  var prev = of.ofCerrada;
+  of.ofCerrada = val;                       // optimista
+  (window.renderSeg||renderSeg)();
+  try{
+    await spEscribir('FT_OrdenesFabricacion', { OF_Cerrada: val }, of._spId);
+    window._ofcLocal[of.of_sap] = { val: val, at: Date.now() }; // refrescar TTL tras confirmar
+    fireSync('coord', val ? 'of_cerrada' : 'of_reabierta', { of_sap: of.of_sap });
+  }catch(e){
+    of.ofCerrada = prev;                    // revertir en error
+    if(window._ofcLocal) delete window._ofcLocal[of.of_sap];
+    if(typeof ftErrNotify==='function') ftErrNotify('_ofCerradaSetSP', e, 'FT_OrdenesFabricacion');
+    else console.warn('SP OF_Cerrada:', e.message);
+    (window.renderSeg||renderSeg)();
+  }
+}
+function cerrarOrdenIndividual(ofSap){
+  var of = DB.ofs.find(function(o){return o.of_sap===ofSap;});
+  if(!of) return;
+  if(!_ofCompletaParaCierre(of)){
+    if(typeof showInfoModal==='function') showInfoModal('No se puede cerrar la orden','La OF '+ofSap+' aún tiene operaciones pendientes. Solo puedes cerrar órdenes finalizadas.','Entendido',function(){closeCModal('modal-info');});
+    return;
+  }
+  _ofCerradaSetSP(of, true);
+}
+function reabrirOrdenIndividual(ofSap){
+  var of = DB.ofs.find(function(o){return o.of_sap===ofSap;});
+  if(!of) return;
+  _ofCerradaSetSP(of, false);
+}
+window.cerrarOrdenIndividual = cerrarOrdenIndividual;
+window.reabrirOrdenIndividual = reabrirOrdenIndividual;
+
 // -- 12: Funciones cierre de pedido ---------------------------
 async function movePedidoCierre(pedido){
   DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){
     o.pedidoCierre=true;
+    o.ofCerrada=false; // las OFs cerradas se reincorporan al mover el pedido a cierre
     o.status='En proceso de cierre';
+    if(window._ofcLocal) window._ofcLocal[o.of_sap]={val:false,at:Date.now()};
   });
   (window.renderSeg||renderSeg)();
   fireSync('coord','pedido_cierre',{pedido:pedido});
@@ -13714,7 +13779,7 @@ async function movePedidoCierre(pedido){
     for(var i=0;i<ofsDelPedido.length;i++){
       var of = ofsDelPedido[i];
       var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
-      if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'En proceso de cierre'}, item.id);
+      if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'En proceso de cierre', OF_Cerrada:false}, item.id);
     }
   } catch(e){ console.warn('SP movePedidoCierre:', e.message); }
 }
@@ -13728,8 +13793,9 @@ async function cerrarPedido(pedido){
       var _cerrados = JSON.parse(localStorage.getItem(_pedidosCerradosKey)||'[]');
       if(_cerrados.indexOf(pedido)<0){ _cerrados.push(pedido); localStorage.setItem(_pedidosCerradosKey, JSON.stringify(_cerrados)); }
       DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){
-        o.pedidoCerrado=true; o.pedidoCierre=false; o.programadoHoy=false;
+        o.pedidoCerrado=true; o.pedidoCierre=false; o.programadoHoy=false; o.ofCerrada=false;
         o.status='Cerrado';
+        if(window._ofcLocal) window._ofcLocal[o.of_sap]={val:false,at:Date.now()};
       });
       DB.activeOFs = DB.activeOFs.filter(function(a){
         var of=DB.ofs.find(function(o){return o.of_sap===a.of_sap;});
@@ -13744,7 +13810,7 @@ async function cerrarPedido(pedido){
         for(var i=0;i<ofsDelPedido.length;i++){
           var of = ofsDelPedido[i];
           var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
-          if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Cerrado',Programado_Hoy:false}, item.id);
+          if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Cerrado',Programado_Hoy:false,OF_Cerrada:false}, item.id);
         }
       } catch(e){ console.warn('SP cerrarPedido:', e.message); }
     }

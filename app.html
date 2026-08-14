@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.67</title>
+<title>FabTracker App v2.68</title>
 
 <!-- MSAL Browser -->
 
@@ -620,6 +620,11 @@ tr:last-child td{border-bottom:none;}
              padding:9px;font-size:.78rem;color:#8b949e;cursor:pointer;">
       ✅ Terminadas hoy
     </button>
+  </div>
+
+  <!-- Escanear QR de operación -->
+  <div style="padding:8px 12px;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;">
+    <button onclick="monitorScanOpen()" style="width:100%;background:linear-gradient(135deg,#7c3aed,#6c3483);border:none;border-radius:8px;padding:11px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;">📷 Escanear operación (QR)</button>
   </div>
 
   <!-- Filter bar -->
@@ -10552,6 +10557,99 @@ function monitorRender() {
   // Update subtitle
   var sub = document.getElementById('monitor-header-sub');
   if (sub) sub.textContent = estaciones.join(' · ');
+}
+
+// ── Escaneo de QR de operación → acciones rápidas ────────────────────────
+var _monScanner = null;
+function monitorScanOpen(){
+  function go(){
+    var ex=document.getElementById('mon-scan-modal'); if(ex) ex.remove();
+    var d=document.createElement('div'); d.id='mon-scan-modal';
+    d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:745;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+    d.innerHTML='<div style="width:min(360px,94vw);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'+
+        '<div style="font-weight:700;font-size:1rem;color:#fff;">📷 Escanear operación</div>'+
+        '<button onclick="monitorScanClose()" style="background:none;border:none;color:#8b949e;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>'+
+      '</div>'+
+      '<div id="mon-scan-reader" style="width:100%;border-radius:12px;overflow:hidden;background:#000;min-height:230px;"></div>'+
+      '<div id="mon-scan-msg" style="color:#8b949e;font-size:.8rem;text-align:center;margin-top:10px;min-height:18px;">Apunta la cámara al código QR de la operación</div>'+
+    '</div>';
+    document.body.appendChild(d);
+    try{
+      _monScanner=new Html5Qrcode("mon-scan-reader");
+      _monScanner.start({ facingMode:"environment" }, { fps:10, qrbox:{ width:230, height:230 } },
+        function(txt){ monitorScanHandle(txt); },
+        function(){ /* ignorar errores por frame */ }
+      ).catch(function(e){ var m=document.getElementById('mon-scan-msg'); if(m){ m.style.color='#f59e0b'; m.textContent='No se pudo abrir la cámara: '+(e&&e.message||e); } });
+    }catch(e){ var m2=document.getElementById('mon-scan-msg'); if(m2){ m2.style.color='#f59e0b'; m2.textContent='No se pudo iniciar el escáner: '+e.message; } }
+  }
+  if(window.Html5Qrcode){ go(); }
+  else{ var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'; s.onload=go; s.onerror=function(){ alert('No se pudo cargar el escáner QR.'); }; document.head.appendChild(s); }
+}
+function monitorScanClose(){
+  try{
+    if(_monScanner){ _monScanner.stop().then(function(){ try{_monScanner.clear();}catch(e){} _monScanner=null; }).catch(function(){ _monScanner=null; }); }
+  }catch(e){ _monScanner=null; }
+  var m=document.getElementById('mon-scan-modal'); if(m) m.remove();
+}
+function monitorScanHandle(txt){
+  var parts=String(txt||'').split('|');
+  if(parts[0]!=='FT' || parts.length<3){ var m=document.getElementById('mon-scan-msg'); if(m){ m.style.color='#f59e0b'; m.textContent='Código no reconocido. Escanea un QR generado por el sistema.'; } return; }
+  var ofSap=parts[1], opId=parts[2];
+  var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
+  var op=of?of.ops.find(function(o){return o.id===opId;}):null;
+  if(!of || !op){ var m2=document.getElementById('mon-scan-msg'); if(m2){ m2.style.color='#f59e0b'; m2.textContent='Operación no encontrada o no activa en esta tablet.'; } return; }
+  monitorScanClose();
+  monitorQuickActions(ofSap, opId);
+}
+function monitorQAClose(){ var m=document.getElementById('mon-qa-modal'); if(m) m.remove(); }
+function monitorQAReanudarTurno(ofSap,opId){ var _o=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;}); var _p=_o?_o.ops.find(function(o){return o.id===opId;}):null; if(_o&&_p && typeof monTurnoOpen==='function') monTurnoOpen(_o,_p); }
+function monitorQuickActions(ofSap, opId){
+  var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
+  var op=of?of.ops.find(function(o){return o.id===opId;}):null;
+  if(!op) return;
+  var isLote = of.grupo && of.grupoModo==='lote';
+  var _q="'"+ofSap+"','"+opId+"'";
+  var _b=function(bg,label,act){ return '<button onclick="monitorQAClose();'+act+'" style="width:100%;background:'+bg+';border:none;border-radius:8px;padding:12px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;margin-bottom:8px;">'+label+'</button>'; };
+  var body='', st=op.status;
+  if(st==='pending'){
+    body += isLote ? _b('#7c3aed','▶ Iniciar lote','monitorAskPin(\'iniciar_lote\','+_q+')')
+                   : _b('#1565C0','▶ Iniciar','monitorCheckQueueThenAskPin('+_q+')');
+  } else if(st==='running'){
+    if(isLote){
+      body += _b('#dc2626','⏹ Concluir lote','monitorAskPin(\'concluir_lote\','+_q+')');
+      body += _b('#8b5cf6','🔍 Val.Cal. del lote','monitorAskPin(\'valcal_lote\','+_q+')');
+      body += _b('#f59e0b','🌙 Fin de Turno del lote','monitorAskPin(\'finturno_lote\','+_q+')');
+      body += _b('#0891b2','🍽 Comida del lote','monitorAskPin(\'comida_lote\','+_q+')');
+    } else {
+      body += _b('#dc2626','⏹ Concluir','monitorAskPin(\'concluir\','+_q+')');
+      body += _b('#8b5cf6','🔍 Val.Cal.','monitorAskPin(\'valcal\','+_q+')');
+      body += _b('#f59e0b','🌙 Fin de Turno','monitorAskPin(\'finturno\','+_q+')');
+      body += _b('#0891b2','🍽 Iniciar Comida','monitorAskPin(\'comida\','+_q+')');
+    }
+  } else if(st==='paused'){
+    var isTurno = (op._pauseTipo==='turno') || ((op.pauseReason||'').indexOf('Fin de turno')>=0) || ((op.pauseReason||'').indexOf('🌙')>=0);
+    if(isLote){ body += _b('#16a34a','▶ Reanudar lote','monitorAskPin(\'reanudar_lote\','+_q+')'); }
+    else if(isTurno){ body += _b('#f59e0b','🔄 Reanudar turno','monitorQAReanudarTurno('+_q+')'); }
+    else { body += _b('#f59e0b','▶ Reanudar','monitorAskPin(\'reanudar\','+_q+')'); }
+  } else if(st==='op_concluded'){
+    body += '<div style="color:#f59e0b;font-size:.82rem;text-align:center;padding:10px;">⏳ Aguardando confirmación del Supervisor</div>';
+  } else if(st==='validating'){
+    body += '<div style="color:#a78bfa;font-size:.82rem;text-align:center;padding:10px;">🔍 En validación de Calidad</div>';
+  } else {
+    body += '<div style="color:#8b949e;font-size:.82rem;text-align:center;padding:10px;">Sin acciones disponibles ('+esc(st)+')</div>';
+  }
+  var ex=document.getElementById('mon-qa-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='mon-qa-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:745;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML='<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(360px,94vw);padding:18px;">'+
+    '<div style="font-size:.66rem;color:#58a6ff;font-family:monospace;">OF '+esc(ofSap)+((of.articulo||of.articulo_padre)?' · '+esc(of.articulo||of.articulo_padre):'')+(isLote?' · 🔗 LOTE '+esc(of.grupo||''):'')+'</div>'+
+    '<div style="font-weight:700;font-size:.95rem;color:#e6edf3;margin:2px 0;">'+esc(op.nombre)+'</div>'+
+    '<div style="font-size:.72rem;color:#8b949e;margin-bottom:14px;">'+esc(op.estacion||'')+(op.tecnico?' · 👷 '+esc(op.tecnico):'')+'</div>'+
+    body+
+    '<button onclick="monitorQAClose()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Cerrar</button>'+
+  '</div>';
+  document.body.appendChild(d);
 }
 
 // Recuerda qué lotes están desplegados para no colapsarlos en el auto-refresh

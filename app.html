@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.68</title>
+<title>FabTracker App v2.69</title>
 
 <!-- MSAL Browser -->
 
@@ -10639,13 +10639,33 @@ function monitorQuickActions(ofSap, opId){
   } else {
     body += '<div style="color:#8b949e;font-size:.82rem;text-align:center;padding:10px;">Sin acciones disponibles ('+esc(st)+')</div>';
   }
+  // Info adicional: descripción, piezas, ayudantes y (si es grupo) resumen del lote
+  var _desc = of.descripcion_padre || of.descripcion || '';
+  var _ayud = (op.ayudantes||[]).filter(Boolean);
+  var _grpHtml='';
+  if(of.grupo){
+    var _gn=0, _gTot=0;
+    (DB.activeOFs||[]).forEach(function(aof2){
+      if(aof2.grupo!==of.grupo) return;
+      (aof2.ops||[]).forEach(function(o2){
+        if(o2.nombre===op.nombre && o2.estacion===op.estacion){ _gn++; _gTot+=(o2.qty_total||0); }
+      });
+    });
+    _grpHtml='<div style="font-size:.72rem;color:#c084fc;margin-top:8px;background:rgba(147,51,234,.1);border:1px solid rgba(147,51,234,.3);border-radius:6px;padding:6px 9px;line-height:1.5;">'+
+      '🔗 '+(isLote?'Lote único':'Serie')+' '+esc(of.grupo||'')+' · <strong>'+_gn+'</strong> órdenes<br>'+
+      'Piezas de esta orden: <strong>'+(op.qty_total||0)+'</strong> · Total del grupo: <strong>'+_gTot+'</strong> pzas</div>';
+  }
   var ex=document.getElementById('mon-qa-modal'); if(ex) ex.remove();
   var d=document.createElement('div'); d.id='mon-qa-modal';
   d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:745;display:flex;align-items:center;justify-content:center;padding:16px;';
-  d.innerHTML='<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(360px,94vw);padding:18px;">'+
-    '<div style="font-size:.66rem;color:#58a6ff;font-family:monospace;">OF '+esc(ofSap)+((of.articulo||of.articulo_padre)?' · '+esc(of.articulo||of.articulo_padre):'')+(isLote?' · 🔗 LOTE '+esc(of.grupo||''):'')+'</div>'+
-    '<div style="font-weight:700;font-size:.95rem;color:#e6edf3;margin:2px 0;">'+esc(op.nombre)+'</div>'+
-    '<div style="font-size:.72rem;color:#8b949e;margin-bottom:14px;">'+esc(op.estacion||'')+(op.tecnico?' · 👷 '+esc(op.tecnico):'')+'</div>'+
+  d.innerHTML='<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(360px,94vw);padding:18px;max-height:92vh;overflow:auto;">'+
+    '<div style="font-size:.66rem;color:#58a6ff;font-family:monospace;">OF '+esc(ofSap)+((of.articulo||of.articulo_padre)?' · '+esc(of.articulo||of.articulo_padre):'')+'</div>'+
+    (_desc?'<div style="font-size:.74rem;color:#c9d1d9;margin-top:1px;line-height:1.35;">'+esc(_desc)+'</div>':'')+
+    '<div style="font-weight:700;font-size:.95rem;color:#e6edf3;margin:5px 0 2px;">'+esc(op.nombre)+'</div>'+
+    '<div style="font-size:.72rem;color:#8b949e;">'+esc(op.estacion||'')+' · 📦 <strong style="color:#c9d1d9;">'+(op.qty_total||0)+'</strong> pzas'+(op.tecnico?' · 👷 '+esc(op.tecnico):'')+'</div>'+
+    (_ayud.length?'<div style="font-size:.7rem;color:#8b949e;margin-top:2px;">🤝 Ayudantes: '+esc(_ayud.join(', '))+'</div>':'')+
+    _grpHtml+
+    '<div style="height:14px;"></div>'+
     body+
     '<button onclick="monitorQAClose()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Cerrar</button>'+
   '</div>';

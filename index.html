@@ -16069,7 +16069,7 @@ function ftRptExportPDFCodigos(){
     });
     (function(){
       var pageW=210, pageH=297, mL=10, mT=18, gap=6;
-      var cols=2, cardW=(pageW-mL*2-gap)/cols, cardH=50, rowGap=4;
+      var cols=2, cardW=(pageW-mL*2-gap)/cols, cardH=64, rowGap=4;
       var rowsPerPage=Math.max(1, Math.floor((pageH-mT-8)/(cardH+rowGap)));
       var perPage=cols*rowsPerPage;
       var now=new Date().toLocaleDateString('es-MX');
@@ -16085,15 +16085,24 @@ function ftRptExportPDFCodigos(){
         if(it._qr){ try{ doc.addImage(it._qr,'PNG',x+3,y+4,qrSize,qrSize); }catch(e){} }
         doc.setTextColor(20);doc.setFontSize(6.5);doc.setFont('helvetica','bold');
         doc.text('OF '+(it.of.of_sap||'')+' · Op '+(it.op.op_id||''), x+3, y+4+qrSize+3);
-        var tx=x+3+qrSize+4, tw=cardW-(qrSize+10), ty=y+8;
-        doc.setTextColor(20);doc.setFontSize(9);doc.setFont('helvetica','bold');
+        // Datos de grupo (desde la data actual: DB.ofs / DB.activeOFs)
+        var _ofRec=(DB.ofs||[]).find(function(o){return o.of_sap===it.of.of_sap;});
+        var _grupo=_ofRec?_ofRec.grupo:'', _grupoModo=_ofRec?_ofRec.grupoModo:'';
+        var _grpN=0, _grpTot=0;
+        if(_grupo){ (DB.activeOFs||[]).forEach(function(aof2){ if(aof2.grupo!==_grupo)return; (aof2.ops||[]).forEach(function(o2){ if(o2.nombre===it.op.nombre && o2.estacion===(it.op.estacion||it.est)){ _grpN++; _grpTot+=(o2.qty_total||0); } }); }); }
+        var tx=x+3+qrSize+4, tw=cardW-(qrSize+10), ty=y+7.5;
+        doc.setTextColor(20);doc.setFontSize(8.8);doc.setFont('helvetica','bold');
         var nameLines=doc.splitTextToSize(String(it.op.nombre||'—'),tw).slice(0,2);
-        doc.text(nameLines,tx,ty); ty+=nameLines.length*4.4+1.5;
-        doc.setFontSize(7.4);doc.setFont('helvetica','normal');doc.setTextColor(70);
-        doc.text('Estacion: '+_trunc(it.est||'—',30),tx,ty); ty+=4.3;
-        doc.text('Articulo: '+_trunc(it.of.articulo||'—',18)+'   Cant: '+(it.op.qty_total||it.of.cantidad||'—'),tx,ty); ty+=4.3;
-        doc.text('Cliente: '+_trunc(it.of.cliente||'—',30),tx,ty); ty+=4.3;
-        doc.text('Tecnico: '+_trunc(it.op.tecnico||'(sin asignar)',28),tx,ty);
+        doc.text(nameLines,tx,ty); ty+=nameLines.length*4.1+1.0;
+        doc.setFontSize(7.1);doc.setFont('helvetica','normal');doc.setTextColor(70);
+        if(it.of.descripcion){ var _dl=doc.splitTextToSize(String(it.of.descripcion),tw).slice(0,2); doc.text(_dl,tx,ty); ty+=_dl.length*3.8+0.6; }
+        doc.text('Estacion: '+_trunc(it.est||'—',30),tx,ty); ty+=3.9;
+        doc.text('Articulo: '+_trunc(it.of.articulo||'—',18)+'   Cant: '+(it.op.qty_total||it.of.cantidad||'—'),tx,ty); ty+=3.9;
+        doc.text('Cliente: '+_trunc(it.of.cliente||'—',30),tx,ty); ty+=3.9;
+        doc.text('Tecnico: '+_trunc(it.op.tecnico||'(sin asignar)',28),tx,ty); ty+=3.9;
+        var _ay=(it.op.ayudantes||[]).filter(Boolean);
+        if(_ay.length){ doc.text('Ayudantes: '+_trunc(_ay.join(', '),30),tx,ty); ty+=3.9; }
+        if(_grupo){ doc.setTextColor(124,58,237); doc.text('Grupo '+_grupo+' ('+(_grupoModo==='lote'?'Lote':'Serie')+'): '+_grpN+' ords - total '+_grpTot+' pzas',tx,ty); doc.setTextColor(70); ty+=3.9; }
       });
       doc.save('Operaciones_QR_'+new Date().toISOString().slice(0,10)+'.pdf');
     })();

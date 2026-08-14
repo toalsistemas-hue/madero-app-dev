@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.72</title>
+<title>FabTracker App v2.73</title>
 
 <!-- MSAL Browser -->
 
@@ -3640,6 +3640,7 @@ function renderAppHoy(){
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
+  if(_appRole==='supervisor'||_appRole==='calidad_lin')h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -10603,8 +10604,122 @@ function monitorScanHandle(txt){
   var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;
   if(!of || !op){ var m2=document.getElementById('mon-scan-msg'); if(m2){ m2.style.color='#f59e0b'; m2.textContent='Operación no encontrada o no activa en esta tablet.'; } return; }
+  // Validar que la estación de la operación esté asignada a este monitor.
+  if(_MON.estaciones && _MON.estaciones.length && op.estacion && _MON.estaciones.indexOf(op.estacion)<0){
+    var m4=document.getElementById('mon-scan-msg');
+    if(m4){ m4.style.color='#f59e0b'; m4.textContent='⚠ La operación "'+op.nombre+'" es de la estación "'+op.estacion+'", que no está asignada a este monitor.'; }
+    return;
+  }
   monitorScanClose();
   monitorQuickActions(ofSap, opId);
+}
+
+// ── Escaneo de QR en FabTracker (Supervisor / Calidad de Línea) ──────────
+var _ftScanner=null;
+function ftScanOpen(){
+  function go(){
+    var ex=document.getElementById('ft-scan-modal'); if(ex) ex.remove();
+    var d=document.createElement('div'); d.id='ft-scan-modal';
+    d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:745;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+    d.innerHTML='<div style="width:min(360px,94vw);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'+
+        '<div style="font-weight:700;font-size:1rem;color:#fff;">📷 Escanear operación</div>'+
+        '<button onclick="ftScanClose()" style="background:none;border:none;color:#8b949e;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>'+
+      '</div>'+
+      '<div id="ft-scan-reader" style="width:100%;border-radius:12px;overflow:hidden;background:#000;min-height:230px;"></div>'+
+      '<div id="ft-scan-msg" style="color:#8b949e;font-size:.8rem;text-align:center;margin-top:10px;min-height:18px;">Apunta la cámara al código QR de la operación</div>'+
+    '</div>';
+    document.body.appendChild(d);
+    try{
+      _ftScanner=new Html5Qrcode("ft-scan-reader");
+      _ftScanner.start({ facingMode:"environment" }, { fps:10, qrbox:{ width:230, height:230 } },
+        function(txt){ ftScanHandle(txt); },
+        function(){ /* ignorar errores por frame */ }
+      ).catch(function(e){ var m=document.getElementById('ft-scan-msg'); if(m){ m.style.color='#f59e0b'; m.textContent='No se pudo abrir la cámara: '+(e&&e.message||e); } });
+    }catch(e){ var m2=document.getElementById('ft-scan-msg'); if(m2){ m2.style.color='#f59e0b'; m2.textContent='No se pudo iniciar el escáner: '+e.message; } }
+  }
+  if(window.Html5Qrcode){ go(); }
+  else{ var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'; s.onload=go; s.onerror=function(){ alert('No se pudo cargar el escáner QR.'); }; document.head.appendChild(s); }
+}
+function ftScanClose(){
+  try{ if(_ftScanner){ _ftScanner.stop().then(function(){ try{_ftScanner.clear();}catch(e){} _ftScanner=null; }).catch(function(){ _ftScanner=null; }); } }catch(e){ _ftScanner=null; }
+  var m=document.getElementById('ft-scan-modal'); if(m) m.remove();
+}
+function ftScanHandle(txt){
+  var parts=String(txt||'').split('|');
+  if(parts[0]!=='FT' || parts.length<3){ var m=document.getElementById('ft-scan-msg'); if(m){ m.style.color='#f59e0b'; m.textContent='Código no reconocido. Escanea un QR generado por el sistema.'; } return; }
+  var ofSap=parts[1], opId=parts[2];
+  var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
+  var op=of?of.ops.find(function(o){return o.id===opId;}):null;
+  if(!of || !op){ var m2=document.getElementById('ft-scan-msg'); if(m2){ m2.style.color='#f59e0b'; m2.textContent='Operación no encontrada o no activa hoy.'; } return; }
+  ftScanClose();
+  ftScanQuickActions(ofSap, opId);
+}
+function ftScanQAClose(){ var m=document.getElementById('ft-qa-modal'); if(m) m.remove(); }
+function ftScanQuickActions(ofSap, opId){
+  var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
+  var op=of?of.ops.find(function(o){return o.id===opId;}):null;
+  if(!op) return;
+  var role = APP.role || 'readonly';
+  var _rr  = (role==='readonly') ? 'supervisor' : role;
+  var _q="'"+ofSap+"','"+opId+"'";
+  var _b=function(bg,label,act){ return '<button onclick="ftScanQAClose();'+act+'" style="width:100%;background:'+bg+';border:none;border-radius:8px;padding:12px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;margin-bottom:8px;">'+label+'</button>'; };
+  var _note=function(col,txt){ return '<div style="color:'+col+';font-size:.82rem;text-align:center;padding:10px;">'+txt+'</div>'; };
+  var body='', st=op.status;
+  var canFinish = (typeof appCan==='function' && appCan('finish')) && (op.calResult==='liberado' || (st!=='validating' && !op.needsCal));
+  if(role==='calidad_lin' && (typeof appCan!=='function' || appCan('cal'))){
+    // Calidad de Línea (encargado de calidad de piso) — liberar / rechazar validaciones.
+    if(st==='validating') body += _b('#8b5cf6','🏭 Responder validación (liberar / rechazar)','openCalResp('+_q+')');
+    else if(op.calResult) body += _note('#22c55e','✅ Validación ya respondida: '+esc(op.calResult));
+    else body += _note('#8b949e','Esta operación no está en validación de calidad.');
+  } else if((typeof appCan==='function' && appCan('start')) || _rr==='supervisor'){
+    // Supervisor — mismas acciones que en el panel de FabTracker.
+    if(st==='omitida'){ body += _note('#8b949e','⊘ Operación omitida'); }
+    else if(st==='pending'){
+      body += _b('#1565C0','▶ Iniciar','appStartOp('+_q+')');
+      body += _b('#6b7280','⊘ Omitir','appOmitirOp('+_q+')');
+      body += _b('rgba(255,255,255,.10)','👷 Asignar técnico','appOpenQuickAssign('+_q+')');
+    } else if(st==='running'){
+      if(typeof appCan!=='function'||appCan('pause')) body += _b('#f59e0b','⏸ Pausar','appOpenPause('+_q+')');
+      if(canFinish) body += _b('#22c55e','✓ Terminar','appOpenFinish('+_q+')');
+      if(typeof appCan!=='function'||appCan('requestCal')) body += _b('#8b5cf6','🔍 Val.Cal.','appOpenValCal('+_q+')');
+    } else if(st==='paused'){
+      if(typeof appCan!=='function'||appCan('resume')) body += _b('#16a34a','▶ Reanudar','appResumeOp('+_q+')');
+      if(canFinish) body += _b('#22c55e','✓ Terminar','appOpenFinish('+_q+')');
+      if(typeof appCan!=='function'||appCan('requestCal')) body += _b('#8b5cf6','🔍 Val.Cal.','appOpenValCal('+_q+')');
+    } else if(st==='op_concluded'){
+      if(_rr==='supervisor' || (typeof appCan==='function'&&appCan('finish'))){
+        body += _b('#22c55e','✓ Confirmar conclusión','monitorConfirmOp('+_q+')');
+        body += _b('#ef4444','↩ Devolver a activa','monitorRevertOp('+_q+')');
+      } else body += _note('#f59e0b','⏳ Aguarda confirmación del Supervisor');
+    } else if(st==='validating'){
+      body += _note('#a78bfa','🔍 En validación de Calidad');
+    } else if(st==='retrabajo'){
+      body += _b('#1565C0','▶ Reiniciar','appStartOp('+_q+')');
+    } else if(st==='done'){
+      body += _note('#22c55e','✓ Operación terminada');
+    } else body += _note('#8b949e','Sin acciones disponibles ('+esc(st)+')');
+  } else {
+    body += _note('#8b949e','Sin acciones disponibles para tu rol.');
+  }
+  var _stLbl={pending:'PENDIENTE',running:'EN PROCESO',paused:'PAUSADA',validating:'VALIDACIÓN CALIDAD',op_concluded:'CONCLUIDA — aguarda Supervisor',done:'TERMINADA',omitida:'OMITIDA'}[st]||String(st||'').toUpperCase();
+  var _desc = of.descripcion_padre || of.descripcion || '';
+  var _ayud = (op.ayudantes||[]).filter(Boolean);
+  var ex=document.getElementById('ft-qa-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='ft-qa-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:745;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML='<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(360px,94vw);padding:18px;max-height:92vh;overflow:auto;">'+
+    '<div style="font-size:.66rem;color:#58a6ff;font-family:monospace;">OF '+esc(ofSap)+((of.articulo||of.articulo_padre)?' · '+esc(of.articulo||of.articulo_padre):'')+'</div>'+
+    (_desc?'<div style="font-size:.74rem;color:#c9d1d9;margin-top:1px;line-height:1.35;">'+esc(_desc)+'</div>':'')+
+    '<div style="font-weight:700;font-size:.95rem;color:#e6edf3;margin:5px 0 2px;">'+esc(op.nombre)+'</div>'+
+    '<div style="font-size:.72rem;color:#8b949e;">'+esc(op.estacion||'')+' · 📦 <strong style="color:#c9d1d9;">'+(op.qty_total||0)+'</strong> pzas'+(op.tecnico?' · 👷 '+esc(op.tecnico):'')+'</div>'+
+    (_ayud.length?'<div style="font-size:.7rem;color:#8b949e;margin-top:2px;">🤝 Ayudantes: '+esc(_ayud.join(', '))+'</div>':'')+
+    '<div style="font-size:.66rem;color:#8b949e;margin-top:4px;">Estado: <strong style="color:#c9d1d9;">'+esc(_stLbl)+'</strong></div>'+
+    '<div style="height:14px;"></div>'+
+    body+
+    '<button onclick="ftScanQAClose()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Cerrar</button>'+
+  '</div>';
+  document.body.appendChild(d);
 }
 function monitorQAClose(){ var m=document.getElementById('mon-qa-modal'); if(m) m.remove(); }
 function monitorQAReanudarTurno(ofSap,opId){ var _o=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;}); var _p=_o?_o.ops.find(function(o){return o.id===opId;}):null; if(_o&&_p && typeof monTurnoOpen==='function') monTurnoOpen(_o,_p); }
@@ -13399,6 +13514,7 @@ function renderAppHoy(){
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
+  if(_appRole==='supervisor'||_appRole==='calidad_lin')h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});

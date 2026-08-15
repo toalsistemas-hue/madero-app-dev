@@ -16173,7 +16173,8 @@ function ftRptExportPDFCodigos(){
         if(_ay.length){ doc.text('Ayudantes: '+_trunc(_ay.join(', '),30),tx,ty); ty+=3.9; }
         if(_grupo){ doc.setTextColor(124,58,237); doc.text('Grupo '+_grupo+' ('+(_grupoModo==='lote'?'Lote':'Serie')+'): '+_grpN+' ords - total '+_grpTot+' pzas',tx,ty); doc.setTextColor(70); ty+=3.9; }
       });
-      doc.save('Operaciones_QR_'+new Date().toISOString().slice(0,10)+'.pdf');
+      var _fname='Operaciones_QR_'+new Date().toISOString().slice(0,10)+'.pdf';
+      _ftRptShowPrintPreview(doc, _fname);
     })();
   }
   function ensureQR(cb){ if(window.QRious){ cb(); return; } var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js'; s.onload=cb; s.onerror=function(){ alert('No se pudo cargar la librería de códigos QR.'); }; document.head.appendChild(s); }
@@ -16181,6 +16182,52 @@ function ftRptExportPDFCodigos(){
   ensureJsPDF(function(){ ensureQR(function(){ build(); }); });
 }
 window.ftRptExportPDFCodigos = ftRptExportPDFCodigos;
+
+// ── Menú de impresión con vista previa para el PDF de códigos QR ──────────
+function _ftRptShowPrintPreview(doc, fname){
+  var blobUrl;
+  try{ blobUrl = doc.output('bloburl'); }catch(e){ try{ doc.save(fname); }catch(e2){} return; }
+  var ex=document.getElementById('ftrpt-print-modal'); if(ex) ex.remove();
+  window._ftRptDoc = doc; window._ftRptFname = fname; window._ftRptBlobUrl = String(blobUrl);
+  var d=document.createElement('div'); d.id='ftrpt-print-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px;';
+  d.innerHTML=
+    '<div style="background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:14px;width:min(900px,96vw);max-height:94vh;display:flex;flex-direction:column;overflow:hidden;">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.1);">'+
+        '<div style="font-weight:700;font-size:1rem;color:#e6edf3;">🖨 Imprimir — Operaciones con código QR</div>'+
+        '<button onclick="_ftRptClosePrint()" style="background:none;border:none;color:#8b949e;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>'+
+      '</div>'+
+      '<div style="flex:1;min-height:0;background:#0d1117;padding:10px;">'+
+        '<iframe id="ftrpt-print-frame" src="'+window._ftRptBlobUrl+'" style="width:100%;height:62vh;border:none;border-radius:8px;background:#fff;"></iframe>'+
+      '</div>'+
+      '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding:14px 18px;border-top:1px solid rgba(255,255,255,.1);">'+
+        '<button onclick="_ftRptClosePrint()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:10px 16px;color:#8b949e;font-size:.85rem;cursor:pointer;">Cerrar</button>'+
+        '<button onclick="_ftRptDownloadPDF()" style="background:rgba(88,166,255,.15);border:1px solid rgba(88,166,255,.35);border-radius:8px;padding:10px 16px;color:#58a6ff;font-size:.85rem;font-weight:700;cursor:pointer;">🔳 PDF con código</button>'+
+        '<button onclick="_ftRptDoPrint()" style="background:#2563eb;border:none;border-radius:8px;padding:10px 18px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;">🖨 Imprimir</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(d);
+}
+function _ftRptClosePrint(){
+  var m=document.getElementById('ftrpt-print-modal'); if(m) m.remove();
+  try{ if(window._ftRptBlobUrl) URL.revokeObjectURL(window._ftRptBlobUrl); }catch(e){}
+  window._ftRptBlobUrl=null;
+}
+function _ftRptDownloadPDF(){
+  try{ if(window._ftRptDoc){ window._ftRptDoc.save(window._ftRptFname||'Operaciones_QR.pdf'); return; } }catch(e){}
+  if(window._ftRptBlobUrl){ var a=document.createElement('a'); a.href=window._ftRptBlobUrl; a.download=window._ftRptFname||'Operaciones_QR.pdf'; document.body.appendChild(a); a.click(); a.remove(); }
+}
+function _ftRptDoPrint(){
+  var ifr=document.getElementById('ftrpt-print-frame');
+  try{ if(ifr && ifr.contentWindow){ ifr.contentWindow.focus(); ifr.contentWindow.print(); return; } }catch(e){}
+  // Fallback: abrir el PDF con autoimpresión en una pestaña nueva
+  try{ if(window._ftRptDoc){ window._ftRptDoc.autoPrint(); window.open(window._ftRptDoc.output('bloburl'),'_blank'); return; } }catch(e2){}
+  if(window._ftRptBlobUrl) window.open(window._ftRptBlobUrl,'_blank');
+}
+window._ftRptShowPrintPreview=_ftRptShowPrintPreview;
+window._ftRptClosePrint=_ftRptClosePrint;
+window._ftRptDownloadPDF=_ftRptDownloadPDF;
+window._ftRptDoPrint=_ftRptDoPrint;
 
 
 

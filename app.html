@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.75</title>
+<title>FabTracker App v2.77</title>
 
 <!-- MSAL Browser -->
 
@@ -10440,6 +10440,48 @@ function _monVisibleOFsForStation(items) {
   return visible;
 }
 
+// ── Semáforo físico por estación (torreta LED vía ntfy → ESP32) ──────────
+// Publica el color de cada estación asignada al Monitor:
+//   rojo    = ninguna operación activa
+//   verde   = hay una operación en curso (running)
+//   amarillo= la estación está pausada / esperando calidad
+// El ESP32 de cada estación se suscribe a su tópico y enciende la torreta.
+function _monSemaforoTopic(estacion){
+  var slug = String(estacion||'').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')      // quitar acentos
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+  return (typeof ENV!=='undefined' && ENV==='dev' ? 'dev-' : '') + 'madero-estacion-' + slug;
+}
+function monitorPublishSemaforo(estaciones){
+  if(!estaciones || !estaciones.length) return;
+  window._monSemaforoLast = window._monSemaforoLast || {};
+  var now = Date.now();
+  estaciones.forEach(function(est){
+    var running=false, paused=false;
+    (DB.activeOFs||[]).forEach(function(aof){
+      (aof.ops||[]).forEach(function(op){
+        if(op.estacion!==est) return;
+        if(op.status==='running') running=true;
+        else if(op.status==='paused' || op.status==='validating') paused=true;
+      });
+    });
+    var color = running ? 'verde' : (paused ? 'amarillo' : 'rojo');
+    var prev = window._monSemaforoLast[est];
+    // Republicar solo si cambió, o cada 5 min (heartbeat para refrescar la caché de ntfy).
+    if(prev && prev.color===color && (now - prev.at) < 300000) return;
+    window._monSemaforoLast[est] = { color: color, at: now };
+    var topic = _monSemaforoTopic(est);
+    try{
+      fetch('https://ntfy.sh/'+topic, {
+        method:'POST',
+        headers:{ 'Title':'semaforo', 'Tags': color, 'Priority':'min' },
+        body: color
+      }).then(function(){ console.log('[Semaforo]', est, '->', color, '| topic:', topic); })
+        .catch(function(e){ console.warn('[Semaforo] error publicando', est, e&&e.message); });
+    }catch(e){ console.warn('[Semaforo] fetch fallo', e&&e.message); }
+  });
+}
+
 function monitorRender() {
   var content = document.getElementById('monitor-content');
   if (!content) return;
@@ -10565,6 +10607,9 @@ function monitorRender() {
   // Update subtitle
   var sub = document.getElementById('monitor-header-sub');
   if (sub) sub.textContent = estaciones.join(' · ');
+
+  // Publicar el color del semáforo físico de cada estación asignada
+  try{ monitorPublishSemaforo(estaciones); }catch(e){ console.warn('[Semaforo] publish:', e&&e.message); }
 }
 
 // ── Escaneo de QR de operación → acciones rápidas ────────────────────────
@@ -10602,6 +10647,14 @@ function monitorScanClose(){
 }
 function monitorScanHandle(txt){
   var parts=String(txt||'').split('|');
+  // QR PRINCIPAL de OF → reporte de avance completo (solo lectura)
+  if(parts[0]==='FTOF' && parts[1]){
+    var _ofR=(DB.activeOFs||[]).find(function(o){return o.of_sap===parts[1];});
+    if(!_ofR){ var mo=document.getElementById('mon-scan-msg'); if(mo){ mo.style.color='#f59e0b'; mo.textContent='OF no encontrada o no activa en esta tablet.'; } return; }
+    monitorScanClose();
+    showOFProgressReport(parts[1]);
+    return;
+  }
   if(parts[0]!=='FT' || parts.length<3){ var m=document.getElementById('mon-scan-msg'); if(m){ m.style.color='#f59e0b'; m.textContent='Código no reconocido. Escanea un QR generado por el sistema.'; } return; }
   var ofSap=parts[1], opId=parts[2];
   var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
@@ -10650,6 +10703,14 @@ function ftScanClose(){
 }
 function ftScanHandle(txt){
   var parts=String(txt||'').split('|');
+  // QR PRINCIPAL de OF → reporte de avance completo (solo lectura)
+  if(parts[0]==='FTOF' && parts[1]){
+    var _ofR=(DB.activeOFs||[]).find(function(o){return o.of_sap===parts[1];});
+    if(!_ofR){ var mo=document.getElementById('ft-scan-msg'); if(mo){ mo.style.color='#f59e0b'; mo.textContent='OF no encontrada o no activa hoy.'; } return; }
+    ftScanClose();
+    showOFProgressReport(parts[1]);
+    return;
+  }
   if(parts[0]!=='FT' || parts.length<3){ var m=document.getElementById('ft-scan-msg'); if(m){ m.style.color='#f59e0b'; m.textContent='Código no reconocido. Escanea un QR generado por el sistema.'; } return; }
   var ofSap=parts[1], opId=parts[2];
   var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
@@ -10723,6 +10784,72 @@ function ftScanQuickActions(ofSap, opId){
     '<div style="height:14px;"></div>'+
     body+
     '<button onclick="ftScanQAClose()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Cerrar</button>'+
+  '</div>';
+  document.body.appendChild(d);
+}
+// ── Reporte de avance completo de una OF (QR principal · solo lectura) ────
+function _ofReportClose(){ var m=document.getElementById('of-report-modal'); if(m) m.remove(); }
+function showOFProgressReport(ofSap){
+  var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
+  if(!of){ if(typeof showAppNotif==='function') showAppNotif('info','OF no encontrada o no activa.'); return; }
+  var SLBL={pending:'Pendiente',running:'En proceso',paused:'Pausada',validating:'Validación calidad',op_concluded:'Concluida (aguarda supervisor)',done:'Terminada',omitida:'Omitida',retrabajo:'Retrabajo',chatarra:'Chatarra'};
+  var SCOL={pending:'#8b949e',running:'#22c55e',paused:'#f59e0b',validating:'#a78bfa',op_concluded:'#f59e0b',done:'#22c55e',omitida:'#6e7681',retrabajo:'#ef4444',chatarra:'#ef4444'};
+  var SICO={pending:'○',running:'▶',paused:'⏸',validating:'🔍',op_concluded:'⏳',done:'✓',omitida:'🏁',retrabajo:'🔄',chatarra:'🗑'};
+  var ops=(of.ops||[]);
+  var done=0,total=0;
+  ops.forEach(function(o){ if(o.status==='omitida')return; total++; if(o.status==='done'||o.status==='op_concluded')done++; });
+  var pct=total>0?Math.round(done/total*100):0;
+  var _feRaw=of.fecha_entrega||'';
+  var _feF=''; if(_feRaw){ var _p=String(_feRaw).split('T')[0].split('-'); _feF=(_p.length===3)?(_p[2]+'/'+_p[1]+'/'+_p[0]):String(_feRaw); }
+  var _desc=of.descripcion_padre||of.descripcion||'';
+  // Lista de operaciones
+  var opsHtml='';
+  ops.forEach(function(op){
+    var st=op.status||'pending';
+    var scol=SCOL[st]||'#8b949e', slbl=SLBL[st]||st, sico=SICO[st]||'○';
+    var mins=(st==='running' && typeof getEl==='function') ? getEl(of.of_sap+'_'+op.id) : (op.mins||0);
+    var _ay=(op.ayudantes||[]).filter(Boolean);
+    opsHtml+='<div style="border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;margin-bottom:6px;background:rgba(255,255,255,.02);">'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">'+
+        '<div style="font-weight:600;font-size:.8rem;color:#e6edf3;line-height:1.3;">'+esc(op.nombre)+'</div>'+
+        '<span style="font-size:.62rem;font-weight:700;color:'+scol+';white-space:nowrap;">'+sico+' '+esc(slbl)+'</span>'+
+      '</div>'+
+      '<div style="font-size:.68rem;color:#8b949e;margin-top:2px;">📍 '+esc(op.estacion||'')+(op.tecnico?' · 👷 '+esc(op.tecnico):'')+' · 📦 '+(op.qty_total||0)+' pzas'+(mins?' · ⏱ '+fmtM(mins):'')+'</div>'+
+      (_ay.length?'<div style="font-size:.66rem;color:#8b949e;margin-top:1px;">🤝 '+esc(_ay.join(', '))+'</div>':'')+
+      ((op.fecha_inicio_real||op.fecha_fin_real||op.inicio||op.fin)?'<div style="font-size:.64rem;color:#6e7681;margin-top:1px;">'+(op.fecha_inicio_real||op.inicio?'🕐 '+esc(op.fecha_inicio_real||op.inicio):'')+(op.fecha_fin_real||op.fin?'  🏁 '+esc(op.fecha_fin_real||op.fin):'')+'</div>':'')+
+      ((st==='done'&&(op.qty_ok>0||op.qty_def>0||op.qty_chat>0||op.qty_rej>0))?'<div style="font-size:.64rem;color:#8b949e;margin-top:1px;">📦 OK:'+(op.qty_ok||0)+((op.qty_def||0)>0?' · Def:'+op.qty_def:'')+((op.qty_chat||0)>0?' · Chat:'+op.qty_chat:'')+((op.qty_rej||0)>0?' · Rec:'+op.qty_rej:'')+'</div>':'')+
+      (op.pauseReason?'<div style="font-size:.64rem;color:#f59e0b;margin-top:1px;">⏸ '+esc(op.pauseReason)+'</div>':'')+
+      (op.calResult?'<div style="font-size:.64rem;color:'+(op.calResult==='liberado'?'#22c55e':op.calResult==='rechazado'?'#ef4444':'#a78bfa')+';margin-top:1px;">🏭 '+esc(op.calResult)+(op.calComment?' — '+esc(op.calComment):'')+'</div>':'')+
+    '</div>';
+  });
+  var ex=document.getElementById('of-report-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='of-report-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:746;display:flex;align-items:center;justify-content:center;padding:14px;';
+  d.innerHTML='<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(420px,96vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">'+
+    '<div style="padding:16px 18px 12px;border-bottom:1px solid rgba(255,255,255,.08);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'+
+        '<div style="min-width:0;">'+
+          '<div style="font-size:.64rem;color:#58a6ff;font-family:monospace;">📋 AVANCE DE LA ORDEN</div>'+
+          '<div style="font-size:.9rem;font-weight:700;color:#e6edf3;margin-top:2px;">OF '+esc(of.of_sap)+((of.articulo||of.articulo_padre)?' · '+esc(of.articulo||of.articulo_padre):'')+'</div>'+
+          (_desc?'<div style="font-size:.72rem;color:#c9d1d9;margin-top:1px;line-height:1.3;">'+esc(_desc)+'</div>':'')+
+          '<div style="font-size:.68rem;color:#8b949e;margin-top:3px;">'+(of.cliente?'👤 '+esc(of.cliente):'')+(of.pedido?' · Pedido '+esc(of.pedido):'')+'</div>'+
+          (_feF?'<div style="font-size:.68rem;color:#f87171;margin-top:1px;font-weight:600;">📅 Entrega: '+esc(_feF)+'</div>':'')+
+          (of.grupo?'<div style="font-size:.66rem;color:#c084fc;margin-top:3px;font-weight:700;">🔗 '+(of.grupoModo==='lote'?'LOTE ÚNICO':'SERIE')+' '+esc(of.grupo)+'</div>':'')+
+        '</div>'+
+        '<button onclick="_ofReportClose()" style="background:none;border:none;color:#8b949e;font-size:1.3rem;cursor:pointer;line-height:1;flex-shrink:0;">✕</button>'+
+      '</div>'+
+      '<div style="margin-top:10px;">'+
+        '<div style="display:flex;justify-content:space-between;font-size:.68rem;color:#8b949e;margin-bottom:3px;"><span>Avance general</span><span style="color:#e6edf3;font-weight:700;">'+done+'/'+total+' ops · '+pct+'%</span></div>'+
+        '<div style="height:7px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:#22c55e;border-radius:4px;"></div></div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="flex:1;min-height:0;overflow:auto;padding:12px 14px;">'+
+      '<div style="font-size:.66rem;color:#8b949e;margin-bottom:6px;">Operaciones ('+ops.length+')</div>'+
+      (opsHtml||'<div style="color:#8b949e;font-size:.78rem;text-align:center;padding:14px;">Sin operaciones.</div>')+
+    '</div>'+
+    '<div style="padding:12px 14px;border-top:1px solid rgba(255,255,255,.08);">'+
+      '<button onclick="_ofReportClose()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Cerrar</button>'+
+    '</div>'+
   '</div>';
   document.body.appendChild(d);
 }

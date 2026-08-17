@@ -16140,6 +16140,49 @@ function ftRptExportPDFCodigos(){
       var perPage=cols*rowsPerPage;
       var now=new Date().toLocaleDateString('es-MX');
       function header(){ doc.setTextColor(20);doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text('Operaciones con código QR'+(filtEst?' — '+filtEst:''),mL,11); doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90);doc.text('Generado: '+now+'  ·  '+items.length+' operaciones  ·  Escanea el QR en el Monitor',mL,15.5); }
+
+      // ── Sección: QR PRINCIPAL por OF (escanear = avance completo de la OF) ──
+      var _seenOF={}, _mainOFs=[];
+      items.forEach(function(it){ var s=it.of.of_sap||''; if(s && !_seenOF[s]){ _seenOF[s]=1; _mainOFs.push(it.of); } });
+      _mainOFs.forEach(function(of){
+        try{ of._mainQr=new window.QRious({value:'FTOF|'+(of.of_sap||''),size:240,level:'M'}).toDataURL('image/png'); }catch(e){}
+        var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===of.of_sap;});
+        var d=0,t=0; if(aof){ (aof.ops||[]).forEach(function(o){ if(o.status==='omitida')return; t++; if(o.status==='done'||o.status==='op_concluded')d++; }); }
+        of._mDone=d; of._mTot=t; of._mPct=t>0?Math.round(d/t*100):0;
+      });
+      function mainHeader(){ doc.setTextColor(20);doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text('QR principal por Orden de Fabricacion',mL,11); doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90);doc.text('Escanea el QR de una OF para ver su avance completo  ·  '+_mainOFs.length+' ordenes  ·  Generado: '+now,mL,15.5); }
+      var _mCardH=56, _mRows=Math.max(1,Math.floor((pageH-mT-8)/(_mCardH+rowGap))), _mPer=cols*_mRows;
+      mainHeader();
+      _mainOFs.forEach(function(of,i){
+        var pos=i%_mPer;
+        if(i>0 && pos===0){ doc.addPage(); mainHeader(); }
+        var col=pos%cols, row=Math.floor(pos/cols);
+        var x=mL+col*(cardW+gap), y=mT+row*(_mCardH+rowGap);
+        doc.setDrawColor(124,58,237);doc.setLineWidth(0.4);doc.roundedRect(x,y,cardW,_mCardH,2,2);
+        var qs=34;
+        if(of._mainQr){ try{ doc.addImage(of._mainQr,'PNG',x+3,y+5,qs,qs); }catch(e){} }
+        doc.setTextColor(124,58,237);doc.setFontSize(6.3);doc.setFont('helvetica','bold');
+        doc.text('Escanear = avance de la OF', x+3, y+5+qs+3);
+        var _oRec=(DB.ofs||[]).find(function(o){return o.of_sap===of.of_sap;});
+        var _fe=(_oRec&&_oRec.fecha_entrega)?_oRec.fecha_entrega:(of.fecha_entrega||'');
+        var _feF=''; if(_fe){ var _pp=String(_fe).split('T')[0].split('-'); _feF=(_pp.length===3)?(_pp[2]+'/'+_pp[1]+'/'+_pp[0]):String(_fe); }
+        var _grp=_oRec?_oRec.grupo:'', _grpM=_oRec?_oRec.grupoModo:'';
+        var tx=x+3+qs+4, tw=cardW-(qs+10), ty=y+9;
+        doc.setTextColor(20);doc.setFontSize(11);doc.setFont('helvetica','bold');
+        doc.text('OF '+_trunc(of.of_sap||'',16),tx,ty); ty+=5.2;
+        doc.setFontSize(7.3);doc.setFont('helvetica','normal');doc.setTextColor(60);
+        if(of.articulo){ doc.text('Art: '+_trunc(of.articulo,26),tx,ty); ty+=3.9; }
+        if(of.descripcion){ var _dd=doc.splitTextToSize(String(of.descripcion),tw).slice(0,2); doc.text(_dd,tx,ty); ty+=_dd.length*3.8+0.4; }
+        if(of.cliente){ doc.text('Cliente: '+_trunc(of.cliente,26),tx,ty); ty+=3.9; }
+        if(_feF){ doc.setFont('helvetica','bold');doc.setTextColor(178,34,34); doc.text('Entrega: '+_feF,tx,ty); doc.setTextColor(60);doc.setFont('helvetica','normal'); ty+=4.2; }
+        if(_grp){ doc.setTextColor(124,58,237); doc.text((_grpM==='lote'?'Lote unico ':'Serie ')+_trunc(_grp,14),tx,ty); doc.setTextColor(60); ty+=3.9; }
+        doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(40);
+        doc.text('Avance: '+of._mDone+'/'+of._mTot+' ops - '+of._mPct+'%',tx,ty); ty+=1.6;
+        doc.setFillColor(225,225,225);doc.rect(tx,ty,tw,2.4,'F');
+        doc.setFillColor(34,160,70);doc.rect(tx,ty,tw*(of._mPct/100),2.4,'F');
+      });
+      doc.addPage();
+
       header();
       items.forEach(function(it,i){
         var posInPage=i%perPage;

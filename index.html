@@ -1242,10 +1242,18 @@ tr:last-child td{border-bottom:none;}
         </div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:9px;">
-        <select id="rpt-filtro-estacion" onchange="ftRptRender()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:160px;"><option value="">Todas las estaciones</option></select>
-        <select id="rpt-filtro-status" onchange="ftRptRender()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;">
-          <option value="">Todos los status</option><option value="En Proceso">En Proceso</option><option value="Planeacion">Planeación</option><option value="Terminada">Terminada</option>
-        </select>
+        <div style="position:relative;" class="rpt-ms">
+          <button type="button" id="rpt-ms-est-btn" onclick="rptMSToggle('est')" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:170px;text-align:left;cursor:pointer;">Todas las estaciones ▾</button>
+          <div id="rpt-ms-est-panel" style="display:none;position:absolute;z-index:60;top:calc(100% + 4px);left:0;background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px;max-height:280px;overflow:auto;min-width:210px;box-shadow:0 8px 24px rgba(0,0,0,.45);"></div>
+        </div>
+        <div style="position:relative;" class="rpt-ms">
+          <button type="button" id="rpt-ms-status-btn" onclick="rptMSToggle('status')" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:150px;text-align:left;cursor:pointer;">Todos los status ▾</button>
+          <div id="rpt-ms-status-panel" style="display:none;position:absolute;z-index:60;top:calc(100% + 4px);left:0;background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px;min-width:175px;box-shadow:0 8px 24px rgba(0,0,0,.45);">
+            <label style="display:flex;gap:8px;align-items:center;padding:5px 6px;font-size:.78rem;cursor:pointer;color:var(--text);"><input type="checkbox" value="En Proceso" onchange="rptMSChange('status')"> En Proceso</label>
+            <label style="display:flex;gap:8px;align-items:center;padding:5px 6px;font-size:.78rem;cursor:pointer;color:var(--text);"><input type="checkbox" value="Planeación" onchange="rptMSChange('status')"> Planeación</label>
+            <label style="display:flex;gap:8px;align-items:center;padding:5px 6px;font-size:.78rem;cursor:pointer;color:var(--text);"><input type="checkbox" value="Terminada" onchange="rptMSChange('status')"> Terminada</label>
+          </div>
+        </div>
         <input type="date" id="rpt-desde" onchange="ftRptRender()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;">
         <input type="date" id="rpt-hasta" onchange="ftRptRender()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;">
         <input type="text" id="rpt-buscar" oninput="ftRptRender()" placeholder="🔍 OF, cliente, desc..." style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:180px;">
@@ -15884,11 +15892,17 @@ async function ftRptLoad() {
     _rptData.loaded=true;
     var estacionesUnicas={};
     _rptData.ops.forEach(function(op){if(op.estacion) estacionesUnicas[op.estacion]=true;});
-    var sel=document.getElementById('rpt-filtro-estacion');
-    if(sel){
-      var prev=sel.value;sel.innerHTML='<option value="">Todas las estaciones</option>';
-      Object.keys(estacionesUnicas).sort().forEach(function(e){sel.innerHTML+='<option value="'+e+'"'+(prev===e?' selected':'')+'>'+e+'</option>';});
-      sel.innerHTML+='<option value="Sin estación"'+(prev==='Sin estación'?' selected':'')+'>📭 Sin estación</option>';
+    var panelEst=document.getElementById('rpt-ms-est-panel');
+    if(panelEst){
+      var prevSel=(window._rptSel&&window._rptSel.est)||[];
+      var _lblSty='display:flex;gap:8px;align-items:center;padding:5px 6px;font-size:.78rem;cursor:pointer;color:var(--text);';
+      var h='';
+      Object.keys(estacionesUnicas).sort().forEach(function(e){
+        var v=e.replace(/"/g,'&quot;');
+        h+='<label style="'+_lblSty+'"><input type="checkbox" value="'+v+'"'+(prevSel.indexOf(e)>=0?' checked':'')+' onchange="rptMSChange(\'est\')"> '+e+'</label>';
+      });
+      h+='<label style="'+_lblSty+'"><input type="checkbox" value="Sin estación"'+(prevSel.indexOf('Sin estación')>=0?' checked':'')+' onchange="rptMSChange(\'est\')"> 📭 Sin estación</label>';
+      panelEst.innerHTML=h;
     }
     ftRptRender();
   } catch(e){
@@ -15956,31 +15970,65 @@ function ftRptBuildData(){
   return{porEstacion:porEstacion};
 }
 
+// ── Filtros multi-selección (estación / status) ──────────────────────────
+window._rptSel = window._rptSel || { est:[], status:[] };
+function rptMSToggle(key){
+  var p=document.getElementById('rpt-ms-'+key+'-panel'); if(!p) return;
+  var mostrando = p.style.display==='block';
+  ['est','status'].forEach(function(k){ var pp=document.getElementById('rpt-ms-'+k+'-panel'); if(pp) pp.style.display='none'; });
+  p.style.display = mostrando ? 'none' : 'block';
+}
+function rptMSChange(key){
+  var p=document.getElementById('rpt-ms-'+key+'-panel'); if(!p) return;
+  var vals=[]; Array.prototype.forEach.call(p.querySelectorAll('input[type=checkbox]'), function(c){ if(c.checked) vals.push(c.value); });
+  window._rptSel[key]=vals;
+  var btn=document.getElementById('rpt-ms-'+key+'-btn');
+  if(btn){
+    var todos = key==='est' ? 'Todas las estaciones' : 'Todos los status';
+    var plural = key==='est' ? 'estaciones' : 'status';
+    btn.textContent = (vals.length ? (vals.length===1 ? vals[0] : (vals.length+' '+plural)) : todos) + ' ▾';
+  }
+  ftRptRender();
+}
+function _rptEstSel(){ return (window._rptSel&&window._rptSel.est)||[]; }
+function _rptStatusSel(){ return (window._rptSel&&window._rptSel.status)||[]; }
+function _rptEstMatch(est){ var s=_rptEstSel(); return !s.length || s.indexOf(est)>=0; }
+function _rptStatusMatch(opStatus){ var s=_rptStatusSel(); return !s.length || s.indexOf(opStatus)>=0; }
+function _rptEstLabel(){ var s=_rptEstSel(); return s.length? ' ('+s.join(', ')+')':''; }
+// Aplica TODOS los filtros (estación, status, fechas, búsqueda) y devuelve porEstacion filtrado.
+function _rptAplicarFiltros(){
+  var built=ftRptBuildData(); var porEstacion=built.porEstacion;
+  var filtDesde=(document.getElementById('rpt-desde')||{}).value||'';
+  var filtHasta=(document.getElementById('rpt-hasta')||{}).value||'';
+  var filtQ=((document.getElementById('rpt-buscar')||{}).value||'').toLowerCase().trim();
+  var out={};
+  Object.keys(porEstacion).forEach(function(est){
+    if(!_rptEstMatch(est)) return;
+    var filas=porEstacion[est].filter(function(r){
+      if(filtDesde&&r.fProg&&r.fProg<filtDesde)return false;
+      if(filtHasta&&r.fProg&&r.fProg>filtHasta)return false;
+      if(!_rptStatusMatch(r.opStatus))return false;
+      if(filtQ){var hay=(r.of.of_sap+' '+r.of.pedido+' '+r.of.cliente+' '+r.of.descripcion+' '+r.operador).toLowerCase();if(hay.indexOf(filtQ)<0)return false;}
+      return true;
+    });
+    if(filas.length) out[est]=filas;
+  });
+  return out;
+}
+// Cerrar los paneles al hacer clic fuera
+if(!window._rptMSOutsideBound){
+  window._rptMSOutsideBound=true;
+  document.addEventListener('click', function(ev){
+    if(ev.target && ev.target.closest && ev.target.closest('.rpt-ms')) return;
+    ['est','status'].forEach(function(k){ var pp=document.getElementById('rpt-ms-'+k+'-panel'); if(pp) pp.style.display='none'; });
+  });
+}
+
 function ftRptRender(){
   var loading=document.getElementById('rpt-loading');var contenido=document.getElementById('rpt-contenido');
   if(!_rptData.loaded){if(loading){loading.style.display='block';loading.innerHTML='⏳ Cargando datos...';}return;}
   if(loading)loading.style.display='none';if(!contenido)return;contenido.style.display='block';
-  var filtEst=(document.getElementById('rpt-filtro-estacion')||{}).value||'';
-  var filtStatus=(document.getElementById('rpt-filtro-status')||{}).value||'';
-  var filtDesde=(document.getElementById('rpt-desde')||{}).value||'';
-  var filtHasta=(document.getElementById('rpt-hasta')||{}).value||'';
-  var filtQ=((document.getElementById('rpt-buscar')||{}).value||'').toLowerCase().trim();
-  var built=ftRptBuildData();var porEstacion=built.porEstacion;
-  var porEstacionFiltrado={};
-  Object.keys(porEstacion).forEach(function(est){
-    if(filtEst&&est!==filtEst)return;
-    var filas=porEstacion[est].filter(function(r){
-      if(filtDesde&&r.fProg&&r.fProg<filtDesde)return false;
-      if(filtHasta&&r.fProg&&r.fProg>filtHasta)return false;
-      if(filtStatus){var fs=filtStatus.toLowerCase();
-        if(fs==='en proceso'&&r.opStatus!=='En Proceso')return false;
-        if(fs==='planeacion'&&r.opStatus!=='Planeación')return false;
-        if(fs==='terminada'&&r.opStatus!=='Terminada')return false;}
-      if(filtQ){var hay=(r.of.of_sap+' '+r.of.pedido+' '+r.of.cliente+' '+r.of.descripcion+' '+r.operador).toLowerCase();if(hay.indexOf(filtQ)<0)return false;}
-      return true;
-    });
-    if(filas.length)porEstacionFiltrado[est]=filas;
-  });
+  var porEstacionFiltrado=_rptAplicarFiltros();
   var estaciones=Object.keys(porEstacionFiltrado).sort(function(a,b){if(a==='Sin estación')return 1;if(b==='Sin estación')return -1;return a.localeCompare(b);});
   if(!estaciones.length){contenido.innerHTML='<div class="rpt-empty">No se encontraron registros con los filtros seleccionados.</div>';return;}
   var iconos={'Lavado':'💧','Pintura':'🎨','Grabado':'✏️','CNC':'⚙️','Laser':'🔆','TIG':'🔥','MIG':'🔥','Torno':'🔩','Fresadora':'🔩','Electronico':'⚡','Electronica':'⚡','Sierra':'🪚','Equipo':'🔌'};
@@ -16019,20 +16067,26 @@ function ftRptRender(){
 }
 
 function ftRptLimpiarFiltros(){
-  ['rpt-filtro-estacion','rpt-filtro-status','rpt-desde','rpt-hasta','rpt-buscar'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+  ['rpt-desde','rpt-hasta','rpt-buscar'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+  window._rptSel={est:[],status:[]};
+  ['est','status'].forEach(function(k){
+    var p=document.getElementById('rpt-ms-'+k+'-panel');
+    if(p) Array.prototype.forEach.call(p.querySelectorAll('input[type=checkbox]'),function(c){c.checked=false;});
+    var b=document.getElementById('rpt-ms-'+k+'-btn');
+    if(b) b.textContent=(k==='est'?'Todas las estaciones':'Todos los status')+' ▾';
+  });
   ftRptRender();
 }
 
 function ftRptExportPDF(){
   function doExport(){
     var jPDF=window.jspdf.jsPDF;var doc=new jPDF({orientation:'landscape',unit:'mm',format:'a4'});
-    var filtEst=(document.getElementById('rpt-filtro-estacion')||{}).value||'';
     var now=new Date().toLocaleDateString('es-MX');
-    doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text('Programa de Producción — Ordenes de Fabricación'+(filtEst?' ('+filtEst+')':''),14,14);
+    doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text('Programa de Producción — Ordenes de Fabricación'+_rptEstLabel(),14,14);
     doc.setFontSize(8);doc.setFont('helvetica','normal');doc.text('Generado: '+now,14,20);
-    var built=ftRptBuildData();var porEstacion=built.porEstacion;
+    var porEstacion=_rptAplicarFiltros();
     var estaciones=Object.keys(porEstacion).sort(function(a,b){if(a==='Sin estación')return 1;if(b==='Sin estación')return -1;return a.localeCompare(b);});
-    if(filtEst) estaciones=estaciones.filter(function(e){return e===filtEst;});
+    if(!estaciones.length){ alert('No hay registros con los filtros seleccionados.'); return; }
     var yOffset=26;
     estaciones.forEach(function(est){
       var rows=porEstacion[est];var avg=rows.length?Math.round(rows.reduce(function(s,r){return s+r.pct;},0)/rows.length):0;
@@ -16051,18 +16105,21 @@ function ftRptExportPDF(){
     });
     doc.save('Reporte_FabTracker_'+new Date().toISOString().slice(0,10)+'.pdf');
   }
-  if(window.jspdf&&window.jspdf.jsPDF){doExport();}
-  else{var s1=document.createElement('script');s1.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-    s1.onload=function(){var s2=document.createElement('script');s2.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';s2.onload=doExport;document.head.appendChild(s2);};document.head.appendChild(s1);}
+  function _safeExport(){ try{ doExport(); }catch(e){ console.error('ftRptExportPDF:', e); alert('No se pudo generar el PDF: '+(e&&e.message||e)); } }
+  // Asegurar jsPDF Y el complemento autoTable (el PDF con códigos carga solo jsPDF base).
+  function _haveAutoTable(){ try{ return !!(window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && typeof window.jspdf.jsPDF.API.autoTable==='function'); }catch(e){ return false; } }
+  function _loadAutoTable(cb){ var s2=document.createElement('script'); s2.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'; s2.onload=cb; s2.onerror=function(){ alert('No se pudo cargar el complemento de tablas (autoTable) para el PDF.'); }; document.head.appendChild(s2); }
+  if(_haveAutoTable()){ _safeExport(); }
+  else if(window.jspdf&&window.jspdf.jsPDF){ _loadAutoTable(_safeExport); }
+  else{ var s1=document.createElement('script'); s1.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s1.onload=function(){ _loadAutoTable(_safeExport); }; s1.onerror=function(){ alert('No se pudo cargar jsPDF.'); }; document.head.appendChild(s1); }
 }
 
 function ftRptExportExcel(){
   function doExcel(){
     var XLSX=window.XLSX;var wb=XLSX.utils.book_new();
-    var filtEst=(document.getElementById('rpt-filtro-estacion')||{}).value||'';
-    var built=ftRptBuildData();var porEstacion=built.porEstacion;
+    var porEstacion=_rptAplicarFiltros();
     var estaciones=Object.keys(porEstacion).sort(function(a,b){if(a==='Sin estación')return 1;if(b==='Sin estación')return -1;return a.localeCompare(b);});
-    if(filtEst) estaciones=estaciones.filter(function(e){return e===filtEst;});
+    if(!estaciones.length){ alert('No hay registros con los filtros seleccionados.'); return; }
     estaciones.forEach(function(est){
       var rows=porEstacion[est];var wsData=[];var rowMeta=[];
       wsData.push(['ESTACIÓN: '+(est||'Sin estación')]);rowMeta.push({outline:0});
@@ -16104,24 +16161,11 @@ function ftRptExportPDFCodigos(){
   function _trunc(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-1)+'.' : s; }
   function build(){
     var jPDF=window.jspdf.jsPDF; var doc=new jPDF({orientation:'portrait',unit:'mm',format:'a4'});
-    // Mismos filtros que el reporte en pantalla
-    var filtEst=(document.getElementById('rpt-filtro-estacion')||{}).value||'';
-    var filtStatus=(document.getElementById('rpt-filtro-status')||{}).value||'';
-    var filtDesde=(document.getElementById('rpt-desde')||{}).value||'';
-    var filtHasta=(document.getElementById('rpt-hasta')||{}).value||'';
-    var filtQ=((document.getElementById('rpt-buscar')||{}).value||'').toLowerCase().trim();
-    var built=ftRptBuildData(); var porEstacion=built.porEstacion;
+    // Mismos filtros (estación, status, fechas, búsqueda) que el reporte en pantalla
+    var porEstacion=_rptAplicarFiltros();
     var items=[];
     Object.keys(porEstacion).forEach(function(est){
-      if(filtEst && est!==filtEst) return;
       porEstacion[est].forEach(function(r){
-        if(filtDesde && r.fProg && r.fProg<filtDesde) return;
-        if(filtHasta && r.fProg && r.fProg>filtHasta) return;
-        if(filtStatus){var fs=filtStatus.toLowerCase();
-          if(fs==='en proceso'&&r.opStatus!=='En Proceso')return;
-          if(fs==='planeacion'&&r.opStatus!=='Planeación')return;
-          if(fs==='terminada'&&r.opStatus!=='Terminada')return;}
-        if(filtQ){var hay=(r.of.of_sap+' '+r.of.pedido+' '+r.of.cliente+' '+r.of.descripcion+' '+r.operador).toLowerCase(); if(hay.indexOf(filtQ)<0) return;}
         (r.ops||[]).slice().sort(function(a,b){return (a.secuencia||0)-(b.secuencia||0);}).forEach(function(op){
           if((op.status||'').toLowerCase()==='omitida') return;
           items.push({est:est, of:r.of, op:op});
@@ -16134,14 +16178,12 @@ function ftRptExportPDFCodigos(){
       try{ var payload='FT|'+(it.of.of_sap||'')+'|'+(it.op.op_id||''); it._qr=new window.QRious({value:payload,size:220,level:'M'}).toDataURL('image/png'); }catch(e){}
     });
     (function(){
-      var pageW=210, pageH=297, mL=10, mT=18, gap=6;
-      var cols=2, cardW=(pageW-mL*2-gap)/cols, cardH=64, rowGap=4;
-      var rowsPerPage=Math.max(1, Math.floor((pageH-mT-8)/(cardH+rowGap)));
-      var perPage=cols*rowsPerPage;
+      var pageW=210, pageH=297, mL=10, gap=6, rowGap=4;
+      var cols=2, cardW=(pageW-mL*2-gap)/cols;
+      var mTop=16, bottom=pageH-8;
       var now=new Date().toLocaleDateString('es-MX');
-      function header(){ doc.setTextColor(20);doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text('Operaciones con código QR'+(filtEst?' — '+filtEst:''),mL,11); doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90);doc.text('Generado: '+now+'  ·  '+items.length+' operaciones  ·  Escanea el QR en el Monitor',mL,15.5); }
 
-      // ── Sección: QR PRINCIPAL por OF (escanear = avance completo de la OF) ──
+      // Preparar QR principal + avance por OF
       var _seenOF={}, _mainOFs=[];
       items.forEach(function(it){ var s=it.of.of_sap||''; if(s && !_seenOF[s]){ _seenOF[s]=1; _mainOFs.push(it.of); } });
       _mainOFs.forEach(function(of){
@@ -16150,15 +16192,48 @@ function ftRptExportPDFCodigos(){
         var d=0,t=0; if(aof){ (aof.ops||[]).forEach(function(o){ if(o.status==='omitida')return; t++; if(o.status==='done'||o.status==='op_concluded')d++; }); }
         of._mDone=d; of._mTot=t; of._mPct=t>0?Math.round(d/t*100):0;
       });
-      function mainHeader(){ doc.setTextColor(20);doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text('QR principal por Orden de Fabricacion',mL,11); doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90);doc.text('Escanea el QR de una OF para ver su avance completo  ·  '+_mainOFs.length+' ordenes  ·  Generado: '+now,mL,15.5); }
-      var _mCardH=56, _mRows=Math.max(1,Math.floor((pageH-mT-8)/(_mCardH+rowGap))), _mPer=cols*_mRows;
-      mainHeader();
-      _mainOFs.forEach(function(of,i){
-        var pos=i%_mPer;
-        if(i>0 && pos===0){ doc.addPage(); mainHeader(); }
-        var col=pos%cols, row=Math.floor(pos/cols);
-        var x=mL+col*(cardW+gap), y=mT+row*(_mCardH+rowGap);
-        doc.setDrawColor(124,58,237);doc.setLineWidth(0.4);doc.roundedRect(x,y,cardW,_mCardH,2,2);
+
+      var y=mTop;
+      function pageBanner(){ doc.setTextColor(150);doc.setFontSize(8);doc.setFont('helvetica','normal'); doc.text('Reporte de codigos QR'+_rptEstLabel()+'  -  '+now, mL, 10); }
+      function newPage(){ doc.addPage(); y=mTop; pageBanner(); }
+      // Portada en la primera página
+      doc.setTextColor(20);doc.setFontSize(13);doc.setFont('helvetica','bold');
+      doc.text('Reporte de codigos QR'+_rptEstLabel(), mL, 12);
+      doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90);
+      doc.text('Generado: '+now+'  -  '+_mainOFs.length+' ordenes  -  '+items.length+' operaciones', mL, 16.5);
+      y=22;
+
+      function sectionTitle(t, sub, col){
+        if(y + (sub?12:8) > bottom){ newPage(); }
+        doc.setTextColor(col?col[0]:20, col?col[1]:20, col?col[2]:20);
+        doc.setFontSize(11);doc.setFont('helvetica','bold');
+        doc.text(t, mL, y+4);
+        if(sub){ doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(110); doc.text(sub, mL, y+8.6); y+=12; }
+        else { y+=8; }
+        doc.setTextColor(20);
+      }
+      function divider(){
+        if(y + 8 > bottom){ newPage(); return; }
+        y+=2;
+        doc.setDrawColor(150);doc.setLineWidth(0.5);
+        try{ doc.setLineDashPattern([1.5,1.5],0); }catch(e){}
+        doc.line(mL, y, pageW-mL, y);
+        try{ doc.setLineDashPattern([],0); }catch(e){}
+        y+=5;
+      }
+      function grid(list, cardH, drawOne){
+        for(var i=0;i<list.length;i++){
+          var c=i%cols;
+          if(c===0 && (y + cardH > bottom)){ newPage(); }
+          var x=mL + c*(cardW+gap);
+          drawOne(list[i], x, y, cardH);
+          if(c===cols-1){ y += cardH + rowGap; }
+        }
+        if(list.length % cols !== 0){ y += cardH + rowGap; }
+      }
+
+      function drawMain(of, x, y, cardH){
+        doc.setDrawColor(124,58,237);doc.setLineWidth(0.4);doc.roundedRect(x,y,cardW,cardH,2,2);
         var qs=34;
         if(of._mainQr){ try{ doc.addImage(of._mainQr,'PNG',x+3,y+5,qs,qs); }catch(e){} }
         doc.setTextColor(124,58,237);doc.setFontSize(6.3);doc.setFont('helvetica','bold');
@@ -16180,21 +16255,14 @@ function ftRptExportPDFCodigos(){
         doc.text('Avance: '+of._mDone+'/'+of._mTot+' ops - '+of._mPct+'%',tx,ty); ty+=1.6;
         doc.setFillColor(225,225,225);doc.rect(tx,ty,tw,2.4,'F');
         doc.setFillColor(34,160,70);doc.rect(tx,ty,tw*(of._mPct/100),2.4,'F');
-      });
-      doc.addPage();
+      }
 
-      header();
-      items.forEach(function(it,i){
-        var posInPage=i%perPage;
-        if(i>0 && posInPage===0){ doc.addPage(); header(); }
-        var col=posInPage%cols, row=Math.floor(posInPage/cols);
-        var x=mL+col*(cardW+gap), y=mT+row*(cardH+rowGap);
+      function drawOp(it, x, y, cardH){
         doc.setDrawColor(210);doc.setLineWidth(0.2);doc.roundedRect(x,y,cardW,cardH,2,2);
         var qrSize=30;
         if(it._qr){ try{ doc.addImage(it._qr,'PNG',x+3,y+4,qrSize,qrSize); }catch(e){} }
         doc.setTextColor(20);doc.setFontSize(6.5);doc.setFont('helvetica','bold');
         doc.text('OF '+(it.of.of_sap||'')+' · Op '+(it.op.op_id||''), x+3, y+4+qrSize+3);
-        // Datos de grupo (desde la data actual: DB.ofs / DB.activeOFs)
         var _ofRec=(DB.ofs||[]).find(function(o){return o.of_sap===it.of.of_sap;});
         var _grupo=_ofRec?_ofRec.grupo:'', _grupoModo=_ofRec?_ofRec.grupoModo:'';
         var _grpN=0, _grpTot=0;
@@ -16215,7 +16283,19 @@ function ftRptExportPDFCodigos(){
         var _ay=(it.op.ayudantes||[]).filter(Boolean);
         if(_ay.length){ doc.text('Ayudantes: '+_trunc(_ay.join(', '),30),tx,ty); ty+=3.9; }
         if(_grupo){ doc.setTextColor(124,58,237); doc.text('Grupo '+_grupo+' ('+(_grupoModo==='lote'?'Lote':'Serie')+'): '+_grpN+' ords - total '+_grpTot+' pzas',tx,ty); doc.setTextColor(70); ty+=3.9; }
-      });
+      }
+
+      // Sección 1: QR principal por OF
+      sectionTitle('QR principal por Orden de Fabricacion', 'Escanea el QR de una OF para ver su avance completo ('+_mainOFs.length+' ordenes)', [124,58,237]);
+      grid(_mainOFs, 52, drawMain);
+
+      // Divisor entre secciones (misma hoja si hay espacio)
+      divider();
+
+      // Sección 2: QR por operación
+      sectionTitle('QR por operacion', 'Escanea el QR de una operacion en el Monitor para las acciones rapidas ('+items.length+' operaciones)', [20,20,20]);
+      grid(items, 64, drawOp);
+
       var _fname='Operaciones_QR_'+new Date().toISOString().slice(0,10)+'.pdf';
       _ftRptShowPrintPreview(doc, _fname);
     })();

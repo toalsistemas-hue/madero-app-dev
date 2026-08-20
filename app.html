@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.77</title>
+<title>FabTracker App v2.83</title>
 
 <!-- MSAL Browser -->
 
@@ -3641,6 +3641,7 @@ function renderAppHoy(){
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
   if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
+  if(_appRole==='supervisor'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='abrirMonday()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#ff3d57,#c2185b);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📋 Abrir Monday.com</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -5670,8 +5671,10 @@ function appConfirmFinish(){
   var of=DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;if(!op)return;
   var key=ctx.of_sap+"_"+ctx.op_id;
-  // Guard: solo terminar si está corriendo o en validación
-  if(op.status!=='running' && op.status!=='validating'){
+  // Guard: permitir terminar si está corriendo, PAUSADA o en validación.
+  // El supervisor puede terminar directamente una operación pausada / fin de turno
+  // (el temporizador ya está congelado en pausa; getTotalOpMins usa el tiempo acumulado).
+  if(op.status!=='running' && op.status!=='validating' && op.status!=='paused'){
     console.warn('[Guard] appConfirmFinish: status inválido ('+op.status+')');
     closeAppModal('app-modal-finish'+(APP.currentFinishSfx||'')); return;
   }
@@ -8517,6 +8520,7 @@ async function _appLoadDataFromSP_impl() {
       sub_articulos: f.Sub_Articulos ? f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean) : [],
       ops: allOps.filter(o=>o.OF_SAP===(f.OF_SAP||f.Title)).sort((a,b)=>(a.Secuencia||0)-(b.Secuencia||0)).map(o => ({
         id: o.Op_ID||('op_'+(o.ID||'')),
+        secuencia: parseInt(o.Secuencia||0)||0,
         nombre: (o.Nombre&&o.Nombre.trim())||o.Title||'', estacion: o.Estacion||'',
         tipo: o.Tipo||o.tipo||'Secuencial',
         tecnico: o.Tecnico||'',
@@ -10367,16 +10371,20 @@ async function monitorIniciarComida(ofSap, opId){
   console.log('[Monitor] Comida iniciada:', op.nombre, hora);
 }
 function monitorBuildFilterBar(bar, estaciones) {
-  var all = _MON.filtroEstacion === '';
   var html = '';
-  var styleBase = 'padding:4px 10px;border-radius:6px;font-size:.68rem;cursor:pointer;border:1px solid rgba(255,255,255,.1);';
-  var styleActive = styleBase + 'background:#1565C0;color:#fff;font-weight:600;border-color:#1565C0;';
-  var styleInact  = styleBase + 'background:rgba(255,255,255,.06);color:#8b949e;';
-  html += '<button style="'+(all?styleActive:styleInact)+'" onclick="_MON.filtroEstacion=\'\';monitorRender();">Todas</button>';
-  estaciones.forEach(function(est) {
-    var a = (_MON.filtroEstacion === est);
-    html += '<button style="'+(a?styleActive:styleInact)+'" onclick="_MON.filtroEstacion=\''+est+'\';monitorRender();">'+est+'</button>';
-  });
+  // Chips de estación: solo tienen sentido cuando hay 2+ estaciones asignadas.
+  if ((estaciones||[]).length > 1) {
+    var all = _MON.filtroEstacion === '';
+    var styleBase = 'padding:4px 10px;border-radius:6px;font-size:.68rem;cursor:pointer;border:1px solid rgba(255,255,255,.1);';
+    var styleActive = styleBase + 'background:#1565C0;color:#fff;font-weight:600;border-color:#1565C0;';
+    var styleInact  = styleBase + 'background:rgba(255,255,255,.06);color:#8b949e;';
+    html += '<button style="'+(all?styleActive:styleInact)+'" onclick="_MON.filtroEstacion=\'\';monitorRender();">Todas</button>';
+    estaciones.forEach(function(est) {
+      var a = (_MON.filtroEstacion === est);
+      html += '<button style="'+(a?styleActive:styleInact)+'" onclick="_MON.filtroEstacion=\''+est+'\';monitorRender();">'+est+'</button>';
+    });
+  }
+  // Filtro por N° de OF: siempre disponible (una o varias estaciones).
   html += '<input id="monitor-of-filter" value="'+(_MON.filtroOF?String(_MON.filtroOF).replace(/"/g,'&quot;'):'')+'" oninput="monitorSetOFFilter(this.value)" placeholder="🔍 N° de OF" style="flex:1;min-width:120px;padding:4px 10px;border-radius:6px;font-size:.68rem;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#e6edf3;outline:none;">';
   bar.innerHTML = html;
 }
@@ -10493,9 +10501,11 @@ function monitorRender() {
     ? estaciones.filter(function(e){ return e === _MON.filtroEstacion; })
     : estaciones;
 
-  // Render filter bar
+  // Render filter bar — mostrar siempre que haya al menos una estación asignada
+  // (los chips de estación solo aplican con 2+ estaciones; el filtro por N° de OF
+  // debe estar disponible también cuando el monitor tiene una sola estación).
   var filterBar = document.getElementById('monitor-filter-bar');
-  if (filterBar && estaciones.length > 1) {
+  if (filterBar && estaciones.length >= 1) {
     filterBar.style.display = 'flex';
     monitorBuildFilterBar(filterBar, estaciones);
   } else if (filterBar) {
@@ -10545,17 +10555,35 @@ function monitorRender() {
     if (!byStation[item.op.estacion]) byStation[item.op.estacion] = [];
     byStation[item.op.estacion].push(item);
   });
-  // Sort each station's ops by cola position (ascending), then by status priority
+  // Orden por estación: primero por estado (activas arriba). Luego:
+  //  - Operaciones de la MISMA OF → SIEMPRE por Secuencia (orden de fabricación).
+  //  - Operaciones de OFs DISTINTAS → por posición de cola; si no hay cola válida,
+  //    por Secuencia como respaldo. Esto evita el parpadeo donde una operación con
+  //    secuencia posterior (p.ej. "Revisión de control") saltaba al primer lugar
+  //    porque la cola quedaba en distinto orden que la Secuencia.
   var statusOrder = { running:0, op_concluded:1, validating:2, paused:3, pending:4 };
   Object.keys(byStation).forEach(function(est) {
     byStation[est].sort(function(a, b) {
-      var colaA = (a.op.cola != null) ? a.op.cola : 999;
-      var colaB = (b.op.cola != null) ? b.op.cola : 999;
       var stA = statusOrder[a.op.status] != null ? statusOrder[a.op.status] : 9;
       var stB = statusOrder[b.op.status] != null ? statusOrder[b.op.status] : 9;
-      // Active ops first, then by cola
       if (stA !== stB) return stA - stB;
-      return colaA - colaB;
+      if (a.of.of_sap === b.of.of_sap) {
+        return (a.op.secuencia||0) - (b.op.secuencia||0);
+      }
+      var colaA = (a.op.cola && a.op.cola > 0) ? a.op.cola : 9999;
+      var colaB = (b.op.cola && b.op.cola > 0) ? b.op.cola : 9999;
+      if (colaA !== colaB) return colaA - colaB;
+      return (a.op.secuencia||0) - (b.op.secuencia||0);
+    });
+  });
+  // Numeración de cola ESTABLE para mostrar: rango relativo (1,2,3...) entre las
+  // operaciones PENDIENTES de cada estación, según el orden ya calculado arriba.
+  // Evita que el badge parpadee entre la posición absoluta de SP (#91-#94) y el rango.
+  Object.keys(byStation).forEach(function(est){
+    var _q=0;
+    byStation[est].forEach(function(item){
+      if(item.op.status==='pending'){ _q++; item.op._monQ=_q; }
+      else { item.op._monQ=null; }
     });
   });
   // Ventana de visibilidad: limitar cada estación a las N OFs más urgentes
@@ -10671,6 +10699,17 @@ function monitorScanHandle(txt){
 }
 
 // ── Escaneo de QR en FabTracker (Supervisor / Calidad de Línea) ──────────
+// Abrir la plataforma Monday.com desde el FabTracker del Supervisor.
+// Monday NO permite incrustarse en iframe (X-Frame-Options), por eso se abre con
+// window.open: en Android/PWA abre una pestaña contenida (Custom Tab) sin barra de
+// direcciones editable y con botón para volver a la app.
+function abrirMonday(){
+  var url='https://maderoeq.monday.com/';
+  try{ var w=window.open(url,'_blank','noopener'); if(!w){ window.location.href=url; } }
+  catch(e){ window.location.href=url; }
+}
+window.abrirMonday=abrirMonday;
+
 var _ftScanner=null;
 function ftScanOpen(){
   function go(){
@@ -11081,9 +11120,12 @@ function monitorRenderOp(of, op, hideActions) {
   card += esc(of.descripcion_padre||of.descripcion||'')+'</div>';
   card += '</div>';
   card += '<div style="margin-left:8px;text-align:right;flex-shrink:0;">';
-  // Queue number badge
-  if (op.cola != null) {
-    card += '<div style="background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.2);border-radius:5px;padding:1px 7px;font-size:.65rem;color:#58a6ff;font-weight:700;margin-bottom:3px;">#'+op.cola+'</div>';
+  // Queue number badge — usar el rango relativo estable calculado en monitorRender
+  // (op._monQ). Solo se muestra para operaciones pendientes; evita el parpadeo del
+  // número de cola entre la posición absoluta de SP y el rango relativo.
+  var _qNum = (op._monQ != null) ? op._monQ : ((op.status==='pending' && op.cola && op.cola>0) ? op.cola : null);
+  if (_qNum != null) {
+    card += '<div style="background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.2);border-radius:5px;padding:1px 7px;font-size:.65rem;color:#58a6ff;font-weight:700;margin-bottom:3px;">#'+_qNum+'</div>';
   }
   card += '<div style="display:inline-block;background:rgba('+
     (isRunning?'34,197,94':isConcluded?'245,158,11':isValidating?'167,139,250':isPending?'139,148,158':'251,146,60')+
@@ -13647,6 +13689,7 @@ function renderAppHoy(){
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
   if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
+  if(_appRole==='supervisor'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='abrirMonday()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#ff3d57,#c2185b);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📋 Abrir Monday.com</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -15669,8 +15712,10 @@ function appConfirmFinish(){
   var of=DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;if(!op)return;
   var key=ctx.of_sap+"_"+ctx.op_id;
-  // Guard: solo terminar si está corriendo o en validación
-  if(op.status!=='running' && op.status!=='validating'){
+  // Guard: permitir terminar si está corriendo, PAUSADA o en validación.
+  // El supervisor puede terminar directamente una operación pausada / fin de turno
+  // (el temporizador ya está congelado en pausa; getTotalOpMins usa el tiempo acumulado).
+  if(op.status!=='running' && op.status!=='validating' && op.status!=='paused'){
     console.warn('[Guard] appConfirmFinish: status inválido ('+op.status+')');
     closeAppModal('app-modal-finish'+(APP.currentFinishSfx||'')); return;
   }
@@ -17891,6 +17936,18 @@ async function appReloadOpsFromSP() {
       if(nP>eP||(nP===eP&&parseInt(o.ID||0)>parseInt(ex.ID||0))) seenR[k]=o;
     });
     var allOps = Object.values(seenR);
+    // ── Guard anti-parpadeo ────────────────────────────────────────────────
+    // Si el flujo devuelve una respuesta VACÍA o claramente PARCIAL (bastantes
+    // menos operaciones de las que ya tenemos cargadas), NO destruir el estado
+    // actual: casi siempre es un fallo transitorio de red/flujo. Sin este guard,
+    // las operaciones "desaparecen" (operadores/ayudantes/piezas) y reaparecen
+    // en el siguiente ciclo, generando intermitencia.
+    var _prevOpCount = 0;
+    (DB.activeOFs||[]).forEach(function(a){ _prevOpCount += (a.ops||[]).length; });
+    if(_prevOpCount > 0 && allOps.length < Math.max(1, Math.floor(_prevOpCount*0.5))){
+      console.warn('[Poll] Respuesta parcial/vacía de FT_Operaciones ('+allOps.length+' de ~'+_prevOpCount+' ops) — se conserva el estado actual, sin refrescar.');
+      return;
+    }
     console.log('Poll SP ops:', rawOpsR.length, '→', allOps.length,
       '| running:', allOps.filter(function(o){return o.Status==='running';}).length);
     // Debug: verificar que Qty_Chat viene en los datos
@@ -17904,7 +17961,10 @@ async function appReloadOpsFromSP() {
       var spOps = allOps.filter(function(o){ return o.OF_SAP === aof.of_sap; })
                         .sort(function(a,b){ return (a.Secuencia||0)-(b.Secuencia||0); });
       if (!spOps.length) {
-        // SP genuinely has no ops for this OF — clear in-memory ops too (don't show stale data)
+        // Anti-parpadeo: en el poll ligero NO vaciar una OF que ya tenía operaciones
+        // (posible respuesta parcial). La recarga completa (appLoadDataFromSP) se
+        // encarga de limpiar las OFs que realmente ya no tienen operaciones.
+        if (aof.ops && aof.ops.length) return;
         aof.ops = [];
         return;
       }
@@ -17918,11 +17978,13 @@ async function appReloadOpsFromSP() {
         var _effectiveStatus = _useLocalStatus ? existing._localStatus : _spStatus;
         return {
           id:          o.Op_ID || o.Title || '',
+          secuencia:   parseInt(o.Secuencia||0)||0,
           nombre:      (o.Nombre&&o.Nombre.trim()) || o.Nombre_Op || o.Title || '',
-          estacion:    o.Estacion || '',
+          estacion:    o.Estacion || (existing ? existing.estacion||'' : ''),
           tipo:        o.Tip || o.Tipo || o.tipo || 'Secuencial',
-          tecnico:     o.Tecnico || '',
-          ayudantes:   (o.Ayudantes_JSON||o.Ayudantes||'').split(',').map(function(s){return s.trim();}).filter(Boolean),
+          // Anti-parpadeo: preservar técnico/ayudantes/piezas si el registro llega sin ellos
+          tecnico:     (o.Tecnico!=null && String(o.Tecnico)!=='') ? o.Tecnico : (existing ? (existing.tecnico||'') : ''),
+          ayudantes:   (function(){ var _a=(o.Ayudantes_JSON||o.Ayudantes||'').split(',').map(function(s){return s.trim();}).filter(Boolean); return (_a.length===0 && existing && existing.ayudantes && existing.ayudantes.length) ? existing.ayudantes : _a; })(),
           status:      _effectiveStatus,
           _localStatus: _useLocalStatus ? existing._localStatus : null,
           _localStatusAt: _useLocalStatus ? existing._localStatusAt : null,

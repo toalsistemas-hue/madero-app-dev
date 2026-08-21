@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.93</title>
+<title>FabTracker App v2.94</title>
 
 <!-- MSAL Browser -->
 
@@ -10508,7 +10508,14 @@ function _monSemaforoTopic(estacion){
     .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
   return (typeof ENV!=='undefined' && ENV==='dev' ? 'dev-' : '') + 'madero-estacion-' + slug;
 }
+// ⚑ Publicación del semáforo (andón) DESDE EL MONITOR.
+// Se DESACTIVA por ahora: el color lo publicará la laptop-puente (agente_semaforo.js),
+// que aún no está instalada. Mientras esté en false, los Monitors NO envían nada a ntfy
+// para el semáforo (así no se agota la cuota diaria de ntfy.sh).
+// Para reactivar la publicación desde los Monitors: cambiar a true.
+var MON_SEMAFORO_PUBLICAR = false;
 function monitorPublishSemaforo(estaciones){
+  if(!MON_SEMAFORO_PUBLICAR) return;   // ⚑ desactivado hasta instalar la laptop-puente
   if(!estaciones || !estaciones.length) return;
   window._monSemaforoLast = window._monSemaforoLast || {};
   var now = Date.now();

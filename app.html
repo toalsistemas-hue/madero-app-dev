@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.90</title>
+<title>FabTracker App v2.91</title>
 
 <!-- MSAL Browser -->
 
@@ -734,16 +734,10 @@ tr:last-child td{border-bottom:none;}
          border:1px solid rgba(0,180,216,.22);border-radius:7px;margin-bottom:12px;">
       <div style="font-size:.72rem;color:var(--aaccent);margin-bottom:4px;font-weight:600;">🤝 Ayudante para este turno</div>
       <div id="mon-turno-ayudm-cur" style="font-size:.68rem;color:#8b949e;margin-bottom:7px;"></div>
-      <div style="display:flex;flex-direction:column;gap:5px;">
-        <label style="display:flex;align-items:center;gap:7px;font-size:.74rem;color:#e6edf3;cursor:pointer;">
-          <input type="radio" name="mon-ayudm" value="keep" checked onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Continuar con el mismo ayudante</label>
-        <label style="display:flex;align-items:center;gap:7px;font-size:.74rem;color:#e6edf3;cursor:pointer;">
-          <input type="radio" name="mon-ayudm" value="none" onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Sin ayudante</label>
-        <label style="display:flex;align-items:center;gap:7px;font-size:.74rem;color:#e6edf3;cursor:pointer;">
-          <input type="radio" name="mon-ayudm" value="replace" onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Reemplazar por otro ayudante</label>
-      </div>
+      <div id="mon-turno-ayudm-radios" style="display:flex;flex-direction:column;gap:5px;"></div>
       <select id="mon-turno-ayudm-sel" style="display:none;width:100%;margin-top:7px;background:#0d1117;
               border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:7px;color:#e6edf3;font-size:.78rem;"></select>
+      <div id="mon-turno-ayudm-err" style="font-size:.7rem;color:#f87171;margin-top:5px;min-height:12px;"></div>
     </div>
     <div id="mon-turno-pin-sec" style="display:none;margin-bottom:12px;">
       <div style="font-size:.72rem;color:#8b949e;margin-bottom:6px;" id="mon-turno-pin-label">Ingresa tu PIN de 4 dígitos</div>
@@ -12233,10 +12227,10 @@ function monTurnoOpen(of, op) {
   var _curAyud = (op.ayudantes||[]).filter(Boolean);
   _monTurnoCtx.curAyud = _curAyud.slice();
   var _amCur = document.getElementById('mon-turno-ayudm-cur');
-  if(_amCur) _amCur.textContent = _curAyud.length ? ('Ayudante actual: '+_curAyud.join(', ')) : '';
+  if(_amCur) _amCur.textContent = _curAyud.length ? ('Ayudante actual: '+_curAyud.join(', ')) : 'Esta operación no tiene ayudante asignado.';
   var _amSel = document.getElementById('mon-turno-ayudm-sel');
   if(_amSel){
-    _amSel.innerHTML = '<option value="">— Seleccionar nuevo ayudante —</option>';
+    _amSel.innerHTML = '<option value="">— Seleccionar ayudante —</option>';
     (_MON.technicians || []).forEach(function(t){
       if(t.nombre===op.tecnico) return;                 // no puede ser el operador
       if(_curAyud.indexOf(t.nombre)>=0) return;          // ya es el ayudante actual
@@ -12244,8 +12238,22 @@ function monTurnoOpen(of, op) {
     });
     _amSel.style.display='none';
   }
-  var _amRadio = document.querySelector('input[name="mon-ayudm"][value="keep"]');
-  if(_amRadio) _amRadio.checked = true;
+  // Construir opciones según si YA tiene ayudante o no
+  var _amRad = document.getElementById('mon-turno-ayudm-radios');
+  if(_amRad){
+    var _lab='display:flex;align-items:center;gap:7px;font-size:.74rem;color:#e6edf3;cursor:pointer;';
+    if(_curAyud.length){
+      _amRad.innerHTML =
+        '<label style="'+_lab+'"><input type="radio" name="mon-ayudm" value="keep" checked onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Continuar con el mismo ayudante</label>'+
+        '<label style="'+_lab+'"><input type="radio" name="mon-ayudm" value="none" onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Sin ayudante</label>'+
+        '<label style="'+_lab+'"><input type="radio" name="mon-ayudm" value="replace" onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Reemplazar por otro ayudante</label>';
+    } else {
+      // Sin ayudante previo: permitir asignar uno
+      _amRad.innerHTML =
+        '<label style="'+_lab+'"><input type="radio" name="mon-ayudm" value="none" checked onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Continuar sin ayudante</label>'+
+        '<label style="'+_lab+'"><input type="radio" name="mon-ayudm" value="add" onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Asignar un ayudante</label>';
+    }
+  }
   document.getElementById('mon-turno-traspaso-sec').style.display = 'none';
   document.getElementById('mon-turno-pin-sec').style.display = 'none';
   document.getElementById('mon-turno-tech-error').textContent = '';
@@ -12273,7 +12281,6 @@ function monTurnoSetTipo(tipo) {
   var bO = document.getElementById('mon-turno-btn-otro');
   var sec = document.getElementById('mon-turno-traspaso-sec');
   var secAM = document.getElementById('mon-turno-ayudm-sec');
-  var _hayAyud = (_monTurnoCtx.curAyud && _monTurnoCtx.curAyud.length) ? true : false;
   if (tipo === 'otro') {
     bM.style.borderColor = 'rgba(255,255,255,.15)'; bM.style.background = 'rgba(255,255,255,.04)'; bM.style.color = '#8b949e';
     bO.style.borderColor = '#c084fc'; bO.style.background = 'rgba(139,92,246,.15)'; bO.style.color = '#c084fc';
@@ -12283,14 +12290,15 @@ function monTurnoSetTipo(tipo) {
     bO.style.borderColor = 'rgba(255,255,255,.15)'; bO.style.background = 'rgba(255,255,255,.04)'; bO.style.color = '#8b949e';
     bM.style.borderColor = 'var(--aaccent)'; bM.style.background = 'rgba(0,180,216,.12)'; bM.style.color = 'var(--aaccent)';
     sec.style.display = 'none';
-    if (secAM) secAM.style.display = _hayAyud ? 'block' : 'none';  // solo si la op tiene ayudante asignado
+    if (secAM) secAM.style.display = 'block';  // mismo técnico: rotar ayudante existente o asignar uno nuevo
   }
 }
 // Muestra el select de "nuevo ayudante" solo al elegir "Reemplazar"
 function monTurnoAyudMModo() {
   var v = (document.querySelector('input[name="mon-ayudm"]:checked')||{}).value || 'keep';
   var selEl = document.getElementById('mon-turno-ayudm-sel');
-  if (selEl) selEl.style.display = (v === 'replace') ? 'block' : 'none';
+  if (selEl) selEl.style.display = (v === 'replace' || v === 'add') ? 'block' : 'none';
+  var errEl = document.getElementById('mon-turno-ayudm-err'); if (errEl) errEl.textContent = '';
 }
 
 function monTurnoConfirm() {
@@ -12313,15 +12321,15 @@ function monTurnoConfirm() {
       ctx.phase = 'pin_otro';
       document.getElementById('mon-turno-pin-label').textContent = 'PIN de ' + nuevoTech + ' para confirmar';
     } else {
-      // Mismo técnico — capturar decisión de ayudante (mantener / sin / reemplazar) antes del PIN
+      // Mismo técnico — capturar decisión de ayudante (mantener / sin / reemplazar / asignar) antes del PIN
       var _amModo = (document.querySelector('input[name="mon-ayudm"]:checked')||{}).value || 'keep';
       var _amNuevo = '';
-      if ((ctx.curAyud && ctx.curAyud.length)) {
-        if (_amModo === 'replace') {
-          _amNuevo = (document.getElementById('mon-turno-ayudm-sel')||{}).value || '';
-          if (!_amNuevo) { document.getElementById('mon-turno-tech-error').textContent = 'Selecciona el nuevo ayudante.'; return; }
-        }
-      } else { _amModo = 'keep'; }   // sin ayudante asignado: nada que rotar
+      var _amErr = document.getElementById('mon-turno-ayudm-err');
+      if (_amErr) _amErr.textContent = '';
+      if (_amModo === 'replace' || _amModo === 'add') {   // ambos requieren elegir ayudante del select
+        _amNuevo = (document.getElementById('mon-turno-ayudm-sel')||{}).value || '';
+        if (!_amNuevo) { if(_amErr) _amErr.textContent = 'Selecciona el ayudante.'; return; }
+      }
       ctx.ayudModo = _amModo; ctx.ayudNuevo = _amNuevo;
       // Mismo técnico — ask their PIN
       ctx.phase = 'pin_mismo';
@@ -12354,13 +12362,16 @@ function monTurnoConfirm() {
     if (!ctx._confirmPin && pin !== tec.pin) { document.getElementById('mon-turno-pin-error').textContent = 'PIN incorrecto.'; ctx.pinDigits = ''; monTurnoPinRefresh(); return; }
     // PIN OK — aplicar rotación de ayudante (mantener / sin / reemplazar) antes de reanudar
     var _prevAyud = (op.ayudantes||[]).slice();
-    if (ctx.ayudModo === 'none' || ctx.ayudModo === 'replace') {
+    if (ctx.ayudModo === 'none' || ctx.ayudModo === 'replace' || ctx.ayudModo === 'add') {
+      // Nuevo listado de ayudantes: 'replace'/'add' → el elegido; 'none' → ninguno
+      var _nuevos = ((ctx.ayudModo === 'replace' || ctx.ayudModo === 'add') && ctx.ayudNuevo) ? [ctx.ayudNuevo] : [];
       // Concluir el tiempo del/los ayudante(s) anterior(es) que ya no continúan
-      var _nuevos = (ctx.ayudModo === 'replace' && ctx.ayudNuevo) ? [ctx.ayudNuevo] : [];
       _prevAyud.forEach(function(a){
         if (_nuevos.indexOf(a) >= 0) return;             // sigue → no concluir
         monTurnoCerrarAyud(of.of_sap, op.id, a);          // freezar timer + marcar concluido
       });
+      // Si es un ayudante que había sido concluido antes, reactivarlo para que su timer arranque
+      if (op.ayudTimes) _nuevos.forEach(function(a){ if(op.ayudTimes[a]!==undefined) delete op.ayudTimes[a]; });
       op.ayudantes = _nuevos;
     }
     // PIN OK — resume with same tech

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.86</title>
+<title>FabTracker App v2.87</title>
 
 <!-- MSAL Browser -->
 
@@ -4477,6 +4477,7 @@ function appConfirmReanudar(){
             Estacion:  newOp.estacion||'',
             Tip:       newOp.tipo||'Secuencial',
             Tecnico:   newOp.tecnico||'',
+            Ayudantes_JSON: (newOp.ayudantes||[]).join(','),
             Status:    'pending',
             Qty_Total: newOp.qty_total||0,
             Qty_OK:    0, Qty_Def:0, Qty_Rej:0,
@@ -12366,21 +12367,36 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
     pauseReason: null, _pauseTipo: null
   };
   newOp._colaPos = op._colaPos || null; // heredar la posición de cola del turno A
+  newOp._justCreated = Date.now();      // proteger del poll hasta que SP lo confirme
   // Iniciar el cronómetro del turno B (no requiere volver a teclear el PIN al final de la lista)
   DB.timers[of.of_sap + '_' + newOp.id] = { start: Date.now(), elapsed: 0, running: true };
   // Insertar el turno B JUSTO DEBAJO de la operación de la que se generó (no al final)
   var _idxA = of.ops.indexOf(op);
   if (_idxA >= 0) of.ops.splice(_idxA + 1, 0, newOp); else of.ops.push(newOp);
+  // Snapshot de los valores CONCLUIDOS del turno A (para un PATCH explícito a prueba de carreras)
+  var _opA_spId = op._spId, _opA_fin = op.fin, _opA_ffr = op.fecha_fin_real;
+  var _opA_ok = _okA, _opA_def = _defA, _opA_min = _minA;
   // Persist
   (async function() {
     try {
       if (!appSiteId) await appGetSiteId();
       await appSaveOpToSP(of.of_sap, op.id);
+      // Garantía: PATCH explícito por _spId para que op A quede CONCLUIDA en SP aunque un
+      // poll haya reemplazado el objeto local durante los awaits (sin esto, revierte a paused).
+      if (_opA_spId && String(_opA_spId).trim() && _opA_spId !== 'null') {
+        try {
+          await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(_opA_spId), {
+            Status: 'op_concluded', PauseReason: '',
+            Qty_Total: _opA_ok + _opA_def, Qty_OK: _opA_ok, Qty_Def: _opA_def,
+            Mins: _opA_min, Fin: _opA_fin || '', Fecha_Fin: _opA_ffr || ''
+          });
+        } catch(ePatch) { console.warn('[Monitor] PATCH op A concluida:', ePatch.message||ePatch); }
+      }
       if (typeof appSaveTimerToSP === 'function') await appSaveTimerToSP(key).catch(function(){});
       var postFields = {
         Title: newOp.nombre, OF_SAP: of.of_sap, Op_ID: newOp.id,
         Estacion: newOp.estacion||'', Tip: newOp.tipo||'Secuencial',
-        Tecnico: nuevoTech, Status: 'running',
+        Tecnico: nuevoTech, Ayudantes_JSON: (nuevosAyud||[]).join(','), Status: 'running',
         Qty_Total: pzRest, Qty_OK: 0, Qty_Def: 0, Qty_Rej: 0,
         Secuencia: (op.secuencia||0), Mins: 0, Inicio: _nowT, Fin: '', Fecha_Inicio: _nowDT
       };
@@ -14492,6 +14508,7 @@ function appConfirmReanudar(){
             Estacion:  newOp.estacion||'',
             Tip:       newOp.tipo||'Secuencial',
             Tecnico:   newOp.tecnico||'',
+            Ayudantes_JSON: (newOp.ayudantes||[]).join(','),
             Status:    'pending',
             Qty_Total: newOp.qty_total||0,
             Qty_OK:    0, Qty_Def:0, Qty_Rej:0,
@@ -17991,8 +18008,9 @@ async function appReloadOpsFromSP() {
         aof.ops = [];
         return;
       }
+      var _prevOps = aof.ops || [];
       aof.ops = spOps.map(function(o) {
-        var existing = aof.ops.find(function(e){ return e.id === (o.Op_ID||o.Title||''); });
+        var existing = _prevOps.find(function(e){ return e.id === (o.Op_ID||o.Title||''); });
         // Respetar _localStatus si es reciente (<15s) — protege contra race condition donde
         // SP aún devuelve el status anterior mientras el PATCH viaja por la red
         var _spStatus = o.Status || 'pending';
@@ -18052,6 +18070,18 @@ async function appReloadOpsFromSP() {
           ayudTimes:   existing ? (existing.ayudTimes||{}) : {},
         };
       });
+      // Conservar ops recién creadas localmente (p. ej. Turno B) que SP todavía no confirma,
+      // para que no "desaparezcan" unos segundos hasta que el 'crear' termine (evita la demora).
+      _prevOps.forEach(function(pop){
+        if(!pop) return;
+        var inSp = aof.ops.some(function(x){ return x.id === pop.id; });
+        if(inSp) return;
+        var _recent = pop._justCreated && (Date.now()-pop._justCreated < 120000);
+        if((pop.isTurnoB || pop._justCreated) && _recent){
+          aof.ops.push(pop);   // se mantiene hasta que el próximo poll ya lo traiga de SP
+        }
+      });
+      aof.ops.sort(function(a,b){ return (a.secuencia||0)-(b.secuencia||0); });
       // Preservar padre y subarts que no vienen de SP
       if(existing_aof_padre !== undefined) aof.padre = existing_aof_padre;
       if(existing_aof_subarts !== undefined) aof.subarts = existing_aof_subarts;

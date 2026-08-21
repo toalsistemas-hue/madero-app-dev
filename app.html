@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.94</title>
+<title>FabTracker App v2.95</title>
 
 <!-- MSAL Browser -->
 
@@ -2375,7 +2375,7 @@ async function appNtfyGuardar() {
   if (status) status.textContent = '⏳ Enviando notificación de prueba...';
   try {
     // Enviar notificación de prueba al canal
-    var resp = await fetch('https://ntfy.sh/' + canal, {
+    var resp = await fetch(NTFY_BASE + '/' + canal, {
       method: 'POST',
       headers: {
         'Title':    'FabTracker conectado',
@@ -2682,7 +2682,7 @@ async function appNtfyNotificar(evento, data) {
     }
     _c += '\n\n[PRUEBA/DEV · evento: ' + evento + ']';
     var _t = (typeof _ntfyAsciiSafe === 'function') ? _ntfyAsciiSafe(m.titulo) : String(m.titulo||'').replace(/[^\x20-\x7E]/g,'');
-    fetch('https://ntfy.sh/' + DEV_NTFY_TOPIC, {
+    fetch(NTFY_BASE + '/' + DEV_NTFY_TOPIC, {
       method: 'POST',
       headers: { 'Title': _t, 'Priority': m.prioridad || 'high', 'Tags': 'factory,bell,test' },
       body: _c
@@ -2744,7 +2744,7 @@ async function appNtfyNotificar(evento, data) {
 
       var _ntfyCanalClean = (u.Canal_Ntfy||'').replace(/^https?:\/\/ntfy\.sh\//i,'').replace(/^ntfy\.sh\//i,'').replace(/[^a-z0-9\-_]/g,'');
       var _bodyFinal = cuerpo + (data && data.operador ? '\nOperador: ' + data.operador : '');
-      fetch('https://ntfy.sh/' + _ntfyCanalClean, {
+      fetch(NTFY_BASE + '/' + _ntfyCanalClean, {
         method: 'POST',
         headers: {
           'Title':    m.titulo,
@@ -7685,6 +7685,13 @@ try { console.info('[ENV] App móvil — entorno:', ENV, '→ sitio', ACTIVE.sit
 const DEV_NTFY_TOPIC = 'madero-notificaciones-prueba';
 function _ntfyDestino(topic){ return (ENV === 'dev') ? DEV_NTFY_TOPIC : topic; }
 
+// ⚑ SERVIDOR NTFY — un solo lugar para cambiar entre ntfy.sh y el servidor PROPIO.
+// Mientras se use ntfy.sh (plan gratuito) hay LÍMITE DIARIO por IP. Cuando la laptop-puente
+// tenga su servidor ntfy propio expuesto por HTTPS (Cloudflare Tunnel), cambiar esta URL, p.ej.:
+//   const NTFY_BASE = 'https://ntfy.maderoeq.com';
+// (SIN barra final). Los nombres de los tópicos/canales NO cambian.
+const NTFY_BASE = 'https://ntfy.sh';
+
 // ── Distintivo visual del ambiente de PRUEBA (solo en dev) ──────────
 // Etiqueta fija visible en login y ya dentro de la app. No bloquea clics.
 if (ENV === 'dev') {
@@ -10535,7 +10542,7 @@ function monitorPublishSemaforo(estaciones){
     window._monSemaforoLast[est] = { color: color, at: now };
     var topic = _monSemaforoTopic(est);
     try{
-      fetch('https://ntfy.sh/'+topic, {
+      fetch(NTFY_BASE+'/'+topic, {
         method:'POST',
         headers:{ 'Title':'semaforo', 'Tags': color, 'Priority':'min' },
         body: color
@@ -11667,7 +11674,7 @@ function _monSopAddMsg(texto, quien){ // quien: 'op' (operador) | 'sop' (asisten
 
 function _monSopSubscribe(topic){
   try{
-    var es = new EventSource('https://ntfy.sh/'+encodeURIComponent(topic)+'/sse');
+    var es = new EventSource(NTFY_BASE+'/'+encodeURIComponent(topic)+'/sse');
     es.onmessage = function(ev){
       try{
         var d = JSON.parse(ev.data);
@@ -11747,13 +11754,13 @@ async function monitorSoporteEnviar(){
       (op && op.tecnico ? '\nOperador: '+op.tecnico : '')+
       '\n\nResponder al operador en el tópico: '+st.topic;
     try{
-      await fetch('https://ntfy.sh/'+_ntfyDestino(MON_SOPORTE_TOPIC), {
+      await fetch(NTFY_BASE+'/'+_ntfyDestino(MON_SOPORTE_TOPIC), {
         method: 'POST',
         headers: {
           'Title':    _ntfyAsciiSafe('Soporte Monitor' + (estacion ? ' - ' + estacion : '')),
           'Priority': 'high',
           'Tags':     'sos,factory',
-          'Actions':  'view, Responder al operador, https://ntfy.sh/'+st.topic
+          'Actions':  'view, Responder al operador, '+NTFY_BASE+'/'+st.topic
         },
         body: cuerpo
       });
@@ -11763,7 +11770,7 @@ async function monitorSoporteEnviar(){
 
   // Publicar el mensaje del operador en el tópico de la conversación (para el asistente)
   try{
-    var r = await fetch('https://ntfy.sh/'+encodeURIComponent(st.topic), {
+    var r = await fetch(NTFY_BASE+'/'+encodeURIComponent(st.topic), {
       method: 'POST',
       headers: { 'Title': _ntfyAsciiSafe('Operador'+(opNombre?' '+opNombre:'')), 'Tags':'bust_in_silhouette' },
       body: texto

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.92</title>
+<title>FabTracker App v2.93</title>
 
 <!-- MSAL Browser -->
 
@@ -2686,8 +2686,12 @@ async function appNtfyNotificar(evento, data) {
       method: 'POST',
       headers: { 'Title': _t, 'Priority': m.prioridad || 'high', 'Tags': 'factory,bell,test' },
       body: _c
-    }).then(function(){ console.log('[ntfy app] DEV →', DEV_NTFY_TOPIC, '· evento:', evento); })
-      .catch(function(e){ console.warn('[ntfy app] DEV error:', e.message); });
+    }).then(function(resp){
+        if (resp && resp.ok) { console.log('[ntfy app] DEV ✓ →', DEV_NTFY_TOPIC, '· evento:', evento); }
+        else { console.warn('[ntfy app] DEV ✗ ntfy HTTP', resp&&resp.status, '· evento:', evento,
+                 (resp&&resp.status===429) ? '→ LÍMITE DIARIO de ntfy.sh alcanzado (plan gratuito)' : ''); }
+      })
+      .catch(function(e){ console.warn('[ntfy app] DEV error de red:', e.message); });
     return;
   }
   var destRoles = _APP_NTFY_DEST_ROLES[evento] || [];
@@ -2748,8 +2752,12 @@ async function appNtfyNotificar(evento, data) {
           'Tags':     'factory,bell'
         },
         body: _bodyFinal
-      }).then(function(){ console.log('[ntfy app] ✓', u.Canal_Ntfy); })
-        .catch(function(e){ console.warn('[ntfy app] Error:', u.Canal_Ntfy, e.message); });
+      }).then(function(resp){
+          if (resp && resp.ok) { console.log('[ntfy app] ✓', u.Canal_Ntfy); }
+          else { console.warn('[ntfy app] ✗ ntfy HTTP', resp&&resp.status, u.Canal_Ntfy,
+                   (resp&&resp.status===429) ? '→ LÍMITE DIARIO de ntfy.sh alcanzado (plan gratuito)' : ''); }
+        })
+        .catch(function(e){ console.warn('[ntfy app] Error de red:', u.Canal_Ntfy, e.message); });
     });
     console.log('[ntfy app] Canales encontrados para', evento, ':', encontrados, '| puestoRolMap:', JSON.stringify(puestoRolMap));
     if (encontrados === 0) {
@@ -12548,16 +12556,17 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
         of_sap: of.of_sap, nuevo_tech: nuevoTech, pzas: pzRest,
         op_name: op.nombre, op_name_b: newOp.nombre
       });
-      // Notificar al supervisor: la operación original quedó CONCLUIDA (operador) y falta validar/terminar
-      if(typeof appNtfyNotificar==='function') appNtfyNotificar('mon_turno_b_val', {
-        of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion||'', operador: _opA_tec||'',
-        nota: 'Turno B para '+nuevoTech+'. Validar/terminar la operación original ('+(_opA_ok+_opA_def)+' pzas)'
-      }).catch(function(){});
     } catch(e) { console.warn('[Monitor] Traspaso SP error:', e.message||e); }
   })();
   if (newOp.estacion) sqAddOF(of.of_sap);
   sqSyncColaNumbers();
   monitorRender();
+  // Notificar al supervisor (síncrono, no depende del guardado en SP): la operación original
+  // quedó CONCLUIDA por el operador y falta validarla/terminarla.
+  if(typeof appNtfyNotificar==='function') appNtfyNotificar('mon_turno_b_val', {
+    of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion||'', operador: _opA_tec||'',
+    nota: 'Turno B para '+nuevoTech+'. Validar/terminar la operación original ('+(_opA_ok+_opA_def)+' pzas)'
+  }).catch(function(){});
 }
 
 // ── Gear menu ─────────────────────────────────────────────────────

@@ -14082,14 +14082,23 @@ function _manoObraBuild(filtTech, filtFrom, filtTo, filtOf, filtPedT){
       });
       // Turno actual. Mins puede ser el TOTAL (turnos previos + actual) o SOLO el turno actual.
       var prevMins=(op.turnos||[]).reduce(function(s,x){return s+(x.mins||0);},0);
-      var curMins = _esFinTurnoPausa ? 0 : (((op.mins||0)>=prevMins) ? Math.max(0,(op.mins||0)-prevMins) : (op.mins||0));
+      var curMins;
+      if(_esFinTurnoPausa){
+        curMins = 0; // en pausa de fin de turno el tiempo ya está en el último turno
+      } else if(op.status==='running'){
+        // En proceso: solo el tiempo del turno actual guardado (Mins - turnos previos).
+        // Si Mins quedó con un valor previo (obsoleto), no mostrarlo → 0 hasta que el turno cierre.
+        curMins = Math.max(0, (op.mins||0) - prevMins);
+      } else {
+        curMins = ((op.mins||0)>=prevMins) ? Math.max(0,(op.mins||0)-prevMins) : (op.mins||0);
+      }
       var prevOk=(op.turnos||[]).reduce(function(s,x){return s+(x.qty_ok||0);},0);
       var prevDef=(op.turnos||[]).reduce(function(s,x){return s+(x.qty_def||0);},0);
       var curOk=Math.max(0,(op.qty_ok||0)-prevOk);
       var curDef=Math.max(0,(op.qty_def||0)-prevDef);
       var curFechaStr=(op.fechaInicioTurnoActual&&String(op.fechaInicioTurnoActual).split(' ')[0]) || (op.fecha_inicio_real&&String(op.fecha_inicio_real).split(' ')[0]) || (op.fecha_fin_real&&String(op.fecha_fin_real).split(' ')[0]) || '';
       var nf2=_manoObraNormFecha(curFechaStr);
-      if((curMins>0 || !(op.turnos&&op.turnos.length)) && nf2){
+      if((curMins>0 || op.status==='running' || !(op.turnos&&op.turnos.length)) && nf2){
         var _ffObj=_manoObraNormFecha((op.fecha_fin_real&&String(op.fecha_fin_real).split(' ')[0])||'');
         var _b2={of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoCol:est.col,
                  iniF:nf2.disp, iniH:(op.inicioTurnoActual||op.inicio||''), finF:(op.fin?((_ffObj?_ffObj.disp:nf2.disp)):''), finH:(op.fin||'')};

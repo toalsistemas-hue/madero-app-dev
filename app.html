@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.85</title>
+<title>FabTracker App v2.86</title>
 
 <!-- MSAL Browser -->
 
@@ -4540,6 +4540,7 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   var timerActual=DB.timers[key]||{elapsed:0};
   var prevTurnosMs=(timerActual._prevTurnosMs||0)+(esFin?(timerActual.elapsed||0):0);
   DB.timers[key]={start:Date.now(),elapsed:esFin?0:(timerActual.elapsed||0),running:true,_prevTurnosMs:prevTurnosMs};
+  if(esFin) op.mins=0; // el turno nuevo arranca en 0 (el tiempo previo ya quedó en op.turnos)
   op.status='running';op.pauseReason=null;op._pauseTipo=null;
   op.inicio=op.inicio||nowT(); // mantener inicio original del turno A
   // B2 fix: registrar inicio real del turno actual (turno B, C, ...)
@@ -14552,6 +14553,7 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   var timerActual=DB.timers[key]||{elapsed:0};
   var prevTurnosMs=(timerActual._prevTurnosMs||0)+(esFin?(timerActual.elapsed||0):0);
   DB.timers[key]={start:Date.now(),elapsed:esFin?0:(timerActual.elapsed||0),running:true,_prevTurnosMs:prevTurnosMs};
+  if(esFin) op.mins=0; // el turno nuevo arranca en 0 (el tiempo previo ya quedó en op.turnos)
   op.status='running';op.pauseReason=null;op._pauseTipo=null;
   op.inicio=op.inicio||nowT(); // mantener inicio original del turno A
   // B2 fix: registrar inicio real del turno actual

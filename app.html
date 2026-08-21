@@ -3641,7 +3641,6 @@ function renderAppHoy(){
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
   if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
-  if(_appRole==='supervisor'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='abrirMonday()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#ff3d57,#c2185b);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📋 Abrir Monday.com</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -4440,6 +4439,7 @@ function appConfirmReanudar(){
     var newOp={
       id:_turnoOpId,
       nombre:op.nombre+' (Turno B)',
+      secuencia:(op.secuencia||0),
       estacion:op.estacion,
       tecnico:nuevoTech,ayudantes:nuevosAyud,
       qty_total:pzRest,qty_ok:0,qty_def:0,qty_rej:0,qty_chat:0,
@@ -4450,8 +4450,9 @@ function appConfirmReanudar(){
       needsCal:op.needsCal,calResult:null,calComment:null,pauseReason:null,
       _pauseTipo:null
     };
-    // Insert al FINAL (no después de op A — así mantiene el orden correcto)
-    of.ops.push(newOp);
+    // Insertar el turno B JUSTO DEBAJO de la operación de la que se generó (no al final).
+    var _idxA = of.ops.indexOf(op);
+    if(_idxA>=0) of.ops.splice(_idxA+1, 0, newOp); else of.ops.push(newOp);
     DB.notifications.push({
       id:'turnoB_'+Date.now(),type:'turnoB',of_sap:ctx.of_sap,op_id:newOp.id,
       msg:'🤝 Turno B: '+pzRest+' pzas de "'+op.nombre+'" asignadas a '+(nuevoTech||'técnico por asignar'),
@@ -4479,7 +4480,7 @@ function appConfirmReanudar(){
             Status:    'pending',
             Qty_Total: newOp.qty_total||0,
             Qty_OK:    0, Qty_Def:0, Qty_Rej:0,
-            Secuencia: seqNum,
+            Secuencia: (op.secuencia||0),
             Mins:      0,
             Inicio:    '', Fin:''
           };
@@ -10699,17 +10700,6 @@ function monitorScanHandle(txt){
 }
 
 // ── Escaneo de QR en FabTracker (Supervisor / Calidad de Línea) ──────────
-// Abrir la plataforma Monday.com desde el FabTracker del Supervisor.
-// Monday NO permite incrustarse en iframe (X-Frame-Options), por eso se abre con
-// window.open: en Android/PWA abre una pestaña contenida (Custom Tab) sin barra de
-// direcciones editable y con botón para volver a la app.
-function abrirMonday(){
-  var url='https://maderoeq.monday.com/';
-  try{ var w=window.open(url,'_blank','noopener'); if(!w){ window.location.href=url; } }
-  catch(e){ window.location.href=url; }
-}
-window.abrirMonday=abrirMonday;
-
 var _ftScanner=null;
 function ftScanOpen(){
   function go(){
@@ -12335,37 +12325,46 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
   // Candado local: evitar que el poll/reload revierta 'done' al 'paused' de la pausa de fin de turno
   op._localStatus = 'done'; op._localStatusAt = Date.now();
   op._pauseTipo = null; op.pauseReason = null;
-  // Create new op B
+  // Create new op B — se INICIA de inmediato (el nuevo operador ya tecleó su PIN)
   var _turnoIdx  = of.ops.length;
   var _turnoOpId = 'op_' + of.of_sap + '_turnoB' + _turnoIdx;
+  var _nowT = nowT();
+  var _nowDT = (typeof nowDT==='function') ? nowDT() : _nowT;
   var newOp = {
     id: _turnoOpId, nombre: op.nombre + ' (Turno B)',
+    secuencia: (op.secuencia||0),   // hereda la secuencia del turno A → queda en su lugar
     estacion: op.estacion, tecnico: nuevoTech, ayudantes: nuevosAyud,
     qty_total: pzRest, qty_ok: 0, qty_def: 0, qty_rej: 0, qty_chat: 0,
-    tipo: op.tipo, status: 'pending',
-    inicio: null, fin: null, mins: 0,
+    tipo: op.tipo, status: 'running',
+    inicio: _nowT, fin: null, mins: 0,
+    fecha_inicio_real: _nowDT, inicioTurnoActual: _nowT, fechaInicioTurnoActual: _nowDT,
+    _localStatus: 'running', _localStatusAt: Date.now(),
     isTemplate: false, isRetrabajo: false, isTurnoB: true, turnoARef: op.id,
     needsCal: op.needsCal, calResult: null, calComment: null,
     pauseReason: null, _pauseTipo: null
   };
   newOp._colaPos = op._colaPos || null; // heredar la posición de cola del turno A
-  of.ops.push(newOp);
+  // Iniciar el cronómetro del turno B (no requiere volver a teclear el PIN al final de la lista)
+  DB.timers[of.of_sap + '_' + newOp.id] = { start: Date.now(), elapsed: 0, running: true };
+  // Insertar el turno B JUSTO DEBAJO de la operación de la que se generó (no al final)
+  var _idxA = of.ops.indexOf(op);
+  if (_idxA >= 0) of.ops.splice(_idxA + 1, 0, newOp); else of.ops.push(newOp);
   // Persist
   (async function() {
     try {
       if (!appSiteId) await appGetSiteId();
       await appSaveOpToSP(of.of_sap, op.id);
       if (typeof appSaveTimerToSP === 'function') await appSaveTimerToSP(key).catch(function(){});
-      var seqNum = of.ops.length;
       var postFields = {
         Title: newOp.nombre, OF_SAP: of.of_sap, Op_ID: newOp.id,
         Estacion: newOp.estacion||'', Tip: newOp.tipo||'Secuencial',
-        Tecnico: nuevoTech, Status: 'pending',
+        Tecnico: nuevoTech, Status: 'running',
         Qty_Total: pzRest, Qty_OK: 0, Qty_Def: 0, Qty_Rej: 0,
-        Secuencia: seqNum, Mins: 0, Inicio: '', Fin: ''
+        Secuencia: (op.secuencia||0), Mins: 0, Inicio: _nowT, Fin: '', Fecha_Inicio: _nowDT
       };
       var res = await appFlowEscribir('FT_Operaciones', 'crear', 0, postFields);
       newOp._spId = res && res.id ? res.id : null;
+      if (typeof appSaveTimerToSP === 'function') appSaveTimerToSP(of.of_sap + '_' + newOp.id).catch(function(){});
       if (newOp.estacion) {
         var _posB = op._colaPos || 999; // heredar la posición del turno A para que quede en el lugar correcto
         appFlowEscribir('FT_Cola_Estacion', 'crear', 0, {
@@ -13689,7 +13688,6 @@ function renderAppHoy(){
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
   if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
-  if(_appRole==='supervisor'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='abrirMonday()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#ff3d57,#c2185b);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📋 Abrir Monday.com</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -14434,6 +14432,7 @@ function appConfirmReanudar(){
     var newOp={
       id:_turnoOpId,
       nombre:op.nombre+' (Turno B)',
+      secuencia:(op.secuencia||0),
       estacion:op.estacion,
       tecnico:nuevoTech,ayudantes:nuevosAyud,
       qty_total:pzRest,qty_ok:0,qty_def:0,qty_rej:0,qty_chat:0,
@@ -14444,8 +14443,9 @@ function appConfirmReanudar(){
       needsCal:op.needsCal,calResult:null,calComment:null,pauseReason:null,
       _pauseTipo:null
     };
-    // Insert al FINAL (no después de op A — así mantiene el orden correcto)
-    of.ops.push(newOp);
+    // Insertar el turno B JUSTO DEBAJO de la operación de la que se generó (no al final).
+    var _idxA = of.ops.indexOf(op);
+    if(_idxA>=0) of.ops.splice(_idxA+1, 0, newOp); else of.ops.push(newOp);
     DB.notifications.push({
       id:'turnoB_'+Date.now(),type:'turnoB',of_sap:ctx.of_sap,op_id:newOp.id,
       msg:'🤝 Turno B: '+pzRest+' pzas de "'+op.nombre+'" asignadas a '+(nuevoTech||'técnico por asignar'),
@@ -14473,7 +14473,7 @@ function appConfirmReanudar(){
             Status:    'pending',
             Qty_Total: newOp.qty_total||0,
             Qty_OK:    0, Qty_Def:0, Qty_Rej:0,
-            Secuencia: seqNum,
+            Secuencia: (op.secuencia||0),
             Mins:      0,
             Inicio:    '', Fin:''
           };

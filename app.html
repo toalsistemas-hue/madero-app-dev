@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.87</title>
+<title>FabTracker App v2.88</title>
 
 <!-- MSAL Browser -->
 
@@ -8568,17 +8568,29 @@ async function _appLoadDataFromSP_impl() {
           return m?parseInt(m[1]):null;
         })(),
         turnos: (function(){
+          var _sp=[];
           try {
             var d=JSON.parse(o.TurnoData||'');
-            if(d._turnosArray && d.turnos) return d.turnos;
-            if(d._turnoData){
-              return [{turno:1, tecnico:d.tecnico||'', mins:d.mins||0,
+            if(d._turnosArray && d.turnos) _sp=d.turnos;
+            else if(d._turnoData){
+              _sp=[{turno:1, tecnico:d.tecnico||'', mins:d.mins||0,
                 qty_ok:d.qty_ok||0, qty_def:d.qty_def||0, qty_rest:d.qty_rest||0,
                 inicio:d.inicio||'', fin:d.fin||'', fecha:''}];
             }
           } catch(e){}
-          return [];
+          // Anti-carrera: conservar segmentos locales si son MÁS y el cambio es reciente (SP puede ir rezagado)
+          var _ex=o._ld_exOp;
+          if(_ex && _ex.turnos && _ex.turnos.length>_sp.length && _ex._localStatusAt && (Date.now()-_ex._localStatusAt<120000)) return _ex.turnos;
+          return _sp;
         })(),
+        // Recuperar inicio del turno actual desde TurnoData; mientras corre, el valor local manda
+        inicioTurnoActual: (function(){
+          var _spTA=null; try{var d=JSON.parse(o.TurnoData||'');_spTA=d._inicioTurnoActual||null;}catch(e){}
+          var _ex=o._ld_exOp;
+          if(_ex && _ex.inicioTurnoActual && _ex.status==='running') return _ex.inicioTurnoActual;
+          return _spTA || (_ex?_ex.inicioTurnoActual:null);
+        })(),
+        fechaInicioTurnoActual: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._fechaInicioTurnoActual||'';}catch(e){return '';} })(),
         valcalNote: o.ValCalNote||null, calResult: o.CalResult||null,
         calComment: o.CalComment||null,
         calLineaComment: o.CalLineaComment||null, supFinComment: o.SupFinComment||null, analistaComment: o.AnalistaComment||null, omitComment: o.OmitComment||null,
@@ -11802,8 +11814,11 @@ async function monFinTurnoConfirm(){
     fecha_inicio: op.fechaInicioTurnoActual || (op.fecha_inicio_real ? String(op.fecha_inicio_real).split(' ')[0] : '') || new Date().toLocaleDateString('es-MX'),
     fecha_fin: new Date().toLocaleDateString('es-MX')
   };
-  var existIdx = op.turnos.findIndex(function(t){ return t.inicio===turnoActual.inicio; });
-  if(existIdx>=0) op.turnos[existIdx]=turnoActual; else op.turnos.push(turnoActual);
+  // Siempre AGREGAR un segmento nuevo por cada fin de turno. El guard de status de arriba
+  // (op.status!=='running' ⇒ return) ya impide la doble confirmación del mismo turno, así que
+  // NO hay que deduplicar por hora de inicio: eso provocaba que un turno sobrescribiera a otro
+  // cuando las horas coincidían (p. ej. al reanudar con el mismo operador) y perdía el conteo.
+  op.turnos.push(turnoActual);
   op.status = 'paused';
   op.pauseReason = '🌙 Fin de turno — '+reason+(pzProd>0?' · '+pzProd+' pzas completadas, '+pzRest+' restantes':'');
   op._pauseTipo = 'turno';
@@ -14327,10 +14342,10 @@ function appConfirmPause(){
       fecha_inicio: op.fechaInicioTurnoActual || (op.fecha_inicio_real ? String(op.fecha_inicio_real).split(' ')[0] : '') || new Date().toLocaleDateString('es-MX'),
       fecha_fin: new Date().toLocaleDateString('es-MX')
     };
-    // Evitar duplicados — si ya existe un turno con el mismo inicio, actualizarlo
-    var existIdx=op.turnos.findIndex(function(t){return t.inicio===turnoActual.inicio;});
-    if(existIdx>=0) op.turnos[existIdx]=turnoActual;
-    else op.turnos.push(turnoActual);
+    // Siempre AGREGAR un segmento nuevo por cada fin de turno. El guard de status de arriba ya
+    // impide la doble confirmación del mismo turno, así que no se deduplica por hora de inicio
+    // (eso hacía que un turno sobrescribiera a otro cuando coincidían las horas).
+    op.turnos.push(turnoActual);
     op.status='paused';
     op.pauseReason='🌙 Fin de turno — '+reason+(pzProd>0?' · '+pzProd+' pzas completadas, '+pzRest+' restantes':'');
     op._pauseTipo='turno';
@@ -18048,9 +18063,17 @@ async function appReloadOpsFromSP() {
           pauseReason: o.PauseReason || '',
           _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (_effectiveStatus==='paused'?'normal':null),
           _pzasRestantes: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos&&d.turnos.length)return d.turnos[d.turnos.length-1].qty_rest||0;if(d._turnoData)return d.qty_rest||0;}catch(e){}; var m=(o.PauseReason||'').match(/(\d+) restantes/);return m?parseInt(m[1]):null; })(),
-          turnos: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)return d.turnos;if(d._turnoData)return [{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){}; return []; })(),
+          turnos: (function(){ var _sp=[]; try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)_sp=d.turnos;else if(d._turnoData)_sp=[{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){};
+            // Anti-carrera: si localmente ya hay MÁS segmentos de turno y el cambio es reciente, conservarlos
+            // (SP puede ir rezagado tras un fin de turno y "perdería" el último segmento recién agregado).
+            if(existing && existing.turnos && existing.turnos.length>_sp.length && existing._localStatusAt && (Date.now()-existing._localStatusAt<120000)) return existing.turnos;
+            return _sp; })(),
           // B2 fix: recuperar inicioTurnoActual desde TurnoData al recargar desde SP
-          inicioTurnoActual: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._inicioTurnoActual||null;}catch(e){return null;} })(),
+          inicioTurnoActual: (function(){ var _spTA=null; try{var d=JSON.parse(o.TurnoData||'');_spTA=d._inicioTurnoActual||null;}catch(e){};
+            // Mientras la op está EN PROCESO, el inicio del turno actual local es la fuente de verdad
+            // (evita que un poll con TurnoData rezagada lo borre y colisionen las horas de los segmentos).
+            if(_effectiveStatus==='running' && existing && existing.inicioTurnoActual) return existing.inicioTurnoActual;
+            return _spTA || (existing?existing.inicioTurnoActual:null); })(),
           fechaInicioTurnoActual: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._fechaInicioTurnoActual||'';}catch(e){return '';} })(),
           _hadNormalPause: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._hadNormalPause===true;}catch(e){return false;} })(),
           needsCal:    o.NeedsCal === true,

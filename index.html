@@ -14066,18 +14066,23 @@ function _manoObraBuild(filtTech, filtFrom, filtTo, filtOf, filtPedT){
       var worked = (op.mins||0)>0 || (op.turnos&&op.turnos.length>0) || ['running','paused','validating','op_concluded','done'].indexOf(op.status)>=0;
       if(!worked) return;
       var est=_manoObraEstado(op);
-      // Turnos previos (fin de turno) — cada uno con su fecha y minutos
-      (op.turnos||[]).forEach(function(seg){
-        var nf=_manoObraNormFecha(seg.fecha||seg.fecha_inicio||'');
+      // ¿La operación está en pausa de FIN DE TURNO? En ese caso op.mins ya equivale al
+      // último turno (que ya está en op.turnos), así que el "turno actual" no debe contarse
+      // otra vez (evita la fila duplicada con el mismo tiempo y sin piezas).
+      var _esFinTurnoPausa = (op.status==='paused') && ((op._pauseTipo==='turno') || ((op.pauseReason||'').indexOf('🌙')>=0) || ((op.pauseReason||'').indexOf('Fin de turno')>=0));
+      // Turnos previos (fin de turno) — numerados, con su fecha/hora de inicio y fin
+      (op.turnos||[]).forEach(function(seg, _si){
+        var nf=_manoObraNormFecha(seg.fecha_inicio||seg.fecha||'');
         if(!nf) return;
-        addEntry(seg.tecnico||op.tecnico||'', nf, {of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoLbl:'🌙 Fin de turno', estadoCol:'var(--accent-l)', rol:'principal', mins:(seg.mins||0), qty_ok:(seg.qty_ok||0), qty_def:(seg.qty_def||0)});
-        (seg.ayudantes||[]).forEach(function(a){ addEntry(a, nf, {of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoLbl:'🌙 Fin de turno (ayud)', estadoCol:'var(--accent-l)', rol:'ayudante', mins:(seg.mins||0), qty_ok:0, qty_def:0}); });
+        var _nff=_manoObraNormFecha(seg.fecha_fin||seg.fecha||'');
+        var _lbl='🌙 Fin de turno '+(seg.turno||(_si+1));
+        var _b={of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoCol:'var(--accent-l)', iniF:nf.disp, iniH:(seg.inicio||''), finF:(_nff?_nff.disp:nf.disp), finH:(seg.fin||'')};
+        addEntry(seg.tecnico||op.tecnico||'', nf, Object.assign({}, _b, {estadoLbl:_lbl, rol:'principal', mins:(seg.mins||0), qty_ok:(seg.qty_ok||0), qty_def:(seg.qty_def||0)}));
+        (seg.ayudantes||[]).forEach(function(a){ addEntry(a, nf, Object.assign({}, _b, {estadoLbl:_lbl+' (ayud)', rol:'ayudante', mins:(seg.mins||0), qty_ok:0, qty_def:0})); });
       });
-      // Turno actual. Mins puede ser el TOTAL (turnos previos + actual) o SOLO el turno
-      // actual (según cómo se cerró/reanudó/terminó la operación). Si Mins < suma de
-      // turnos previos, entonces Mins ya representa solo el turno actual (no restar).
+      // Turno actual. Mins puede ser el TOTAL (turnos previos + actual) o SOLO el turno actual.
       var prevMins=(op.turnos||[]).reduce(function(s,x){return s+(x.mins||0);},0);
-      var curMins=((op.mins||0)>=prevMins) ? Math.max(0,(op.mins||0)-prevMins) : (op.mins||0);
+      var curMins = _esFinTurnoPausa ? 0 : (((op.mins||0)>=prevMins) ? Math.max(0,(op.mins||0)-prevMins) : (op.mins||0));
       var prevOk=(op.turnos||[]).reduce(function(s,x){return s+(x.qty_ok||0);},0);
       var prevDef=(op.turnos||[]).reduce(function(s,x){return s+(x.qty_def||0);},0);
       var curOk=Math.max(0,(op.qty_ok||0)-prevOk);
@@ -14085,10 +14090,13 @@ function _manoObraBuild(filtTech, filtFrom, filtTo, filtOf, filtPedT){
       var curFechaStr=(op.fechaInicioTurnoActual&&String(op.fechaInicioTurnoActual).split(' ')[0]) || (op.fecha_inicio_real&&String(op.fecha_inicio_real).split(' ')[0]) || (op.fecha_fin_real&&String(op.fecha_fin_real).split(' ')[0]) || '';
       var nf2=_manoObraNormFecha(curFechaStr);
       if((curMins>0 || !(op.turnos&&op.turnos.length)) && nf2){
-        addEntry(op.tecnico||'', nf2, {of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoLbl:est.lbl, estadoCol:est.col, rol:'principal', mins:curMins, qty_ok:curOk, qty_def:curDef});
+        var _ffObj=_manoObraNormFecha((op.fecha_fin_real&&String(op.fecha_fin_real).split(' ')[0])||'');
+        var _b2={of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoCol:est.col,
+                 iniF:nf2.disp, iniH:(op.inicioTurnoActual||op.inicio||''), finF:(op.fin?((_ffObj?_ffObj.disp:nf2.disp)):''), finH:(op.fin||'')};
+        addEntry(op.tecnico||'', nf2, Object.assign({}, _b2, {estadoLbl:est.lbl, rol:'principal', mins:curMins, qty_ok:curOk, qty_def:curDef}));
         (op.ayudantes||[]).forEach(function(a){
           var am=(op.ayudTimes&&op.ayudTimes[a]!==undefined)?op.ayudTimes[a]:curMins;
-          addEntry(a, nf2, {of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoLbl:est.lbl+' (ayud)', estadoCol:est.col, rol:'ayudante', mins:am, qty_ok:0, qty_def:0});
+          addEntry(a, nf2, Object.assign({}, _b2, {estadoLbl:est.lbl+' (ayud)', rol:'ayudante', mins:am, qty_ok:0, qty_def:0}));
         });
       }
     });
@@ -14125,17 +14133,23 @@ function _manoObraBody(filtTech, filtFrom, filtTo, filtOf, filtPedT){
          '<th style="color:var(--dim);text-align:left;padding:3px 8px;">Estación</th>'+
          '<th style="color:var(--dim);text-align:left;padding:3px 8px;">Rol</th>'+
          '<th style="color:var(--dim);text-align:left;padding:3px 8px;">Estado</th>'+
+         '<th style="color:var(--dim);text-align:left;padding:3px 8px;">Inicio</th>'+
+         '<th style="color:var(--dim);text-align:left;padding:3px 8px;">Fin</th>'+
          '<th style="color:var(--dim);text-align:right;padding:3px 8px;">Tiempo</th>'+
          '<th style="color:var(--green);text-align:right;padding:3px 8px;">OK</th>'+
          '<th style="color:var(--yellow);text-align:right;padding:3px 8px;">Def</th>'+
          '</tr></thead><tbody>';
       d.entries.forEach(function(e){
+        var _ini=(e.iniH||e.iniF)?((e.iniF?'<div style="font-size:.58rem;color:var(--dim);">'+esc(e.iniF)+'</div>':'')+esc(e.iniH||'')):'—';
+        var _fin=(e.finH||e.finF)?((e.finF?'<div style="font-size:.58rem;color:var(--dim);">'+esc(e.finF)+'</div>':'')+esc(e.finH||'')):'—';
         h+='<tr style="border-top:1px solid rgba(255,255,255,.04);">'+
            '<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);padding:3px 8px;">'+esc(e.of_sap)+'</td>'+
            '<td style="padding:3px 8px;">'+esc(e.operacion)+'</td>'+
            '<td style="color:var(--dim);padding:3px 8px;">'+esc(e.estacion)+'</td>'+
            '<td style="color:var(--dim);padding:3px 8px;">'+(e.rol==='ayudante'?'🤝 Ayud.':'Principal')+'</td>'+
            '<td style="color:'+e.estadoCol+';padding:3px 8px;white-space:nowrap;">'+esc(e.estadoLbl)+'</td>'+
+           '<td style="font-family:\'DM Mono\',monospace;color:var(--text-dim);padding:3px 8px;white-space:nowrap;">'+_ini+'</td>'+
+           '<td style="font-family:\'DM Mono\',monospace;color:var(--text-dim);padding:3px 8px;white-space:nowrap;">'+_fin+'</td>'+
            '<td style="font-family:\'DM Mono\',monospace;text-align:right;padding:3px 8px;color:var(--accent-l);">'+(e.mins>0?fmtM(e.mins):'—')+'</td>'+
            '<td style="text-align:right;padding:3px 8px;color:var(--green);">'+(e.qty_ok>0?e.qty_ok:'—')+'</td>'+
            '<td style="text-align:right;padding:3px 8px;color:'+(e.qty_def>0?'var(--yellow)':'var(--dim)')+';">'+(e.qty_def>0?e.qty_def:'—')+'</td>'+
@@ -14164,21 +14178,22 @@ function ftManoObraExportExcel(){
     var ops=Object.keys(data).sort();
     if(!ops.length){ alert('No hay actividad para exportar con los filtros aplicados.'); return; }
     var wb=XLSX.utils.book_new();
-    var det=[['Fecha','Operador','OF','Pedido','Operación','Estación','Rol','Estado','Minutos','Tiempo','OK','Def']];
+    var det=[['Fecha','Operador','OF','Pedido','Operación','Estación','Rol','Estado','Inicio','Fin','Minutos','Tiempo','OK','Def']];
     var resumen=[['Operador','Fecha','Minutos','Horas']];
+    function _fh(f,h){ return ((f||'')+(h?' '+h:'')).trim(); }
     ops.forEach(function(operador){
       var o=data[operador];
       Object.keys(o.dias).sort().forEach(function(iso){
         var d=o.dias[iso];
         resumen.push([operador, d.disp, d.mins, fmtM(d.mins)]);
         d.entries.forEach(function(e){
-          det.push([d.disp, operador, e.of_sap, e.pedido, e.operacion, e.estacion, (e.rol==='ayudante'?'Ayudante':'Principal'), _ascOnly(e.estadoLbl), e.mins, fmtM(e.mins), e.qty_ok, e.qty_def]);
+          det.push([d.disp, operador, e.of_sap, e.pedido, e.operacion, e.estacion, (e.rol==='ayudante'?'Ayudante':'Principal'), _ascOnly(e.estadoLbl), _fh(e.iniF,e.iniH), _fh(e.finF,e.finH), e.mins, fmtM(e.mins), e.qty_ok, e.qty_def]);
         });
       });
       // fila total operador
       resumen.push([operador+' — TOTAL', '', o.totalMins, fmtM(o.totalMins)]);
     });
-    var wsD=XLSX.utils.aoa_to_sheet(det); wsD['!cols']=[{wch:12},{wch:24},{wch:12},{wch:12},{wch:42},{wch:22},{wch:11},{wch:22},{wch:9},{wch:9},{wch:7},{wch:7}];
+    var wsD=XLSX.utils.aoa_to_sheet(det); wsD['!cols']=[{wch:12},{wch:24},{wch:12},{wch:12},{wch:42},{wch:22},{wch:11},{wch:22},{wch:20},{wch:20},{wch:9},{wch:9},{wch:7},{wch:7}];
     XLSX.utils.book_append_sheet(wb,wsD,'Detalle');
     var wsR=XLSX.utils.aoa_to_sheet(resumen); wsR['!cols']=[{wch:28},{wch:12},{wch:9},{wch:9}];
     XLSX.utils.book_append_sheet(wb,wsR,'Resumen diario');
@@ -14211,13 +14226,15 @@ function ftManoObraExportPDF(){
         Object.keys(o.dias).sort().forEach(function(iso){
           var d=o.dias[iso];
           d.entries.forEach(function(e){
-            body.push([d.disp, e.of_sap, _ascOnly(e.operacion).slice(0,44), _ascOnly(e.estacion).slice(0,22), (e.rol==='ayudante'?'Ayud.':'Prin.'), _ascOnly(e.estadoLbl), fmtM(e.mins), (e.qty_ok||''), (e.qty_def||'')]);
+            var _ini=((e.iniF||'')+(e.iniH?' '+e.iniH:'')).trim();
+            var _fin=((e.finF||'')+(e.finH?' '+e.finH:'')).trim();
+            body.push([d.disp, e.of_sap, _ascOnly(e.operacion).slice(0,40), _ascOnly(e.estacion).slice(0,18), (e.rol==='ayudante'?'Ayud.':'Prin.'), _ascOnly(e.estadoLbl), _ascOnly(_ini), _ascOnly(_fin), fmtM(e.mins), (e.qty_ok||''), (e.qty_def||'')]);
           });
-          body.push([{content:'Subtotal '+d.disp, colSpan:6, styles:{halign:'right', fontStyle:'bold', fillColor:[235,240,247]}}, {content:fmtM(d.mins), styles:{fontStyle:'bold', fillColor:[235,240,247]}}, {content:'', styles:{fillColor:[235,240,247]}}, {content:'', styles:{fillColor:[235,240,247]}}]);
+          body.push([{content:'Subtotal '+d.disp, colSpan:8, styles:{halign:'right', fontStyle:'bold', fillColor:[235,240,247]}}, {content:fmtM(d.mins), styles:{fontStyle:'bold', fillColor:[235,240,247]}}, {content:'', styles:{fillColor:[235,240,247]}}, {content:'', styles:{fillColor:[235,240,247]}}]);
         });
-        doc.autoTable({ startY:y+2, head:[['Fecha','OF','Operación','Estación','Rol','Estado','Tiempo','OK','Def']], body:body,
-          styles:{fontSize:6.5,cellPadding:1.2}, headStyles:{fillColor:[26,52,85],textColor:[200,215,235],fontSize:6},
-          columnStyles:{0:{cellWidth:20},1:{cellWidth:16},2:{cellWidth:72},3:{cellWidth:34},4:{cellWidth:13},5:{cellWidth:38},6:{cellWidth:16,halign:'right'},7:{cellWidth:11,halign:'right'},8:{cellWidth:11,halign:'right'}},
+        doc.autoTable({ startY:y+2, head:[['Fecha','OF','Operación','Estación','Rol','Estado','Inicio','Fin','Tiempo','OK','Def']], body:body,
+          styles:{fontSize:6.3,cellPadding:1.1}, headStyles:{fillColor:[26,52,85],textColor:[200,215,235],fontSize:5.8},
+          columnStyles:{0:{cellWidth:18},1:{cellWidth:15},2:{cellWidth:50},3:{cellWidth:26},4:{cellWidth:12},5:{cellWidth:30},6:{cellWidth:26},7:{cellWidth:26},8:{cellWidth:15,halign:'right'},9:{cellWidth:10,halign:'right'},10:{cellWidth:10,halign:'right'}},
           margin:{left:14,right:14}, theme:'grid' });
         y=doc.lastAutoTable.finalY+8;
       });

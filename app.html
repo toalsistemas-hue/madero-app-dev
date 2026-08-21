@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.88</title>
+<title>FabTracker App v2.89</title>
 
 <!-- MSAL Browser -->
 
@@ -4537,7 +4537,10 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   op._localStatus='running'; op._localStatusAt=Date.now();
   // Si es reanudación tras fin de turno: acumular ms de turnos previos en _prevTurnosMs
   // y resetear elapsed del timer para que getEl() devuelva solo el tiempo del turno actual
-  var esFin=op._pauseTipo==='turno';
+  // Detección robusta de reanudación tras FIN DE TURNO: si un poll perdió _pauseTipo,
+  // usar también el texto de pauseReason (persiste en SP). Sin esto, el timer NO se resetea
+  // y el nuevo turno acumula el tiempo del turno anterior.
+  var esFin=(op._pauseTipo==='turno') || ((op.pauseReason||'').indexOf('🌙')>=0) || ((op.pauseReason||'').indexOf('Fin de turno')>=0);
   var timerActual=DB.timers[key]||{elapsed:0};
   var prevTurnosMs=(timerActual._prevTurnosMs||0)+(esFin?(timerActual.elapsed||0):0);
   DB.timers[key]={start:Date.now(),elapsed:esFin?0:(timerActual.elapsed||0),running:true,_prevTurnosMs:prevTurnosMs};
@@ -14581,7 +14584,10 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   op._localStatus='running'; op._localStatusAt=Date.now();
   // Si es reanudación tras fin de turno: mover elapsed a _prevTurnosMs y resetear
   // para que getEl() devuelva solo el tiempo del turno actual
-  var esFin=op._pauseTipo==='turno';
+  // Detección robusta de reanudación tras FIN DE TURNO: si un poll perdió _pauseTipo,
+  // usar también el texto de pauseReason (persiste en SP). Sin esto, el timer NO se resetea
+  // y el nuevo turno acumula el tiempo del turno anterior.
+  var esFin=(op._pauseTipo==='turno') || ((op.pauseReason||'').indexOf('🌙')>=0) || ((op.pauseReason||'').indexOf('Fin de turno')>=0);
   var timerActual=DB.timers[key]||{elapsed:0};
   var prevTurnosMs=(timerActual._prevTurnosMs||0)+(esFin?(timerActual.elapsed||0):0);
   DB.timers[key]={start:Date.now(),elapsed:esFin?0:(timerActual.elapsed||0),running:true,_prevTurnosMs:prevTurnosMs};

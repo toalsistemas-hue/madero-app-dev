@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.84</title>
+<title>FabTracker App v2.85</title>
 
 <!-- MSAL Browser -->
 
@@ -11726,6 +11726,9 @@ var _monFinTurnoCtx = null;
 function monFinTurnoOpen(of, op, tecNombre){
   _monFinTurnoCtx = { of_sap: of.of_sap, op_id: op.id, tecnico: tecNombre };
   var total = op.qty_total || 0;
+  // Piezas ya producidas en turnos previos (para pedir SOLO las de este turno).
+  var _prevProd = (op.turnos||[]).reduce(function(s,t){ return s + (t.qty_ok||0) + (t.qty_def||0); }, 0);
+  var _faltan = Math.max(0, total - _prevProd);
   var ex = document.getElementById('mon-finturno-modal'); if(ex) ex.remove();
   var inp = 'width:100%;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:9px;font-size:1rem;text-align:center;';
   var d = document.createElement('div');
@@ -11734,14 +11737,15 @@ function monFinTurnoOpen(of, op, tecNombre){
   d.innerHTML =
     '<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(360px,92vw);padding:20px;">'+
       '<div style="font-weight:700;font-size:1rem;color:#f59e0b;margin-bottom:6px;">🌙 Fin de Turno</div>'+
-      '<div style="font-size:.78rem;color:#e6edf3;margin-bottom:12px;line-height:1.4;"><strong>'+esc(op.nombre)+'</strong><br>'+esc(op.estacion||'')+' · '+esc(op.tecnico||tecNombre||'')+'<br><span style="color:#8b949e;">Meta: '+total+' pzas</span></div>'+
+      '<div style="font-size:.78rem;color:#e6edf3;margin-bottom:12px;line-height:1.4;"><strong>'+esc(op.nombre)+'</strong><br>'+esc(op.estacion||'')+' · '+esc(op.tecnico||tecNombre||'')+'<br><span style="color:#8b949e;">Meta: '+total+' pzas'+(_prevProd>0?' · Ya producidas: '+_prevProd+' · Faltan: '+_faltan:'')+'</span></div>'+
+      '<div style="font-size:.66rem;color:#f59e0b;margin-bottom:6px;">Captura solo las piezas de ESTE turno.</div>'+
       '<div style="display:flex;gap:10px;margin-bottom:10px;">'+
-        '<div style="flex:1;"><div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Piezas OK</div>'+
+        '<div style="flex:1;"><div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Piezas OK (este turno)</div>'+
           '<input id="mon-ft-ok" type="number" min="0" value="0" inputmode="numeric" oninput="monFinTurnoCalc()" style="'+inp+'color:#22c55e;"></div>'+
-        '<div style="flex:1;"><div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Con defecto</div>'+
+        '<div style="flex:1;"><div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Con defecto (este turno)</div>'+
           '<input id="mon-ft-def" type="number" min="0" value="0" inputmode="numeric" oninput="monFinTurnoCalc()" style="'+inp+'color:#f59e0b;"></div>'+
       '</div>'+
-      '<div id="mon-ft-rest" style="font-size:.8rem;color:#58a6ff;font-weight:600;margin-bottom:12px;">Piezas restantes: '+total+'</div>'+
+      '<div id="mon-ft-rest" style="font-size:.8rem;color:#58a6ff;font-weight:600;margin-bottom:12px;">Piezas restantes: '+_faltan+'</div>'+
       '<div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Motivo (opcional)</div>'+
       '<input id="mon-ft-reason" placeholder="Fin de turno" style="width:100%;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:9px;color:#e6edf3;font-size:.85rem;margin-bottom:16px;">'+
       '<div style="display:flex;gap:10px;">'+
@@ -11757,7 +11761,8 @@ function monFinTurnoCalc(){
   var op = of ? of.ops.find(function(o){ return o.id===ctx.op_id; }) : null; if(!op) return;
   var ok = parseInt((document.getElementById('mon-ft-ok')||{}).value)||0;
   var def = parseInt((document.getElementById('mon-ft-def')||{}).value)||0;
-  var rest = Math.max(0, (op.qty_total||0)-(ok+def));
+  var _prevProd = (op.turnos||[]).reduce(function(s,t){ return s + (t.qty_ok||0) + (t.qty_def||0); }, 0);
+  var rest = Math.max(0, (op.qty_total||0) - _prevProd - (ok+def));
   var el = document.getElementById('mon-ft-rest'); if(el) el.textContent = 'Piezas restantes: '+rest;
 }
 async function monFinTurnoConfirm(){
@@ -11781,8 +11786,12 @@ async function monFinTurnoConfirm(){
     op.mins=Math.floor((DB.timers[key].elapsed||0)/60000);
   }
   var pzProd = pzOk+pzDef;
-  var pzRest = Math.max(0, (op.qty_total||0)-pzProd);
   if(!op.turnos) op.turnos=[];
+  // Restantes = meta − piezas de turnos PREVIOS − piezas de ESTE turno.
+  // (pzOk/pzDef son solo de este turno, no acumulados.)
+  var _curIni = op.inicioTurnoActual || op.inicio;
+  var _prevProd = op.turnos.reduce(function(s,t){ return (t.inicio===_curIni) ? s : s + (t.qty_ok||0) + (t.qty_def||0); }, 0);
+  var pzRest = Math.max(0, (op.qty_total||0) - _prevProd - pzProd);
   var turnoNum = op.turnos.length+1;
   var turnoActual = {
     turno: turnoNum, tecnico: op.tecnico||ctx.tecnico, ayudantes:(op.ayudantes||[]).slice(),

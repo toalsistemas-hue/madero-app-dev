@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.89</title>
+<title>FabTracker App v2.90</title>
 
 <!-- MSAL Browser -->
 
@@ -729,6 +729,21 @@ tr:last-child td{border-bottom:none;}
       <div style="font-size:.72rem;color:#a78bfa;margin-bottom:4px;">Ayudantes</div>
       <div id="mon-turno-ayud-list" style="display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto;"></div>
       <div id="mon-turno-tech-error" style="font-size:.7rem;color:#f87171;margin-top:4px;min-height:14px;"></div>
+    </div>
+    <div id="mon-turno-ayudm-sec" style="display:none;padding:10px;background:rgba(0,180,216,.06);
+         border:1px solid rgba(0,180,216,.22);border-radius:7px;margin-bottom:12px;">
+      <div style="font-size:.72rem;color:var(--aaccent);margin-bottom:4px;font-weight:600;">🤝 Ayudante para este turno</div>
+      <div id="mon-turno-ayudm-cur" style="font-size:.68rem;color:#8b949e;margin-bottom:7px;"></div>
+      <div style="display:flex;flex-direction:column;gap:5px;">
+        <label style="display:flex;align-items:center;gap:7px;font-size:.74rem;color:#e6edf3;cursor:pointer;">
+          <input type="radio" name="mon-ayudm" value="keep" checked onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Continuar con el mismo ayudante</label>
+        <label style="display:flex;align-items:center;gap:7px;font-size:.74rem;color:#e6edf3;cursor:pointer;">
+          <input type="radio" name="mon-ayudm" value="none" onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Sin ayudante</label>
+        <label style="display:flex;align-items:center;gap:7px;font-size:.74rem;color:#e6edf3;cursor:pointer;">
+          <input type="radio" name="mon-ayudm" value="replace" onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Reemplazar por otro ayudante</label>
+      </div>
+      <select id="mon-turno-ayudm-sel" style="display:none;width:100%;margin-top:7px;background:#0d1117;
+              border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:7px;color:#e6edf3;font-size:.78rem;"></select>
     </div>
     <div id="mon-turno-pin-sec" style="display:none;margin-bottom:12px;">
       <div style="font-size:.72rem;color:#8b949e;margin-bottom:6px;" id="mon-turno-pin-label">Ingresa tu PIN de 4 dígitos</div>
@@ -2637,6 +2652,9 @@ var _APP_NTFY_MENSAJES = {
   mon_op_iniciada:   { titulo: 'Operador inicio una operacion',    prioridad: 'default' },
   mon_op_concluida:  { titulo: 'Operador concluyo operacion',      prioridad: 'high' },
   mon_val_calidad:   { titulo: 'Validacion de Calidad solicitada desde Monitor', prioridad: 'high' },
+  mon_fin_turno:     { titulo: 'Operador pauso por FIN DE TURNO',  prioridad: 'high' },
+  mon_op_reanudada:  { titulo: 'Operador reanudo una operacion',   prioridad: 'default' },
+  mon_turno_b_val:   { titulo: 'Turno B: falta validar/terminar la operacion original', prioridad: 'high' },
 };
 
 // Roles que deben recibir cada evento (desde la app)
@@ -2648,6 +2666,9 @@ var _APP_NTFY_DEST_ROLES = {
   mon_op_iniciada:   ['supervisor'],                       // → Supervisor
   mon_op_concluida:  ['supervisor'],                       // → Supervisor
   mon_val_calidad:   ['calidad_lin', 'supervisor'],        // → Jefe Calidad + Supervisor
+  mon_fin_turno:     ['supervisor'],                       // → Supervisor
+  mon_op_reanudada:  ['supervisor'],                       // → Supervisor
+  mon_turno_b_val:   ['supervisor'],                       // → Supervisor
 };
 
 async function appNtfyNotificar(evento, data) {
@@ -11843,6 +11864,11 @@ async function monFinTurnoConfirm(){
   } catch(e){ console.warn('[Monitor] Fin de turno SP:', e.message); }
   finally { if(typeof _releaseOpLock==='function') _releaseOpLock(key); }
   if(typeof fireSync==='function') fireSync('app','op_paused',{ of_sap:ctx.of_sap, op_id:ctx.op_id, op_name:op.nombre, tecnico:op.tecnico||'', reason:op.pauseReason||'', tipo:'turno' });
+  // Notificar al supervisor por ntfy
+  if(typeof appNtfyNotificar==='function') appNtfyNotificar('mon_fin_turno', {
+    of_sap:ctx.of_sap, op_nombre:op.nombre, estacion:op.estacion||'', operador:op.tecnico||'',
+    nota:'Turno '+turnoNum+' · '+pzProd+' pzas · '+pzRest+' restantes'
+  }).catch(function(){});
   console.log('[Monitor] Fin de turno:', op.nombre, '| turno', turnoNum, '| OK', pzOk, 'Def', pzDef, 'Rest', pzRest);
 }
 
@@ -12203,6 +12229,23 @@ function monTurnoOpen(of, op) {
       'style="accent-color:#c084fc;">' + esc(t.nombre) + '</label>';
   });
   document.getElementById('mon-turno-ayud-list').innerHTML = ayudH;
+  // Sección "mismo técnico": rotación de ayudante (mantener / sin / reemplazar)
+  var _curAyud = (op.ayudantes||[]).filter(Boolean);
+  _monTurnoCtx.curAyud = _curAyud.slice();
+  var _amCur = document.getElementById('mon-turno-ayudm-cur');
+  if(_amCur) _amCur.textContent = _curAyud.length ? ('Ayudante actual: '+_curAyud.join(', ')) : '';
+  var _amSel = document.getElementById('mon-turno-ayudm-sel');
+  if(_amSel){
+    _amSel.innerHTML = '<option value="">— Seleccionar nuevo ayudante —</option>';
+    (_MON.technicians || []).forEach(function(t){
+      if(t.nombre===op.tecnico) return;                 // no puede ser el operador
+      if(_curAyud.indexOf(t.nombre)>=0) return;          // ya es el ayudante actual
+      _amSel.innerHTML += '<option value="'+esc(t.nombre)+'">'+esc(t.nombre)+'</option>';
+    });
+    _amSel.style.display='none';
+  }
+  var _amRadio = document.querySelector('input[name="mon-ayudm"][value="keep"]');
+  if(_amRadio) _amRadio.checked = true;
   document.getElementById('mon-turno-traspaso-sec').style.display = 'none';
   document.getElementById('mon-turno-pin-sec').style.display = 'none';
   document.getElementById('mon-turno-tech-error').textContent = '';
@@ -12229,15 +12272,25 @@ function monTurnoSetTipo(tipo) {
   var bM = document.getElementById('mon-turno-btn-mismo');
   var bO = document.getElementById('mon-turno-btn-otro');
   var sec = document.getElementById('mon-turno-traspaso-sec');
+  var secAM = document.getElementById('mon-turno-ayudm-sec');
+  var _hayAyud = (_monTurnoCtx.curAyud && _monTurnoCtx.curAyud.length) ? true : false;
   if (tipo === 'otro') {
     bM.style.borderColor = 'rgba(255,255,255,.15)'; bM.style.background = 'rgba(255,255,255,.04)'; bM.style.color = '#8b949e';
     bO.style.borderColor = '#c084fc'; bO.style.background = 'rgba(139,92,246,.15)'; bO.style.color = '#c084fc';
     sec.style.display = 'block';
+    if (secAM) secAM.style.display = 'none';
   } else {
     bO.style.borderColor = 'rgba(255,255,255,.15)'; bO.style.background = 'rgba(255,255,255,.04)'; bO.style.color = '#8b949e';
     bM.style.borderColor = 'var(--aaccent)'; bM.style.background = 'rgba(0,180,216,.12)'; bM.style.color = 'var(--aaccent)';
     sec.style.display = 'none';
+    if (secAM) secAM.style.display = _hayAyud ? 'block' : 'none';  // solo si la op tiene ayudante asignado
   }
+}
+// Muestra el select de "nuevo ayudante" solo al elegir "Reemplazar"
+function monTurnoAyudMModo() {
+  var v = (document.querySelector('input[name="mon-ayudm"]:checked')||{}).value || 'keep';
+  var selEl = document.getElementById('mon-turno-ayudm-sel');
+  if (selEl) selEl.style.display = (v === 'replace') ? 'block' : 'none';
 }
 
 function monTurnoConfirm() {
@@ -12260,6 +12313,16 @@ function monTurnoConfirm() {
       ctx.phase = 'pin_otro';
       document.getElementById('mon-turno-pin-label').textContent = 'PIN de ' + nuevoTech + ' para confirmar';
     } else {
+      // Mismo técnico — capturar decisión de ayudante (mantener / sin / reemplazar) antes del PIN
+      var _amModo = (document.querySelector('input[name="mon-ayudm"]:checked')||{}).value || 'keep';
+      var _amNuevo = '';
+      if ((ctx.curAyud && ctx.curAyud.length)) {
+        if (_amModo === 'replace') {
+          _amNuevo = (document.getElementById('mon-turno-ayudm-sel')||{}).value || '';
+          if (!_amNuevo) { document.getElementById('mon-turno-tech-error').textContent = 'Selecciona el nuevo ayudante.'; return; }
+        }
+      } else { _amModo = 'keep'; }   // sin ayudante asignado: nada que rotar
+      ctx.ayudModo = _amModo; ctx.ayudNuevo = _amNuevo;
       // Mismo técnico — ask their PIN
       ctx.phase = 'pin_mismo';
       document.getElementById('mon-turno-pin-label').textContent = 'Ingresa tu PIN (' + esc(op.tecnico || 'técnico') + ')';
@@ -12289,6 +12352,17 @@ function monTurnoConfirm() {
     }
     if (ctx._confirmPin && pin !== ctx._confirmPin) { document.getElementById('mon-turno-pin-error').textContent = 'Los PINs no coinciden.'; ctx.pinDigits = ''; monTurnoPinRefresh(); return; }
     if (!ctx._confirmPin && pin !== tec.pin) { document.getElementById('mon-turno-pin-error').textContent = 'PIN incorrecto.'; ctx.pinDigits = ''; monTurnoPinRefresh(); return; }
+    // PIN OK — aplicar rotación de ayudante (mantener / sin / reemplazar) antes de reanudar
+    var _prevAyud = (op.ayudantes||[]).slice();
+    if (ctx.ayudModo === 'none' || ctx.ayudModo === 'replace') {
+      // Concluir el tiempo del/los ayudante(s) anterior(es) que ya no continúan
+      var _nuevos = (ctx.ayudModo === 'replace' && ctx.ayudNuevo) ? [ctx.ayudNuevo] : [];
+      _prevAyud.forEach(function(a){
+        if (_nuevos.indexOf(a) >= 0) return;             // sigue → no concluir
+        monTurnoCerrarAyud(of.of_sap, op.id, a);          // freezar timer + marcar concluido
+      });
+      op.ayudantes = _nuevos;
+    }
     // PIN OK — resume with same tech
     monTurnoClose();
     _doResumeOp(of.of_sap, op.id, op.tecnico, op.ayudantes || []);
@@ -12329,6 +12403,25 @@ function monTurnoPinRefresh() {
     if (el) el.textContent = d.length >= i ? '●' : '_';
   });
   document.getElementById('mon-turno-pin-error').textContent = '';
+}
+
+// Concluye el tiempo de un ayudante que ya no continúa en el siguiente turno:
+// congela su cronómetro y lo marca en op.ayudTimes para que la reanudación NO lo reinicie.
+function monTurnoCerrarAyud(of_sap, opId, ayudNombre) {
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===of_sap; });
+  var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
+  if (!op || !ayudNombre) return;
+  var ak = of_sap+'_'+opId+'_ayud_'+ayudNombre.replace(/[^a-z0-9]/gi,'_');
+  var t = DB.timers[ak];
+  var mins = 0;
+  if (t) {
+    if (t.running && t.start) { t.elapsed=(t.elapsed||0)+(Date.now()-t.start); }
+    t.running=false; t.start=0;
+    mins = Math.floor(((t._prevTurnosMs||0)+(t.elapsed||0))/60000);
+  }
+  if (!op.ayudTimes) op.ayudTimes = {};
+  op.ayudTimes[ayudNombre] = mins;   // marca al ayudante como concluido (la reanudación lo salta)
+  console.log('[Monitor] Ayudante concluido en rotación:', ayudNombre, '·', mins, 'min');
 }
 
 function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
@@ -12393,7 +12486,7 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
   if (_idxA >= 0) of.ops.splice(_idxA + 1, 0, newOp); else of.ops.push(newOp);
   // Snapshot de los valores CONCLUIDOS del turno A (para un PATCH explícito a prueba de carreras)
   var _opA_spId = op._spId, _opA_fin = op.fin, _opA_ffr = op.fecha_fin_real;
-  var _opA_ok = _okA, _opA_def = _defA, _opA_min = _minA;
+  var _opA_ok = _okA, _opA_def = _defA, _opA_min = _minA, _opA_tec = op.tecnico||'';
   // Persist
   (async function() {
     try {
@@ -12433,6 +12526,11 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
         of_sap: of.of_sap, nuevo_tech: nuevoTech, pzas: pzRest,
         op_name: op.nombre, op_name_b: newOp.nombre
       });
+      // Notificar al supervisor: la operación original quedó CONCLUIDA (operador) y falta validar/terminar
+      if(typeof appNtfyNotificar==='function') appNtfyNotificar('mon_turno_b_val', {
+        of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion||'', operador: _opA_tec||'',
+        nota: 'Turno B para '+nuevoTech+'. Validar/terminar la operación original ('+(_opA_ok+_opA_def)+' pzas)'
+      }).catch(function(){});
     } catch(e) { console.warn('[Monitor] Traspaso SP error:', e.message||e); }
   })();
   if (newOp.estacion) sqAddOF(of.of_sap);
@@ -14620,6 +14718,11 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   var _rOp2 = _rOf2 ? _rOf2.ops.find(function(o){return o.id===opId;}) : null;
   fireSync('app','op_resumed',{of_sap:sap, op_id:opId,
     op_name:_rOp2?_rOp2.nombre:'', tecnico:_rOp2?(_rOp2.tecnico||''):''});
+  // Notificar al supervisor por ntfy que se reanudó (mismo técnico)
+  if(typeof appNtfyNotificar==='function') appNtfyNotificar('mon_op_reanudada', {
+    of_sap:sap, op_nombre:_rOp2?_rOp2.nombre:'', estacion:_rOp2?(_rOp2.estacion||''):'',
+    operador:_rOp2?(_rOp2.tecnico||''):'', nota:(esFin?'Reanudó tras fin de turno':'Reanudó tras pausa')
+  }).catch(function(){});
   // Issue 1 fix: immediately update the local button before full renderApp
   document.querySelectorAll('[data-op-id="'+opId+'"],[id$="_'+opId+'"]').forEach(function(el){
     var resumeBtn = el.querySelector ? el.querySelector('.app-ob-resume') : null;

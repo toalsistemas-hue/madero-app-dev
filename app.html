@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.91</title>
+<title>FabTracker App v2.92</title>
 
 <!-- MSAL Browser -->
 
@@ -8545,8 +8545,15 @@ async function _appLoadDataFromSP_impl() {
         nombre: (o.Nombre&&o.Nombre.trim())||o.Title||'', estacion: o.Estacion||'',
         tipo: o.Tipo||o.tipo||'Secuencial',
         tecnico: o.Tecnico||'',
-        ayudantes: o.Ayudantes_JSON ? o.Ayudantes_JSON.split(',').map(function(s){return s.trim();}).filter(Boolean)
-                 : o.Ayudantes ? o.Ayudantes.split(',').map(function(s){return s.trim();}).filter(Boolean) : [],
+        ayudantes: (function(){
+          var _a = o.Ayudantes_JSON ? o.Ayudantes_JSON.split(',').map(function(s){return s.trim();}).filter(Boolean)
+                 : o.Ayudantes ? o.Ayudantes.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+          if(_a.length) return _a;
+          // Preservar ayudantes locales si SP aún no los devuelve (evita perderlos en una recarga completa)
+          var _exAof = DB.activeOFs && DB.activeOFs.find(function(a){return a.of_sap===(f.OF_SAP||f.Title||'');});
+          var _exOp = _exAof && _exAof.ops && _exAof.ops.find(function(p){return p.id===(o.Op_ID||('op_'+(o.ID||'')));});
+          return (_exOp && _exOp.ayudantes && _exOp.ayudantes.length) ? _exOp.ayudantes : _a;
+        })(),
         // _ldLocalStatus: buscar estado local vigente antes de construir el objeto
         // (declarado aquí para poder usarlo también en _localStatus/_localStatusAt más abajo)
         status: (function(){
@@ -12360,23 +12367,27 @@ function monTurnoConfirm() {
     }
     if (ctx._confirmPin && pin !== ctx._confirmPin) { document.getElementById('mon-turno-pin-error').textContent = 'Los PINs no coinciden.'; ctx.pinDigits = ''; monTurnoPinRefresh(); return; }
     if (!ctx._confirmPin && pin !== tec.pin) { document.getElementById('mon-turno-pin-error').textContent = 'PIN incorrecto.'; ctx.pinDigits = ''; monTurnoPinRefresh(); return; }
-    // PIN OK — aplicar rotación de ayudante (mantener / sin / reemplazar) antes de reanudar
-    var _prevAyud = (op.ayudantes||[]).slice();
+    // PIN OK — aplicar rotación/asignación de ayudante antes de reanudar.
+    // IMPORTANTE: mutar la op VIVA de DB (ctx.op puede ser una referencia obsoleta si un poll
+    // reemplazó el objeto mientras el modal estaba abierto), para que _doResumeOp la persista.
+    var _liveOf = DB.activeOFs.find(function(o){ return o.of_sap===of.of_sap; });
+    var _tgt = (_liveOf && _liveOf.ops.find(function(o){ return o.id===op.id; })) || op;
+    var _prevAyud = (_tgt.ayudantes||[]).slice();
     if (ctx.ayudModo === 'none' || ctx.ayudModo === 'replace' || ctx.ayudModo === 'add') {
       // Nuevo listado de ayudantes: 'replace'/'add' → el elegido; 'none' → ninguno
       var _nuevos = ((ctx.ayudModo === 'replace' || ctx.ayudModo === 'add') && ctx.ayudNuevo) ? [ctx.ayudNuevo] : [];
       // Concluir el tiempo del/los ayudante(s) anterior(es) que ya no continúan
       _prevAyud.forEach(function(a){
         if (_nuevos.indexOf(a) >= 0) return;             // sigue → no concluir
-        monTurnoCerrarAyud(of.of_sap, op.id, a);          // freezar timer + marcar concluido
+        monTurnoCerrarAyud(of.of_sap, _tgt.id, a);         // freezar timer + marcar concluido
       });
       // Si es un ayudante que había sido concluido antes, reactivarlo para que su timer arranque
-      if (op.ayudTimes) _nuevos.forEach(function(a){ if(op.ayudTimes[a]!==undefined) delete op.ayudTimes[a]; });
-      op.ayudantes = _nuevos;
+      if (_tgt.ayudTimes) _nuevos.forEach(function(a){ if(_tgt.ayudTimes[a]!==undefined) delete _tgt.ayudTimes[a]; });
+      _tgt.ayudantes = _nuevos;
     }
     // PIN OK — resume with same tech
     monTurnoClose();
-    _doResumeOp(of.of_sap, op.id, op.tecnico, op.ayudantes || []);
+    _doResumeOp(of.of_sap, _tgt.id, _tgt.tecnico, _tgt.ayudantes || []);
     monitorRender();
 
   } else if (ctx.phase === 'pin_otro') {

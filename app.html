@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.83</title>
+<title>FabTracker App v2.84</title>
 
 <!-- MSAL Browser -->
 
@@ -8467,7 +8467,7 @@ async function _appLoadDataFromSP_impl() {
         isRetrabajo: f.isRetrabajo === true,
       };
     });
-    var statusPriority = {running:5, paused:4, validating:3, done:2, pending:1};
+    var statusPriority = {running:6, op_concluded:5, paused:4, validating:3, done:2, pending:1};
     var opsSeen = {};
     rawOps.forEach(function(o){
       // Dedup key: use Op_ID if available, else use SP item ID
@@ -12317,13 +12317,25 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
     DB.timers[key].running = false;
     DB.timers[key].start = null;
   }
-  // Close op A
-  op.status   = 'done'; op.fin = nowT();
-  op.qty_total = pzAok + pzAdef; op.qty_ok = pzAok; op.qty_def = pzAdef;
-  op.mins = turnoA ? (turnoA.mins||0) : 0;
+  // Cerrar el turno A como CONCLUIDA (op_concluded) → el supervisor la termina.
+  // Piezas/tiempo del turno A = suma de TODOS sus turnos (soporta varios turnos del mismo
+  // técnico antes del traspaso). El resto de piezas ya pasó al turno B, así que el turno A
+  // solo responde por lo que produjo (p. ej. 25) y NO por el total original (p. ej. 62).
+  var _tSegs = op.turnos || [];
+  var _okA  = _tSegs.reduce(function(s,t){ return s + (t.qty_ok||0); }, 0);
+  var _defA = _tSegs.reduce(function(s,t){ return s + (t.qty_def||0); }, 0);
+  var _minA = _tSegs.reduce(function(s,t){ return s + (t.mins||0); }, 0);
+  if (_okA===0 && _defA===0) { _okA = pzAok; _defA = pzAdef; }        // respaldo: turno actual
+  if (_minA===0) { _minA = turnoA ? (turnoA.mins||0) : (op.mins||0); }
+  op.status   = 'op_concluded'; op.fin = nowT();
+  op.fecha_fin_real = (typeof nowDT==='function') ? nowDT() : op.fecha_fin_real;
+  op.qty_total = _okA + _defA; op.qty_ok = _okA; op.qty_def = _defA;
+  op.mins = _minA;
+  op._pzasRestantes = null;   // ya no hay "restantes" en el turno A (pasaron al turno B)
   op._traspasoA = { tecnico: op.tecnico, ayudantes: op.ayudantes || [] };
-  // Candado local: evitar que el poll/reload revierta 'done' al 'paused' de la pausa de fin de turno
-  op._localStatus = 'done'; op._localStatusAt = Date.now();
+  op._accionLog = 'Concluyó su turno (traspaso a Turno B)';
+  // Candado local: evitar que el poll/reload revierta el estado a 'paused' de fin de turno
+  op._localStatus = 'op_concluded'; op._localStatusAt = Date.now();
   op._pauseTipo = null; op.pauseReason = null;
   // Create new op B — se INICIA de inmediato (el nuevo operador ya tecleó su PIN)
   var _turnoIdx  = of.ops.length;
@@ -17915,7 +17927,7 @@ async function appReloadOpsFromSP() {
   try {
     var opsRes = await appFlowGet('FT_Operaciones', 5000);
     // Deduplicar: priorizar por status (running>paused>done>pending), luego ID mayor
-    var statusPrioR = {running:5, paused:4, validating:3, done:2, pending:1};
+    var statusPrioR = {running:6, op_concluded:5, paused:4, validating:3, done:2, pending:1};
     var rawOpsR = (opsRes.value||[]).map(function(i){
       var f = i.fields || i;
       // Preserve the item's SP ID from the outer wrapper

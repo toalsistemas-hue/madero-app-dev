@@ -1171,7 +1171,7 @@ tr:last-child td{border-bottom:none;}
         <div style="display:flex;gap:6px;">
           <!-- Diagnóstico oculto: <button class="btn btn-ghost btn-sm" onclick="diagFTOperaciones()">🔍 Diagnóstico</button> -->
           <button class="btn btn-ghost btn-sm" onclick="renderSeg()">↻ Actualizar</button>
-        <span id="auto-refresh-indicator" style="font-size:.65rem;color:var(--text-dim);margin-left:6px;">⏱ auto 15s</span>
+        <span id="auto-refresh-indicator" class="auto-refresh-ind" style="font-size:.65rem;color:var(--text-dim);margin-left:6px;">⏱ auto 15s</span>
         </div>
       </div>
       <div class="kpi-grid">
@@ -1186,8 +1186,9 @@ tr:last-child td{border-bottom:none;}
 
     <!-- HISTORIAL -->
     <div class="coord-page" id="coord-page-historial">
-      <div class="page-hdr">
+      <div class="page-hdr" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
         <div><div class="page-title">📊 Historial & KPIs</div></div>
+        <span id="hist-auto-refresh-indicator" class="auto-refresh-ind" title="Los datos se actualizan solos cada ~15s mientras esta pestaña esté abierta y visible." style="font-size:.65rem;color:var(--text-dim);">⏱ auto 15s</span>
       </div>
       <div class="kpi-grid">
         <div class="kpi-card"><div class="kpi-val" id="hist-kpi-ofs" style="color:var(--green)">0</div><div class="kpi-lbl">OFs completadas (mes)</div></div>
@@ -1237,7 +1238,7 @@ tr:last-child td{border-bottom:none;}
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button onclick="ftRptExportPDF()" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">📄 Descargar PDF</button>
           <button onclick="ftRptExportExcel()" style="background:rgba(34,197,94,.12);color:#4ade80;border:1px solid rgba(34,197,94,.25);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">📊 Excel con detalle</button>
-          <button onclick="ftRptExportPDFCodigos()" title="PDF con detalle y código QR por operación para entregar al operador" style="background:rgba(147,51,234,.15);color:#c084fc;border:1px solid rgba(147,51,234,.35);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">🔳 PDF con códigos</button>
+          <button onclick="ftRptPDFCodigosChooser()" title="PDF con códigos QR — elige General (solo OFs) o Con operaciones" style="background:rgba(147,51,234,.15);color:#c084fc;border:1px solid rgba(147,51,234,.35);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">🔳 PDF con códigos</button>
           <button onclick="ftRptLoad()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 12px;font-size:.78rem;cursor:pointer;color:var(--text);">🔄 Actualizar</button>
         </div>
       </div>
@@ -1256,7 +1257,7 @@ tr:last-child td{border-bottom:none;}
         </div>
         <input type="date" id="rpt-desde" onchange="ftRptRender()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;">
         <input type="date" id="rpt-hasta" onchange="ftRptRender()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;">
-        <input type="text" id="rpt-buscar" oninput="ftRptRender()" placeholder="🔍 OF, cliente, desc..." style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:180px;">
+        <input type="text" id="rpt-buscar" oninput="ftRptRender()" placeholder="🔍 OF, artículo, cliente, desc..." style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:180px;">
         <button onclick="ftRptLimpiarFiltros()" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:5px 10px;color:var(--text-dim);font-size:.75rem;cursor:pointer;">✕ Limpiar</button>
       </div>
       <div id="rpt-loading" style="text-align:center;padding:40px;color:var(--dim,#64748b);font-size:.85rem;">⏳ Cargando datos...</div>
@@ -2903,13 +2904,61 @@ function _fabNivel() {
   return (u.pantallas && u.pantallas['Fabricaciones']) || null;
 }
 
+// ¿El usuario es una asistente con acceso restringido SOLO al KPI de Desempeño de Técnicos?
+// Aplica a los puestos "ASISTENTE ADMINISTRATIVO INSTALACIONES" y "ASISTENTE DE PRODUCCIÓN".
+function _accNorm(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function _esAsistenteKPI(){
+  var u = state.currentUser;
+  if(!u || u.esAdmin) return false;
+  var p = _accNorm((u.puesto||'')+' '+(u.puestoID||''));
+  return p.indexOf('ASISTENTE ADMINISTRATIVO INSTALACIONES')>=0
+      || p.indexOf('ASISTENTE DE PRODUCCION')>=0
+      || p.indexOf('ASISTENTE PRODUCCION')>=0;
+}
+
 // Aplica restricciones de lectura en la interfaz de Fabricaciones.
 // Se llama al entrar a la pantalla y cada vez que se renderizan los botones.
 function applyFabAccessControl() {
-  // All static button hiding is handled by CSS class 'fab-lectura' on #page-Fabricaciones
-  // set in enterApp(). Dynamic rendered buttons (✏ Editar in lists) are handled
-  // directly in their render functions via _fabNivel() checks.
-  // This function is kept as a no-op for backwards compatibility with call sites.
+  // Restricción para asistentes: solo la pestaña "Historial & KPIs" y solo el
+  // indicador "Desempeño de Técnicos".
+  var hist = document.getElementById('coord-page-historial');
+  var pills = document.querySelectorAll('.coord-nav-pill');
+  var tabBtns = document.querySelectorAll('.ft-tab-btn'); // 🏭 Portal Coordinador / ⚙️ Administración
+  if(!_esAsistenteKPI()){
+    // Comportamiento normal — restaurar visibilidad por si una sesión previa la ocultó.
+    pills.forEach(function(b){ b.style.display=''; });
+    tabBtns.forEach(function(b){ b.style.display=''; });
+    if(hist) Array.prototype.forEach.call(hist.children, function(ch){ if(ch.style) ch.style.display=''; });
+    return;
+  }
+  // 0. Ocultar la pestaña superior "⚙️ Administración"; dejar solo "Portal Coordinador".
+  tabBtns.forEach(function(b){
+    var oc = b.getAttribute('onclick')||'';
+    b.style.display = (oc.indexOf("'admin'")>=0) ? 'none' : '';
+  });
+  var admView = document.getElementById('ft-view-admin');
+  if(admView && admView.classList.contains('active') && typeof ftShowTab==='function') ftShowTab('portal');
+  // 1. Ocultar todas las pestañas del portal salvo "Historial & KPIs".
+  pills.forEach(function(b){
+    var oc = b.getAttribute('onclick')||'';
+    b.style.display = (oc.indexOf("'historial'")>=0) ? '' : 'none';
+  });
+  // 2. Forzar la página Historial si no está activa.
+  if(hist && !hist.classList.contains('active')){
+    var pill = Array.prototype.filter.call(pills, function(b){ return (b.getAttribute('onclick')||'').indexOf("'historial'")>=0; })[0];
+    showCoordPage('historial', pill||null);
+    return; // showCoordPage vuelve a llamar a applyFabAccessControl
+  }
+  // 3. Dentro de Historial: mostrar solo el card del KPI de Desempeño de Técnicos.
+  if(hist){
+    var techEl = document.getElementById('hist-tech-kpi');
+    var techCard = techEl ? techEl.closest('.card') : null;
+    Array.prototype.forEach.call(hist.children, function(ch){
+      if(!ch.style) return;
+      if(ch.classList && ch.classList.contains('page-hdr')) { ch.style.display=''; return; } // conservar título
+      ch.style.display = (ch===techCard) ? '' : 'none';
+    });
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -4553,9 +4602,11 @@ async function ftAdmArtSave(){
   var num=document.getElementById('art-edit-num').value.trim().toUpperCase();
   var desc=document.getElementById('art-edit-desc').value.trim();
   if(!num||!desc){alert('Número y descripción son requeridos.');return;}
-  // Verificar duplicado (solo al crear)
+  // Verificar duplicado (solo al crear) — SOLO contra la lista maestra FT_Articulos.
+  // DB.articles incluye artículos de OFs/plantillas que NO están dados de alta, por lo
+  // que no debe usarse aquí (bloqueaba altas válidas).
   var isNew=!document.getElementById('art-edit-num').readOnly;
-  if(isNew && DB.articles[num]){alert('El artículo '+num+' ya existe.');return;}
+  if(isNew && (DB.articulosMaestros||{})[num]){alert('El artículo '+num+' ya está registrado en la lista de Artículos.');return;}
   var _b=document.getElementById('art-save-btn'); _btnSpinner(_b,true);
   try {
     // Buscar si existe en SP
@@ -4609,12 +4660,15 @@ function ftAdmArtProcessFile(file){
     var wb=XLSX.read(data,{type:'array'});
     var ws=wb.Sheets[wb.SheetNames[0]];
     var rows=XLSX.utils.sheet_to_json(ws,{header:0,defval:''});
-    var items=[];var dups=0;
+    var items=[];var dups=0;var seen={};
     rows.forEach(function(r){
       var num=(r.Numero_Articulo||r.titulo||r.Title||r.Articulo||'').toString().trim().toUpperCase();
       var desc=(r.Descripcion||r.descripcion||r.DESCRIPCION||'').toString().trim();
       if(!num) return;
-      if(DB.articles[num]){dups++;return;}
+      // Duplicado = ya está en la lista maestra FT_Articulos, o repetido dentro del mismo archivo.
+      // (No usar DB.articles: incluye artículos de OFs/plantillas que aún no están dados de alta.)
+      if((DB.articulosMaestros||{})[num] || seen[num]){dups++;return;}
+      seen[num]=true;
       items.push({num:num,desc:desc});
     });
     _ftArtPendingExcel=items;
@@ -7119,9 +7173,9 @@ async function ftLoadDataFromSP() {
           if(C&&C.currentPage==='seguimiento') renderSeg();
           if(C&&C.currentPage==='programacion') (window.renderProg||renderProg)();
           if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-kpi')) renderHist();
-          var ind=document.getElementById('auto-refresh-indicator');
-          if(ind){ind.style.color='var(--accent-l)';ind.textContent='⟳ actualizado';
-            setTimeout(function(){ind.style.color='var(--text-dim)';ind.textContent='⏱ auto 30s';},2500);}
+          var _inds=document.querySelectorAll('.auto-refresh-ind');
+          _inds.forEach(function(ind){ ind.style.color='var(--accent-l)'; ind.textContent='⟳ actualizado'; });
+          setTimeout(function(){ document.querySelectorAll('.auto-refresh-ind').forEach(function(ind){ ind.style.color='var(--text-dim)'; ind.textContent='⏱ auto 15s'; }); },2500);
         }
       } catch(e) { /* silencioso */ }
       // ── Polling de CalTiempos — via Graph API (no consume Flow actions) ──
@@ -13930,6 +13984,253 @@ renderAppHoy = function(){
   return base;
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// ── MANO DE OBRA DIARIA (modo del KPI Desempeño de Técnicos) ───────
+// Incluye operaciones NO concluidas y reparte el tiempo por día.
+// ═══════════════════════════════════════════════════════════════════
+function setTechMode(m){ C.techMode = (m==='manoobra')?'manoobra':'desempeno'; renderHistSpin(); }
+window.setTechMode = setTechMode;
+
+// Overlay bloqueante mientras se filtra/renderiza el KPI (el render es síncrono y pesado).
+function _kpiFilterOverlay(show){
+  if(!document.getElementById('kpi-spin-kf')){
+    var st=document.createElement('style'); st.id='kpi-spin-kf';
+    st.textContent='@keyframes kpispin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(st);
+  }
+  var ov=document.getElementById('kpi-filter-overlay');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='kpi-filter-overlay';
+    ov.style.cssText='position:fixed;inset:0;z-index:99998;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);cursor:progress;';
+    ov.innerHTML='<div style="background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:16px 24px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 28px rgba(0,0,0,.5);">'+
+      '<span style="display:inline-block;width:20px;height:20px;border:3px solid rgba(255,255,255,.2);border-top-color:#58a6ff;border-radius:50%;animation:kpispin .7s linear infinite;"></span>'+
+      '<span style="color:#e6edf3;font-size:.85rem;font-weight:600;">Filtrando…</span></div>';
+    document.body.appendChild(ov);
+  }
+  ov.style.display = show ? 'flex' : 'none';
+}
+// Renderiza el KPI mostrando primero el spinner (cede al navegador para pintar antes del render).
+function renderHistSpin(){
+  _kpiFilterOverlay(true);
+  setTimeout(function(){
+    try{ renderHist(); } finally { _kpiFilterOverlay(false); }
+  }, 30);
+}
+window.renderHistSpin = renderHistSpin;
+
+function _manoObraNormFecha(s){
+  if(!s) return null;
+  s=String(s).trim().split(' ')[0];
+  var p=s.split('/'); if(p.length<3) return null;
+  var dd=parseInt(p[0],10), mm=parseInt(p[1],10), yy=parseInt(p[2],10);
+  if(isNaN(dd)||isNaN(mm)||isNaN(yy)) return null;
+  if(yy<100) yy+=2000;
+  var iso=yy+'-'+('0'+mm).slice(-2)+'-'+('0'+dd).slice(-2);
+  var disp=('0'+dd).slice(-2)+'/'+('0'+mm).slice(-2)+'/'+yy;
+  return {iso:iso, disp:disp};
+}
+function _manoObraEstado(op){
+  switch(op.status){
+    case 'running':     return {lbl:'▶ En proceso', col:'var(--green)'};
+    case 'paused':      return ((op._pauseTipo==='turno')||((op.pauseReason||'').indexOf('🌙')>=0)) ? {lbl:'🌙 Fin de turno', col:'var(--accent-l)'} : {lbl:'⏸ Pausada', col:'var(--yellow)'};
+    case 'validating':  return {lbl:'🔍 En validación', col:'#a78bfa'};
+    case 'op_concluded':return {lbl:'⏳ Concluida (operador)', col:'#f59e0b'};
+    case 'done':        return {lbl:'✅ Terminada', col:'var(--green)'};
+    case 'retrabajo':   return {lbl:'🔄 Retrabajo', col:'var(--red)'};
+    default:            return {lbl:(op.status||'—'), col:'var(--dim)'};
+  }
+}
+// Construye {operador: {totalMins, dias:{iso:{disp,mins,entries:[]}}}}
+function _manoObraBuild(filtTech, filtFrom, filtTo, filtOf, filtPedT){
+  filtOf=(filtOf||'').toLowerCase(); filtPedT=(filtPedT||'').toLowerCase();
+  var porOperador={};
+  function inRange(iso){ if(filtFrom && iso<filtFrom) return false; if(filtTo && iso>filtTo) return false; return true; }
+  function addEntry(operador, nf, entry){
+    if(!operador || !nf) return;
+    if(filtTech && operador!==filtTech) return;
+    if(!inRange(nf.iso)) return;
+    if(!porOperador[operador]) porOperador[operador]={totalMins:0, dias:{}};
+    var o=porOperador[operador];
+    if(!o.dias[nf.iso]) o.dias[nf.iso]={disp:nf.disp, mins:0, entries:[]};
+    o.dias[nf.iso].entries.push(entry);
+    o.dias[nf.iso].mins+=(entry.mins||0);
+    o.totalMins+=(entry.mins||0);
+  }
+  (DB.activeOFs||[]).forEach(function(aof){
+    var ofRec=(DB.ofs||[]).find(function(o){return o.of_sap===aof.of_sap;})||{};
+    if(ofRec.pedidoCerrado || ofRec.status==='Cerrado') return;
+    if(filtOf && aof.of_sap.toLowerCase().indexOf(filtOf)===-1) return;
+    if(filtPedT && (ofRec.pedido||'').toLowerCase().indexOf(filtPedT)===-1) return;
+    (aof.ops||[]).forEach(function(op){
+      if(op.status==='omitida') return;
+      var worked = (op.mins||0)>0 || (op.turnos&&op.turnos.length>0) || ['running','paused','validating','op_concluded','done'].indexOf(op.status)>=0;
+      if(!worked) return;
+      var est=_manoObraEstado(op);
+      // Turnos previos (fin de turno) — cada uno con su fecha y minutos
+      (op.turnos||[]).forEach(function(seg){
+        var nf=_manoObraNormFecha(seg.fecha||seg.fecha_inicio||'');
+        if(!nf) return;
+        addEntry(seg.tecnico||op.tecnico||'', nf, {of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoLbl:'🌙 Fin de turno', estadoCol:'var(--accent-l)', rol:'principal', mins:(seg.mins||0), qty_ok:(seg.qty_ok||0), qty_def:(seg.qty_def||0)});
+        (seg.ayudantes||[]).forEach(function(a){ addEntry(a, nf, {of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoLbl:'🌙 Fin de turno (ayud)', estadoCol:'var(--accent-l)', rol:'ayudante', mins:(seg.mins||0), qty_ok:0, qty_def:0}); });
+      });
+      // Turno actual. Mins puede ser el TOTAL (turnos previos + actual) o SOLO el turno
+      // actual (según cómo se cerró/reanudó/terminó la operación). Si Mins < suma de
+      // turnos previos, entonces Mins ya representa solo el turno actual (no restar).
+      var prevMins=(op.turnos||[]).reduce(function(s,x){return s+(x.mins||0);},0);
+      var curMins=((op.mins||0)>=prevMins) ? Math.max(0,(op.mins||0)-prevMins) : (op.mins||0);
+      var prevOk=(op.turnos||[]).reduce(function(s,x){return s+(x.qty_ok||0);},0);
+      var prevDef=(op.turnos||[]).reduce(function(s,x){return s+(x.qty_def||0);},0);
+      var curOk=Math.max(0,(op.qty_ok||0)-prevOk);
+      var curDef=Math.max(0,(op.qty_def||0)-prevDef);
+      var curFechaStr=(op.fechaInicioTurnoActual&&String(op.fechaInicioTurnoActual).split(' ')[0]) || (op.fecha_inicio_real&&String(op.fecha_inicio_real).split(' ')[0]) || (op.fecha_fin_real&&String(op.fecha_fin_real).split(' ')[0]) || '';
+      var nf2=_manoObraNormFecha(curFechaStr);
+      if((curMins>0 || !(op.turnos&&op.turnos.length)) && nf2){
+        addEntry(op.tecnico||'', nf2, {of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoLbl:est.lbl, estadoCol:est.col, rol:'principal', mins:curMins, qty_ok:curOk, qty_def:curDef});
+        (op.ayudantes||[]).forEach(function(a){
+          var am=(op.ayudTimes&&op.ayudTimes[a]!==undefined)?op.ayudTimes[a]:curMins;
+          addEntry(a, nf2, {of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoLbl:est.lbl+' (ayud)', estadoCol:est.col, rol:'ayudante', mins:am, qty_ok:0, qty_def:0});
+        });
+      }
+    });
+  });
+  return porOperador;
+}
+function _manoObraBody(filtTech, filtFrom, filtTo, filtOf, filtPedT){
+  var data=_manoObraBuild(filtTech, filtFrom, filtTo, filtOf, filtPedT);
+  var ops=Object.keys(data).sort();
+  var h='';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">';
+  h+='<button onclick="ftManoObraExportExcel()" style="font-size:.72rem;background:rgba(34,160,70,.14);border:1px solid rgba(34,160,70,.35);color:var(--green);border-radius:6px;padding:5px 12px;cursor:pointer;font-weight:600;">⬇ Exportar Excel</button>';
+  h+='<button onclick="ftManoObraExportPDF()" style="font-size:.72rem;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#f87171;border-radius:6px;padding:5px 12px;cursor:pointer;font-weight:600;">📄 Exportar PDF</button>';
+  h+='<span style="font-size:.66rem;color:var(--dim);">Incluye operaciones en proceso, pausadas y terminadas · el tiempo se reparte por día.</span>';
+  h+='</div>';
+  if(!ops.length){ h+='<div style="font-size:.78rem;color:var(--muted);padding:8px 0;">Sin actividad registrada para los filtros aplicados.</div>'; return h; }
+  ops.forEach(function(operador){
+    var o=data[operador];
+    var diasKeys=Object.keys(o.dias).sort();
+    h+='<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:10px;overflow:hidden;">';
+    h+='<div style="padding:8px 12px;background:rgba(0,82,139,.10);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">';
+    h+='<div style="font-weight:700;font-size:.82rem;">👷 '+esc(operador)+'</div>';
+    h+='<div style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);font-weight:700;">Total período: '+fmtM(o.totalMins)+' · '+diasKeys.length+' día'+(diasKeys.length!==1?'s':'')+'</div>';
+    h+='</div>';
+    diasKeys.forEach(function(iso){
+      var d=o.dias[iso];
+      h+='<div style="padding:6px 12px;background:rgba(255,255,255,.02);border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">';
+      h+='<span style="font-size:.72rem;font-weight:700;color:var(--text);">📅 '+esc(d.disp)+'</span>';
+      h+='<span style="font-family:\'DM Mono\',monospace;font-size:.72rem;color:var(--green);font-weight:700;">'+fmtM(d.mins)+' trabajados</span>';
+      h+='</div>';
+      h+='<div style="overflow-x:auto;"><table style="width:100%;font-size:.7rem;border-collapse:collapse;"><thead><tr>'+
+         '<th style="color:var(--dim);text-align:left;padding:3px 8px;">OF</th>'+
+         '<th style="color:var(--dim);text-align:left;padding:3px 8px;">Operación</th>'+
+         '<th style="color:var(--dim);text-align:left;padding:3px 8px;">Estación</th>'+
+         '<th style="color:var(--dim);text-align:left;padding:3px 8px;">Rol</th>'+
+         '<th style="color:var(--dim);text-align:left;padding:3px 8px;">Estado</th>'+
+         '<th style="color:var(--dim);text-align:right;padding:3px 8px;">Tiempo</th>'+
+         '<th style="color:var(--green);text-align:right;padding:3px 8px;">OK</th>'+
+         '<th style="color:var(--yellow);text-align:right;padding:3px 8px;">Def</th>'+
+         '</tr></thead><tbody>';
+      d.entries.forEach(function(e){
+        h+='<tr style="border-top:1px solid rgba(255,255,255,.04);">'+
+           '<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);padding:3px 8px;">'+esc(e.of_sap)+'</td>'+
+           '<td style="padding:3px 8px;">'+esc(e.operacion)+'</td>'+
+           '<td style="color:var(--dim);padding:3px 8px;">'+esc(e.estacion)+'</td>'+
+           '<td style="color:var(--dim);padding:3px 8px;">'+(e.rol==='ayudante'?'🤝 Ayud.':'Principal')+'</td>'+
+           '<td style="color:'+e.estadoCol+';padding:3px 8px;white-space:nowrap;">'+esc(e.estadoLbl)+'</td>'+
+           '<td style="font-family:\'DM Mono\',monospace;text-align:right;padding:3px 8px;color:var(--accent-l);">'+(e.mins>0?fmtM(e.mins):'—')+'</td>'+
+           '<td style="text-align:right;padding:3px 8px;color:var(--green);">'+(e.qty_ok>0?e.qty_ok:'—')+'</td>'+
+           '<td style="text-align:right;padding:3px 8px;color:'+(e.qty_def>0?'var(--yellow)':'var(--dim)')+';">'+(e.qty_def>0?e.qty_def:'—')+'</td>'+
+           '</tr>';
+      });
+      h+='</tbody></table></div>';
+    });
+    h+='</div>';
+  });
+  return h;
+}
+function _manoObraReadFilters(){
+  return {
+    tech:(document.getElementById('hist-tech-filter')||{value:''}).value||'',
+    from:(document.getElementById('hist-tech-from')||{value:''}).value||'',
+    to:(document.getElementById('hist-tech-to')||{value:''}).value||'',
+    of:(document.getElementById('hist-tech-of')||{value:''}).value||'',
+    ped:(document.getElementById('hist-tech-ped')||{value:''}).value||''
+  };
+}
+function _ascOnly(s){ return String(s||'').replace(/[^\x00-\x7F]/g,'').trim(); }
+function ftManoObraExportExcel(){
+  function go(){
+    var XLSX=window.XLSX; var f=_manoObraReadFilters();
+    var data=_manoObraBuild(f.tech,f.from,f.to,f.of,f.ped);
+    var ops=Object.keys(data).sort();
+    if(!ops.length){ alert('No hay actividad para exportar con los filtros aplicados.'); return; }
+    var wb=XLSX.utils.book_new();
+    var det=[['Fecha','Operador','OF','Pedido','Operación','Estación','Rol','Estado','Minutos','Tiempo','OK','Def']];
+    var resumen=[['Operador','Fecha','Minutos','Horas']];
+    ops.forEach(function(operador){
+      var o=data[operador];
+      Object.keys(o.dias).sort().forEach(function(iso){
+        var d=o.dias[iso];
+        resumen.push([operador, d.disp, d.mins, fmtM(d.mins)]);
+        d.entries.forEach(function(e){
+          det.push([d.disp, operador, e.of_sap, e.pedido, e.operacion, e.estacion, (e.rol==='ayudante'?'Ayudante':'Principal'), _ascOnly(e.estadoLbl), e.mins, fmtM(e.mins), e.qty_ok, e.qty_def]);
+        });
+      });
+      // fila total operador
+      resumen.push([operador+' — TOTAL', '', o.totalMins, fmtM(o.totalMins)]);
+    });
+    var wsD=XLSX.utils.aoa_to_sheet(det); wsD['!cols']=[{wch:12},{wch:24},{wch:12},{wch:12},{wch:42},{wch:22},{wch:11},{wch:22},{wch:9},{wch:9},{wch:7},{wch:7}];
+    XLSX.utils.book_append_sheet(wb,wsD,'Detalle');
+    var wsR=XLSX.utils.aoa_to_sheet(resumen); wsR['!cols']=[{wch:28},{wch:12},{wch:9},{wch:9}];
+    XLSX.utils.book_append_sheet(wb,wsR,'Resumen diario');
+    XLSX.writeFile(wb,'ManoObra_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  }
+  if(window.XLSX){go();} else{var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=go;s.onerror=function(){alert('No se pudo cargar XLSX.');};document.head.appendChild(s);}
+}
+window.ftManoObraExportExcel = ftManoObraExportExcel;
+function ftManoObraExportPDF(){
+  function _haveAT(){ try{ return !!(window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && typeof window.jspdf.jsPDF.API.autoTable==='function'); }catch(e){ return false; } }
+  function build(){
+    try{
+      var jPDF=window.jspdf.jsPDF; var doc=new jPDF({orientation:'landscape',unit:'mm',format:'a4'});
+      var f=_manoObraReadFilters();
+      var data=_manoObraBuild(f.tech,f.from,f.to,f.of,f.ped);
+      var ops=Object.keys(data).sort();
+      if(!ops.length){ alert('No hay actividad para exportar con los filtros aplicados.'); return; }
+      var now=new Date().toLocaleDateString('es-MX');
+      doc.setFontSize(13);doc.setFont('helvetica','bold');doc.setTextColor(20);doc.text('Mano de obra diaria por operador',14,13);
+      doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90);
+      var periodo=(f.from||f.to)?('Periodo: '+(f.from||'inicio')+' a '+(f.to||'hoy')):'Periodo: todo el historial activo';
+      doc.text('Generado: '+now+'  -  '+periodo,14,19);
+      var y=25;
+      ops.forEach(function(operador){
+        var o=data[operador];
+        if(y>178){ doc.addPage(); y=14; }
+        doc.setFontSize(10);doc.setFont('helvetica','bold');doc.setTextColor(20);
+        doc.text(_ascOnly(operador)+'   -   Total periodo: '+fmtM(o.totalMins),14,y);
+        var body=[];
+        Object.keys(o.dias).sort().forEach(function(iso){
+          var d=o.dias[iso];
+          d.entries.forEach(function(e){
+            body.push([d.disp, e.of_sap, _ascOnly(e.operacion).slice(0,44), _ascOnly(e.estacion).slice(0,22), (e.rol==='ayudante'?'Ayud.':'Prin.'), _ascOnly(e.estadoLbl), fmtM(e.mins), (e.qty_ok||''), (e.qty_def||'')]);
+          });
+          body.push([{content:'Subtotal '+d.disp, colSpan:6, styles:{halign:'right', fontStyle:'bold', fillColor:[235,240,247]}}, {content:fmtM(d.mins), styles:{fontStyle:'bold', fillColor:[235,240,247]}}, {content:'', styles:{fillColor:[235,240,247]}}, {content:'', styles:{fillColor:[235,240,247]}}]);
+        });
+        doc.autoTable({ startY:y+2, head:[['Fecha','OF','Operación','Estación','Rol','Estado','Tiempo','OK','Def']], body:body,
+          styles:{fontSize:6.5,cellPadding:1.2}, headStyles:{fillColor:[26,52,85],textColor:[200,215,235],fontSize:6},
+          columnStyles:{0:{cellWidth:20},1:{cellWidth:16},2:{cellWidth:72},3:{cellWidth:34},4:{cellWidth:13},5:{cellWidth:38},6:{cellWidth:16,halign:'right'},7:{cellWidth:11,halign:'right'},8:{cellWidth:11,halign:'right'}},
+          margin:{left:14,right:14}, theme:'grid' });
+        y=doc.lastAutoTable.finalY+8;
+      });
+      doc.save('ManoObra_'+new Date().toISOString().slice(0,10)+'.pdf');
+    }catch(e){ console.error('ftManoObraExportPDF:',e); alert('No se pudo generar el PDF: '+(e&&e.message||e)); }
+  }
+  function loadAT(cb){ var s2=document.createElement('script'); s2.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'; s2.onload=cb; s2.onerror=function(){ alert('No se pudo cargar el complemento de tablas (autoTable).'); }; document.head.appendChild(s2); }
+  if(_haveAT()){ build(); }
+  else if(window.jspdf&&window.jspdf.jsPDF){ loadAT(build); }
+  else{ var s1=document.createElement('script'); s1.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s1.onload=function(){ loadAT(build); }; s1.onerror=function(){ alert('No se pudo cargar jsPDF.'); }; document.head.appendChild(s1); }
+}
+window.ftManoObraExportPDF = ftManoObraExportPDF;
+
 // -- renderHist completo ---------------------------------------
 function renderHist(){
   var filtArt  = (document.getElementById('hist-art-filter')||{value:''}).value.toLowerCase();
@@ -13977,8 +14278,10 @@ function renderHist(){
           // Para ops con turnos: acumular solo el tiempo del último turno.
           // Los turnos previos se acumulan por separado en el forEach de turnos.
           var _prevTurnosMinsSum=(op.turnos||[]).reduce(function(a,s){return a+(s.mins||0);},0);
+          // Mins puede ser el total o solo el turno actual; si es menor que la suma de
+          // turnos previos, ya es solo el turno actual (no restar).
           var _lastTurnoMinsStats=(op.turnos&&op.turnos.length>0)
-            ? Math.max(0,(op.mins||0)-_prevTurnosMinsSum)
+            ? (((op.mins||0)>=_prevTurnosMinsSum) ? Math.max(0,(op.mins||0)-_prevTurnosMinsSum) : (op.mins||0))
             : (op.mins||0);
           techStats[t].mins+=_lastTurnoMinsStats;
           // Para ops con turnos: acumular solo las piezas del último turno en stats.
@@ -14008,7 +14311,7 @@ function renderHist(){
         // Para ops con turnos: el tiempo del "último turno" = total - suma de turnos previos
         // Los turnos previos tienen su propio mins correcto; el último = total - prev
         var _sumTurnosPrevMins=(op.turnos||[]).reduce(function(acc,tSeg){return acc+(tSeg.mins||0);},0);
-        var _lastTurnoMins=(op.turnos&&op.turnos.length>0) ? Math.max(0,(op.mins||0)-_sumTurnosPrevMins) : (op.mins||0);
+        var _lastTurnoMins=(op.turnos&&op.turnos.length>0) ? (((op.mins||0)>=_sumTurnosPrevMins) ? Math.max(0,(op.mins||0)-_sumTurnosPrevMins) : (op.mins||0)) : (op.mins||0);
         var ayudMinsForRow=(rol==='ayudante'&&op.ayudTimes&&op.ayudTimes[t]!==undefined)
           ? op.ayudTimes[t]
           : _lastTurnoMins;
@@ -14052,7 +14355,8 @@ function renderHist(){
           inicio: _inicioUltimoTurno,
           fin: op.fin||'—',
           fecha: _fechaInicioRow,
-          fechaFin: _fechaFinRow
+          fechaFin: _fechaFinRow,
+          concluido: (op && op._kpiSeg) ? {fecha:'',hora:''} : _kpiConcluidoDe(op)
         });
       }
 
@@ -14069,7 +14373,8 @@ function renderHist(){
           fecha:seg.fecha||'',
           nombre:op.nombre+' ('+turnoLabel+')',
           pauseReason:'🌙 '+turnoLabel,
-          turnos:[] // segmento individual no tiene sub-turnos
+          turnos:[], // segmento individual no tiene sub-turnos
+          _kpiSeg:true // marcar como segmento de turno (para no repetir "Concluido")
         });
         var savedOp=op;op=segOp;
         registerTech(seg.tecnico,'principal');
@@ -14101,15 +14406,50 @@ function renderHist(){
 
   // -- 2: Construir HTML -------------------------------------
   var techH='';
+  // Helper: duración de reloj (Fin - Inicio) a partir de fecha + hora 12h (a.m./p.m.)
+  function _kpiParseFH(fecha, hora){
+    if(!fecha || !hora) return null;
+    var dp=String(fecha).trim().split('/'); if(dp.length!==3) return null;
+    var dd=parseInt(dp[0],10), mm=parseInt(dp[1],10), yy=parseInt(dp[2],10);
+    if(isNaN(dd)||isNaN(mm)||isNaN(yy)) return null;
+    if(yy<100) yy+=2000;
+    var h=String(hora).toLowerCase();
+    var m=h.match(/(\d{1,2}):(\d{2})/); if(!m) return null;
+    var hh=parseInt(m[1],10), mi=parseInt(m[2],10);
+    if(/p\.?\s*m/.test(h) && hh<12) hh+=12;
+    if(/a\.?\s*m/.test(h) && hh===12) hh=0;
+    return new Date(yy, mm-1, dd, hh, mi, 0).getTime();
+  }
+  function _kpiWallMins(fi,hi,ff,hf){
+    var a=_kpiParseFH(fi,hi), b=_kpiParseFH(ff,hf);
+    if(a==null||b==null) return null;
+    var d=Math.round((b-a)/60000);
+    return (isFinite(d) && d>=0 && d<7*24*60) ? d : null;
+  }
+  // Helper: fecha/hora en que el OPERADOR concluyó la operación (status op_concluded).
+  // En la bitácora se registra como "Actualizó la operación" (previo a "Terminó" del supervisor).
+  function _kpiConcluidoDe(op){
+    var h = op && op.historialCambios;
+    if(!Array.isArray(h) || !h.length) return {fecha:'', hora:''};
+    var idxTermino=-1;
+    for(var i=h.length-1;i>=0;i--){ if(String(h[i].accion||'').indexOf('Terminó la operación')===0){ idxTermino=i; break; } }
+    var found=null;
+    for(var j=0;j<h.length;j++){
+      if(idxTermino>=0 && j>idxTermino) break;
+      if(String(h[j].accion||'').indexOf('Actualizó la operación')===0) found=h[j];
+    }
+    if(!found){ for(var k=h.length-1;k>=0;k--){ if(String(h[k].accion||'').indexOf('Actualizó la operación')===0){ found=h[k]; break; } } }
+    return found ? {fecha:found.fecha||'', hora:found.hora||''} : {fecha:'', hora:''};
+  }
   techH+='<div style="font-family:\'Syne\',sans-serif;font-size:.85rem;font-weight:700;margin-bottom:10px;">👷 Desempeño de Técnicos</div>';
 
   // Fila 1 de filtros: técnico + fechas
   techH+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">';
-  techH+='<select class="form-select-sm" id="hist-tech-filter" onchange="renderHist()" style="min-width:130px;"><option value="">Todos los técnicos</option>';
+  techH+='<select class="form-select-sm" id="hist-tech-filter" onchange="renderHistSpin()" style="min-width:130px;"><option value="">Todos los técnicos</option>';
   TECHNICIANS.forEach(function(t){techH+='<option value="'+esc(t)+'"'+(filtTech===t?' selected':'')+'>'+esc(t)+'</option>';});
   techH+='</select>';
-  techH+='<label style="font-size:.68rem;color:var(--dim);display:flex;align-items:center;gap:4px;">Desde<input type="date" class="form-input-sm" id="hist-tech-from" value="'+filtFrom+'" onchange="renderHist()" style="width:120px;"></label>';
-  techH+='<label style="font-size:.68rem;color:var(--dim);display:flex;align-items:center;gap:4px;">Hasta<input type="date" class="form-input-sm" id="hist-tech-to"   value="'+filtTo+'"   onchange="renderHist()" style="width:120px;"></label>';
+  techH+='<label style="font-size:.68rem;color:var(--dim);display:flex;align-items:center;gap:4px;">Desde<input type="date" class="form-input-sm" id="hist-tech-from" value="'+filtFrom+'" onchange="renderHistSpin()" style="width:120px;"></label>';
+  techH+='<label style="font-size:.68rem;color:var(--dim);display:flex;align-items:center;gap:4px;">Hasta<input type="date" class="form-input-sm" id="hist-tech-to"   value="'+filtTo+'"   onchange="renderHistSpin()" style="width:120px;"></label>';
   techH+='</div>';
 
   // Fila 2 de filtros: OF + Pedido
@@ -14120,6 +14460,17 @@ function renderHist(){
     techH+='<button onclick="clearTechFilters()" style="font-size:.68rem;background:rgba(207,51,51,.1);border:1px solid rgba(207,51,51,.25);color:var(--red);border-radius:5px;padding:3px 8px;cursor:pointer;">✕ Limpiar filtros</button>';
   }
   techH+='</div>';
+
+  // Toggle de modo: Desempeño (terminadas) vs Mano de obra diaria (incluye en proceso)
+  var techMode=(C.techMode==='manoobra')?'manoobra':'desempeno';
+  techH+='<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">';
+  techH+='<button onclick="setTechMode(\'desempeno\')" style="font-size:.72rem;border-radius:6px;padding:5px 12px;cursor:pointer;font-weight:700;'+(techMode==='desempeno'?'background:var(--accent-l);color:#0b1220;border:1px solid var(--accent-l);':'background:rgba(255,255,255,.05);color:var(--dim);border:1px solid var(--border);')+'">📊 Desempeño (terminadas)</button>';
+  techH+='<button onclick="setTechMode(\'manoobra\')" style="font-size:.72rem;border-radius:6px;padding:5px 12px;cursor:pointer;font-weight:700;'+(techMode==='manoobra'?'background:var(--accent-l);color:#0b1220;border:1px solid var(--accent-l);':'background:rgba(255,255,255,.05);color:var(--dim);border:1px solid var(--border);')+'">🗓 Mano de obra diaria</button>';
+  techH+='</div>';
+
+  if(techMode==='manoobra'){
+    techH+=_manoObraBody(filtTech, filtFrom, filtTo, filtOf, filtPedT);
+  } else {
 
   var techKeys=Object.keys(techStats);
   if(!techKeys.length){
@@ -14190,8 +14541,11 @@ function renderHist(){
         techH+='<thead><tr>';
         techH+='<th style="color:var(--dim);">Rol</th><th style="color:var(--dim);">Tipo</th><th style="color:var(--dim);">OF</th><th style="color:var(--dim);">Pedido</th>';
         techH+='<th style="color:var(--dim);">Operación</th><th style="color:var(--dim);">Estación</th>';
-        techH+='<th style="color:var(--dim);">Inicio</th><th style="color:var(--dim);">Fin</th>';
-        techH+='<th style="color:var(--dim);">Tiempo</th>';
+        techH+='<th style="color:var(--dim);" title="Fecha y hora en que se inició la operación">Inicio</th>';
+        techH+='<th style="color:var(--dim);white-space:nowrap;font-size:.65rem;" title="Fecha y hora en que el OPERADOR concluyó la operación (antes de la validación del supervisor)">Concluido</th>';
+        techH+='<th style="color:var(--dim);" title="Fecha y hora en que el SUPERVISOR terminó/validó la operación">Fin</th>';
+        techH+='<th style="color:var(--accent-l);" title="Tiempo real trabajado en la operación (cronómetro, sin pausas)">Tiempo OP</th>';
+        techH+='<th style="color:var(--dim);white-space:nowrap;font-size:.65rem;" title="Fin - Inicio: tiempo transcurrido de reloj (incluye pausas y tiempo en otras operaciones)">Duración<br>(reloj)</th>';
         techH+='<th style="color:#a5b4fc;white-space:nowrap;font-size:.65rem;" title="T.Prom.Cal × (OK+Def) × 1.20">T.Ref.Cal<br>±20%</th>';
         techH+='<th style="color:var(--green);">OK</th><th style="color:var(--yellow);">Def</th><th style="color:var(--yellow);font-size:.6rem;">Ret</th><th style="color:var(--red);font-size:.6rem;">Chat</th>';
         techH+='</tr></thead><tbody>';
@@ -14241,8 +14595,12 @@ function renderHist(){
           techH+='<td style="color:var(--dim);">'+esc(r.pedido)+'</td>';
           techH+='<td>'+esc(r.op)+'</td><td style="color:var(--dim);">'+esc(r.estacion)+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;">'+(r.fecha?'<div style="font-size:.6rem;color:var(--dim);">'+esc(r.fecha)+'</div>':'')+esc(r.inicio)+'</td>';
+          var _cc=(r.concluido&&r.concluido.hora)?r.concluido:null;
+          techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);" title="Concluida por el operador">'+(_cc?((_cc.fecha?'<div style="font-size:.6rem;color:var(--dim);">'+esc(_cc.fecha)+'</div>':'')+esc(_cc.hora)):'<span style="color:var(--dim);">—</span>')+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;">'+(r.fechaFin?'<div style="font-size:.6rem;color:var(--dim);">'+esc(r.fechaFin)+'</div>':'')+esc(r.fin)+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);">'+(r.mins>0?fmtM(r.mins):'—')+'</td>';
+          var _wallMins=_kpiWallMins(r.fecha, r.inicio, r.fechaFin, r.fin);
+          techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--dim);" title="Tiempo transcurrido de reloj (Fin - Inicio)">'+(_wallMins!=null?fmtM(_wallMins):'—')+'</td>';
           techH+='<td>'+opRefCell+'</td>';
           techH+='<td style="color:var(--green);">'+(r.qty_ok>0?r.qty_ok:'—')+'</td>';
           techH+='<td style="color:'+(r.qty_def>0?'var(--yellow)':'var(--dim)')+';">'+(r.qty_def>0?r.qty_def:'—')+'</td>';
@@ -14251,8 +14609,9 @@ function renderHist(){
           techH+='</tr>';
         });
         techH+='<tr style="background:rgba(0,82,139,.12);font-weight:700;">';
-        techH+='<td colspan="8" style="text-align:right;font-size:.7rem;color:var(--dim);padding:4px 8px;">Total tiempo:</td>';
+        techH+='<td colspan="9" style="text-align:right;font-size:.7rem;color:var(--dim);padding:4px 8px;">Total tiempo:</td>';
         techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);padding:4px 8px;">'+fmtM(opTotal)+'</td>';
+        techH+='<td style="padding:4px 8px;color:var(--dim);font-size:.62rem;" title="No se suma: los lapsos de reloj se traslapan entre operaciones">—</td>';
         techH+='<td style="font-family:\'DM Mono\',monospace;color:#a5b4fc;padding:4px 8px;">'+(opRefTotal>0?fmtM(opRefTotal):'—')+'</td>';
         techH+='<td colspan="4"></td></tr>';
         techH+='</tbody></table></td></tr>';
@@ -14277,6 +14636,7 @@ function renderHist(){
       '<span style="color:var(--red);">🔴 Rojo</span> más del +15%. '+
       '— aparece cuando el analista Cal.Tiem. ha registrado tiempos para esa operación.</div>';
   }
+  } // fin else (modo desempeño)
   document.getElementById('hist-tech-kpi').innerHTML=techH;
 
   // -- 2: KPI Tiempos de Calidad -----------------------------
@@ -15016,7 +15376,7 @@ function clearTechFilters(){
     var el=document.getElementById(id);
     if(el) el.value='';
   });
-  (window.renderHist||renderHist)();
+  if(typeof renderHistSpin==='function') renderHistSpin(); else (window.renderHist||renderHist)();
 }
 
 
@@ -15878,6 +16238,7 @@ async function ftRptLoad() {
     _rptData.ofs=(res[0].value||[]).map(function(i){
       var f=i.fields||{};
       return{id:i.id,of_sap:f.OF_SAP||f.Title||'',pedido:f.Numero_Pedido||f.Pedido||'',cliente:f.Cliente||'',
+        articulo:f.Numero_Articulo||'',
         descripcion:f.Descripcion_Articulo||'',cantidad:parseFloat(String(f.Cantidad||'').replace(',','.'))||0,status:f.Status||'Sin programar',
         fecha_prog:(f.Fecha_Programacion||'').split('T')[0],fecha_entrega:(f.Fecha_Entrega||'').split('T')[0],prioridad:f.Prioridad||'Normal'};
     }).filter(function(of){var s=(of.status||'').toLowerCase();return s!=='cerrado'&&s!=='pedido cancelado'&&s!=='cerrada';});
@@ -16008,7 +16369,7 @@ function _rptAplicarFiltros(){
       if(filtDesde&&r.fProg&&r.fProg<filtDesde)return false;
       if(filtHasta&&r.fProg&&r.fProg>filtHasta)return false;
       if(!_rptStatusMatch(r.opStatus))return false;
-      if(filtQ){var hay=(r.of.of_sap+' '+r.of.pedido+' '+r.of.cliente+' '+r.of.descripcion+' '+r.operador).toLowerCase();if(hay.indexOf(filtQ)<0)return false;}
+      if(filtQ){var hay=(r.of.of_sap+' '+r.of.pedido+' '+r.of.cliente+' '+r.of.descripcion+' '+(r.of.articulo||'')+' '+r.operador).toLowerCase();if(hay.indexOf(filtQ)<0)return false;}
       return true;
     });
     if(filas.length) out[est]=filas;
@@ -16157,7 +16518,8 @@ function ftRptExportExcel(){
 
 // ── PDF con detalle + código QR por operación (para entregar al operador) ──
 // El QR codifica "FT|OF_SAP|Op_ID" para que el Monitor lo escanee y abra acciones rápidas.
-function ftRptExportPDFCodigos(){
+function ftRptExportPDFCodigos(modo){
+  var _modo=(modo==='general')?'general':'operaciones';
   function _trunc(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-1)+'.' : s; }
   function build(){
     var jPDF=window.jspdf.jsPDF; var doc=new jPDF({orientation:'portrait',unit:'mm',format:'a4'});
@@ -16173,10 +16535,12 @@ function ftRptExportPDFCodigos(){
       });
     });
     if(!items.length){ alert('No hay operaciones con los filtros seleccionados.'); return; }
-    // Generar todos los QR (QRious, síncrono → dataURL)
-    items.forEach(function(it){
-      try{ var payload='FT|'+(it.of.of_sap||'')+'|'+(it.op.op_id||''); it._qr=new window.QRious({value:payload,size:220,level:'M'}).toDataURL('image/png'); }catch(e){}
-    });
+    // Generar los QR de operación solo cuando el modo lo requiere (Con operaciones)
+    if(_modo==='operaciones'){
+      items.forEach(function(it){
+        try{ var payload='FT|'+(it.of.of_sap||'')+'|'+(it.op.op_id||''); it._qr=new window.QRious({value:payload,size:220,level:'M'}).toDataURL('image/png'); }catch(e){}
+      });
+    }
     (function(){
       var pageW=210, pageH=297, mL=10, gap=6, rowGap=4;
       var cols=2, cardW=(pageW-mL*2-gap)/cols;
@@ -16200,7 +16564,7 @@ function ftRptExportPDFCodigos(){
       doc.setTextColor(20);doc.setFontSize(13);doc.setFont('helvetica','bold');
       doc.text('Reporte de codigos QR'+_rptEstLabel(), mL, 12);
       doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90);
-      doc.text('Generado: '+now+'  -  '+_mainOFs.length+' ordenes  -  '+items.length+' operaciones', mL, 16.5);
+      doc.text('Generado: '+now+'  -  '+_mainOFs.length+' ordenes'+(_modo==='operaciones'?('  -  '+items.length+' operaciones'):'  -  Solo QR generales'), mL, 16.5);
       y=22;
 
       function sectionTitle(t, sub, col){
@@ -16285,18 +16649,18 @@ function ftRptExportPDFCodigos(){
         if(_grupo){ doc.setTextColor(124,58,237); doc.text('Grupo '+_grupo+' ('+(_grupoModo==='lote'?'Lote':'Serie')+'): '+_grpN+' ords - total '+_grpTot+' pzas',tx,ty); doc.setTextColor(70); ty+=3.9; }
       }
 
-      // Sección 1: QR principal por OF
+      // Sección 1: QR principal por OF (siempre)
       sectionTitle('QR principal por Orden de Fabricacion', 'Escanea el QR de una OF para ver su avance completo ('+_mainOFs.length+' ordenes)', [124,58,237]);
       grid(_mainOFs, 52, drawMain);
 
-      // Divisor entre secciones (misma hoja si hay espacio)
-      divider();
+      // Sección 2: QR por operación (solo en modo "Con operaciones")
+      if(_modo==='operaciones'){
+        divider();
+        sectionTitle('QR por operacion', 'Escanea el QR de una operacion en el Monitor para las acciones rapidas ('+items.length+' operaciones)', [20,20,20]);
+        grid(items, 64, drawOp);
+      }
 
-      // Sección 2: QR por operación
-      sectionTitle('QR por operacion', 'Escanea el QR de una operacion en el Monitor para las acciones rapidas ('+items.length+' operaciones)', [20,20,20]);
-      grid(items, 64, drawOp);
-
-      var _fname='Operaciones_QR_'+new Date().toISOString().slice(0,10)+'.pdf';
+      var _fname=(_modo==='general'?'QR_General_OF_':'Operaciones_QR_')+new Date().toISOString().slice(0,10)+'.pdf';
       _ftRptShowPrintPreview(doc, _fname);
     })();
   }
@@ -16305,6 +16669,32 @@ function ftRptExportPDFCodigos(){
   ensureJsPDF(function(){ ensureQR(function(){ build(); }); });
 }
 window.ftRptExportPDFCodigos = ftRptExportPDFCodigos;
+
+// Selector de modo antes de generar el PDF con códigos (General / Con operaciones)
+function ftRptPDFCodigosChooser(){
+  var ex=document.getElementById('rptcod-modo-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='rptcod-modo-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px;';
+  d.innerHTML='<div style="background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:14px;width:min(430px,94vw);padding:20px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'+
+      '<div style="font-weight:700;font-size:1rem;color:#e6edf3;">🔳 PDF con códigos</div>'+
+      '<button onclick="_rptCodModoClose()" style="background:none;border:none;color:#8b949e;font-size:1.3rem;cursor:pointer;line-height:1;">✕</button>'+
+    '</div>'+
+    '<div style="font-size:.8rem;color:#8b949e;margin-bottom:16px;">Elige qué códigos QR incluir en el reporte:</div>'+
+    '<button onclick="_rptCodModoClose();ftRptExportPDFCodigos(\'general\')" style="width:100%;text-align:left;background:rgba(147,51,234,.12);border:1px solid rgba(147,51,234,.35);border-radius:10px;padding:13px 15px;color:#e6edf3;cursor:pointer;margin-bottom:10px;">'+
+      '<div style="font-weight:700;font-size:.9rem;color:#c084fc;">General</div>'+
+      '<div style="font-size:.74rem;color:#8b949e;margin-top:2px;">Solo el QR general de cada orden (avance de la OF).</div>'+
+    '</button>'+
+    '<button onclick="_rptCodModoClose();ftRptExportPDFCodigos(\'operaciones\')" style="width:100%;text-align:left;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.35);border-radius:10px;padding:13px 15px;color:#e6edf3;cursor:pointer;">'+
+      '<div style="font-weight:700;font-size:.9rem;color:#58a6ff;">Con operaciones</div>'+
+      '<div style="font-size:.74rem;color:#8b949e;margin-top:2px;">El QR general más el QR de cada operación (como actualmente).</div>'+
+    '</button>'+
+  '</div>';
+  document.body.appendChild(d);
+}
+function _rptCodModoClose(){ var m=document.getElementById('rptcod-modo-modal'); if(m) m.remove(); }
+window.ftRptPDFCodigosChooser=ftRptPDFCodigosChooser;
+window._rptCodModoClose=_rptCodModoClose;
 
 // ── Menú de impresión con vista previa para el PDF de códigos QR ──────────
 function _ftRptShowPrintPreview(doc, fname){

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.96</title>
+<title>FabTracker App v2.97</title>
 
 <!-- MSAL Browser -->
 
@@ -10729,6 +10729,7 @@ function monReporteMetaRender(){
   var ests=(_MON.estaciones||[]).slice();
   if(!ests.length){ body.innerHTML='<div style="text-align:center;color:#8b949e;padding:40px 20px;font-size:.85rem;">Este monitor no tiene estaciones asignadas.<br>Configúralas con el ⚙ de arriba.</div>'; return; }
   var porEst={}; ests.forEach(function(e){ porEst[e]=[]; });
+  var gTotal=0, gResueltas=0, gOFs={};
   (DB.activeOFs||[]).forEach(function(aof){
     if(aof.ofCerrada) return;
     var byEst={};
@@ -10740,10 +10741,24 @@ function monReporteMetaRender(){
       var running=ops.some(function(o){return (o.status||'')==='running';});
       var resueltas=fin+omit; var pct=total>0?Math.round(resueltas/total*100):0;
       var estado=(pct===100&&total>0)?'Terminada':((running||resueltas>0)?'En proceso':'Pendiente');
-      porEst[e].push({sap:aof.of_sap||'', desc:(aof.descripcion||aof.articulo||''), pedido:(aof.pedido||''), pct:pct, estado:estado});
+      // operador(es) y cantidad de piezas de la orden
+      var tset={}, piezas=0;
+      ops.forEach(function(o){ if(o.tecnico) tset[o.tecnico]=true; (o.ayudantes||[]).forEach(function(a){ if(a) tset[a]=true; }); if((o.qty_total||0)>piezas) piezas=o.qty_total||0; });
+      var operador=Object.keys(tset).join(' / ')||'—';
+      gTotal+=total; gResueltas+=resueltas; if(aof.of_sap) gOFs[aof.of_sap]=true;
+      porEst[e].push({sap:aof.of_sap||'', desc:(aof.descripcion||aof.articulo||''), pedido:(aof.pedido||''), pct:pct, estado:estado, operador:operador, piezas:piezas});
     });
   });
+  var overall=gTotal>0?Math.round(gResueltas/gTotal*100):0;
+  var nOFs=Object.keys(gOFs).length;
   var h='';
+  // Resumen general del monitor (todas sus estaciones juntas)
+  var _oc=_monMetaColor(overall);
+  h+='<div style="background:linear-gradient(135deg,#0e2a2a,#122420);border:1px solid rgba(13,148,136,.45);border-radius:10px;padding:14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">';
+  h+='<div style="font-size:.82rem;font-weight:800;color:#e6edf3;">📈 Avance general del monitor<div style="font-size:.68rem;color:#8b949e;font-weight:400;margin-top:2px;">'+nOFs+' OF'+(nOFs===1?'':'s')+' · '+ests.length+' estación'+(ests.length===1?'':'es')+'</div></div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;flex:1;min-width:150px;max-width:300px;">';
+  h+='<div style="flex:1;height:11px;background:rgba(255,255,255,.1);border-radius:6px;overflow:hidden;"><div style="height:100%;width:'+overall+'%;background:'+_oc+';border-radius:6px;"></div></div>';
+  h+='<span style="font-size:1.3rem;font-weight:800;color:'+_oc+';">'+overall+'%</span></div></div>';
   ests.forEach(function(e){
     var rows=(porEst[e]||[]).slice().sort(function(a,b){ var na=parseInt(String(a.sap).replace(/\D/g,''))||0, nb=parseInt(String(b.sap).replace(/\D/g,''))||0; return na-nb; });
     var avg=rows.length?Math.round(rows.reduce(function(s,r){return s+r.pct;},0)/rows.length):0;
@@ -10763,7 +10778,8 @@ function monReporteMetaRender(){
         h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">';
         h+='<div style="min-width:0;"><span style="font-family:monospace;color:#58a6ff;font-weight:700;font-size:.82rem;">OF '+esc(r.sap)+'</span>'+(r.pedido?'<span style="color:#8b949e;font-size:.68rem;"> · Ped. '+esc(r.pedido)+'</span>':'')+'</div>';
         h+='<span style="background:'+estBg+';color:'+estCol+';border-radius:12px;padding:2px 9px;font-size:.66rem;font-weight:700;white-space:nowrap;">'+r.estado+'</span></div>';
-        if(r.desc) h+='<div style="font-size:.72rem;color:#c9d1d9;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(r.desc)+'</div>';
+        if(r.desc) h+='<div style="font-size:.72rem;color:#c9d1d9;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(r.desc)+'</div>';
+        h+='<div style="font-size:.66rem;color:#8b949e;margin-bottom:6px;">👷 '+esc(r.operador)+' · 📦 '+r.piezas+' pza'+(r.piezas===1?'':'s')+'</div>';
         h+='<div style="display:flex;align-items:center;gap:8px;">';
         h+='<div style="flex:1;height:7px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden;"><div style="height:100%;width:'+r.pct+'%;background:'+col+';border-radius:4px;"></div></div>';
         h+='<span style="font-size:.78rem;font-weight:800;color:'+col+';min-width:38px;text-align:right;">'+r.pct+'%</span></div>';

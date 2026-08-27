@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.95</title>
+<title>FabTracker App v2.96</title>
 
 <!-- MSAL Browser -->
 
@@ -622,9 +622,10 @@ tr:last-child td{border-bottom:none;}
     </button>
   </div>
 
-  <!-- Escanear QR de operación -->
-  <div style="padding:8px 12px;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;">
+  <!-- Escanear QR + Reporte Meta -->
+  <div style="padding:8px 12px;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;display:flex;flex-direction:column;gap:6px;">
     <button onclick="monitorScanOpen()" style="width:100%;background:linear-gradient(135deg,#7c3aed,#6c3483);border:none;border-radius:8px;padding:11px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;">📷 Escanear operación (QR)</button>
+    <button onclick="monReporteMetaOpen()" style="width:100%;background:linear-gradient(135deg,#0d9488,#0f766e);border:none;border-radius:8px;padding:11px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;">📊 Reporte Meta</button>
   </div>
 
   <!-- Filter bar -->
@@ -10704,6 +10705,76 @@ function monitorRender() {
 
 // ── Escaneo de QR de operación → acciones rápidas ────────────────────────
 var _monScanner = null;
+// ── Reporte Meta: OFs y % de avance de las estaciones asignadas a ESTE monitor ──
+function monReporteMetaOpen(){
+  var ests=(_MON.estaciones||[]).slice();
+  var ex=document.getElementById('mon-reporte-meta-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='mon-reporte-meta-modal';
+  d.style.cssText='position:fixed;inset:0;background:#0d1117;z-index:730;display:flex;flex-direction:column;';
+  d.innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:linear-gradient(135deg,#0d9488,#0f766e);flex-shrink:0;">'+
+      '<div style="font-weight:800;font-size:1.05rem;color:#fff;">📊 Reporte Meta</div>'+
+      '<button onclick="monReporteMetaClose()" style="background:rgba(255,255,255,.18);border:none;color:#fff;font-size:1.1rem;cursor:pointer;line-height:1;border-radius:8px;padding:5px 13px;">✕</button>'+
+    '</div>'+
+    '<div style="padding:8px 16px;background:#111820;color:#8b949e;font-size:.72rem;flex-shrink:0;border-bottom:1px solid rgba(255,255,255,.06);">'+
+      'Órdenes cargadas y avance de '+(ests.length?('tus estaciones: '+ests.map(esc).join(', ')):'este monitor')+'</div>'+
+    '<div id="mon-reporte-meta-body" style="flex:1;overflow-y:auto;padding:12px;"></div>';
+  document.body.appendChild(d);
+  monReporteMetaRender();
+}
+function monReporteMetaClose(){ var m=document.getElementById('mon-reporte-meta-modal'); if(m) m.remove(); }
+function _monMetaColor(pct){ return pct>=100?'#22c55e':(pct>=60?'#58a6ff':(pct>=30?'#f59e0b':'#f87171')); }
+function monReporteMetaRender(){
+  var body=document.getElementById('mon-reporte-meta-body'); if(!body) return;
+  var ests=(_MON.estaciones||[]).slice();
+  if(!ests.length){ body.innerHTML='<div style="text-align:center;color:#8b949e;padding:40px 20px;font-size:.85rem;">Este monitor no tiene estaciones asignadas.<br>Configúralas con el ⚙ de arriba.</div>'; return; }
+  var porEst={}; ests.forEach(function(e){ porEst[e]=[]; });
+  (DB.activeOFs||[]).forEach(function(aof){
+    if(aof.ofCerrada) return;
+    var byEst={};
+    (aof.ops||[]).forEach(function(op){ var e=op.estacion||''; if(ests.indexOf(e)<0) return; (byEst[e]=byEst[e]||[]).push(op); });
+    Object.keys(byEst).forEach(function(e){
+      var ops=byEst[e]; var total=ops.length;
+      var omit=ops.filter(function(o){return (o.status||'')==='omitida';}).length;
+      var fin=ops.filter(function(o){var s=o.status||'';return s==='done'||s==='op_concluded';}).length;
+      var running=ops.some(function(o){return (o.status||'')==='running';});
+      var resueltas=fin+omit; var pct=total>0?Math.round(resueltas/total*100):0;
+      var estado=(pct===100&&total>0)?'Terminada':((running||resueltas>0)?'En proceso':'Pendiente');
+      porEst[e].push({sap:aof.of_sap||'', desc:(aof.descripcion||aof.articulo||''), pedido:(aof.pedido||''), pct:pct, estado:estado});
+    });
+  });
+  var h='';
+  ests.forEach(function(e){
+    var rows=(porEst[e]||[]).slice().sort(function(a,b){ var na=parseInt(String(a.sap).replace(/\D/g,''))||0, nb=parseInt(String(b.sap).replace(/\D/g,''))||0; return na-nb; });
+    var avg=rows.length?Math.round(rows.reduce(function(s,r){return s+r.pct;},0)/rows.length):0;
+    h+='<div style="margin-bottom:14px;">';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:#161b22;border:1px solid rgba(255,255,255,.08);border-radius:8px 8px 0 0;">';
+    h+='<div style="font-weight:800;font-size:.9rem;color:#e6edf3;">🏭 '+esc(e)+' <span style="font-weight:400;color:#8b949e;font-size:.72rem;">· '+rows.length+' OF'+(rows.length===1?'':'s')+'</span></div>';
+    h+='<div style="font-size:.72rem;color:#8b949e;">Avance prom: <strong style="color:'+_monMetaColor(avg)+';">'+avg+'%</strong></div></div>';
+    if(!rows.length){
+      h+='<div style="padding:12px;background:#0d1117;border:1px solid rgba(255,255,255,.06);border-top:none;border-radius:0 0 8px 8px;color:#8b949e;font-size:.78rem;text-align:center;">Sin órdenes cargadas en esta estación.</div>';
+    } else {
+      h+='<div style="border:1px solid rgba(255,255,255,.06);border-top:none;border-radius:0 0 8px 8px;overflow:hidden;">';
+      rows.forEach(function(r,i){
+        var col=_monMetaColor(r.pct);
+        var estCol = r.estado==='Terminada'?'#22c55e':(r.estado==='En proceso'?'#58a6ff':'#8b949e');
+        var estBg  = r.estado==='Terminada'?'rgba(34,197,94,.14)':(r.estado==='En proceso'?'rgba(88,166,255,.14)':'rgba(139,148,163,.14)');
+        h+='<div style="padding:9px 10px;background:#0d1117;'+(i>0?'border-top:1px solid rgba(255,255,255,.05);':'')+'">';
+        h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">';
+        h+='<div style="min-width:0;"><span style="font-family:monospace;color:#58a6ff;font-weight:700;font-size:.82rem;">OF '+esc(r.sap)+'</span>'+(r.pedido?'<span style="color:#8b949e;font-size:.68rem;"> · Ped. '+esc(r.pedido)+'</span>':'')+'</div>';
+        h+='<span style="background:'+estBg+';color:'+estCol+';border-radius:12px;padding:2px 9px;font-size:.66rem;font-weight:700;white-space:nowrap;">'+r.estado+'</span></div>';
+        if(r.desc) h+='<div style="font-size:.72rem;color:#c9d1d9;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(r.desc)+'</div>';
+        h+='<div style="display:flex;align-items:center;gap:8px;">';
+        h+='<div style="flex:1;height:7px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden;"><div style="height:100%;width:'+r.pct+'%;background:'+col+';border-radius:4px;"></div></div>';
+        h+='<span style="font-size:.78rem;font-weight:800;color:'+col+';min-width:38px;text-align:right;">'+r.pct+'%</span></div>';
+        h+='</div>';
+      });
+      h+='</div>';
+    }
+    h+='</div>';
+  });
+  body.innerHTML=h;
+}
 function monitorScanOpen(){
   function go(){
     var ex=document.getElementById('mon-scan-modal'); if(ex) ex.remove();

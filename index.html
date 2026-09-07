@@ -2115,6 +2115,16 @@ tr:last-child td{border-bottom:none;}
   </iframe>
 </div>
 
+<!-- PAGE: SISTEMA DE GESTIÓN DOCUMENTAL -->
+<div class="page" id="page-ControlDocumental" style="padding:0;margin:0;position:relative;">
+  <iframe
+    id="cdoc-iframe"
+    src="Sistema_Gestion_Documental.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:block;z-index:10;"
+    title="Sistema de Gestión Documental">
+  </iframe>
+</div>
+
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
@@ -3152,6 +3162,8 @@ function navigateToPantalla(pantallaID) {
     if (ifrm) ifrm.style.display = 'none';
     var cotzIfrm = document.getElementById('cotz-iframe');
     if (cotzIfrm) cotzIfrm.style.display = 'none';
+    var cdocIfrm = document.getElementById('cdoc-iframe');
+    if (cdocIfrm) cdocIfrm.style.display = 'none';
 
     if (pantallaID==='Cotizaciones') {
       if (cotzIfrm) {
@@ -3192,6 +3204,27 @@ function navigateToPantalla(pantallaID) {
               token: state.token || null,
               userName: state.currentUser ? state.currentUser.nombre : '',
               access: nivel,
+              isDemoMode: state.isDemoMode || false
+            }, '*');
+          }
+        }, 600);
+      }
+    }
+    if (pantallaID==='ControlDocumental') {
+      if (cdocIfrm) {
+        cdocIfrm.style.display = 'block';
+        setTimeout(function() {
+          if (cdocIfrm && cdocIfrm.contentWindow) {
+            var nivelCd = (state.currentUser && state.currentUser.pantallas)
+              ? (state.currentUser.pantallas['ControlDocumental'] || '') : '';
+            if (state.currentUser && state.currentUser.esAdmin) nivelCd = 'completo';
+            cdocIfrm.contentWindow.postMessage({
+              type: 'SGD_AUTH',
+              user: {
+                nombre: state.currentUser ? state.currentUser.nombre : '',
+                correo: state.currentUser ? (state.currentUser.email || '') : ''
+              },
+              nivel: nivelCd,
               isDemoMode: state.isDemoMode || false
             }, '*');
           }
@@ -6303,6 +6336,27 @@ async function spEscribir(lista, datos, itemId) {
 // Protocolo:  { type:'SP_BRIDGE_REQUEST',  callId, op, args }
 //          →  { type:'SP_BRIDGE_RESPONSE', callId, error, result }
 // ═══════════════════════════════════════════════════════════════════
+// Handshake del Sistema de Gestión Documental (SGD) embebido: cada pantalla del
+// SGD, al cargar, solicita el usuario en sesión y su nivel de acceso a
+// ControlDocumental ('completo' | 'lectura' | ''). Respondemos con SGD_AUTH.
+window.addEventListener('message', function (e) {
+  if (!e.data || e.data.type !== 'SGD_READY') return;
+  try {
+    var nivelCd = (state.currentUser && state.currentUser.pantallas)
+      ? (state.currentUser.pantallas['ControlDocumental'] || '') : '';
+    if (state.currentUser && state.currentUser.esAdmin) nivelCd = 'completo';
+    if (e.source) e.source.postMessage({
+      type: 'SGD_AUTH',
+      user: {
+        nombre: state.currentUser ? state.currentUser.nombre : '',
+        correo: state.currentUser ? (state.currentUser.email || '') : ''
+      },
+      nivel: nivelCd,
+      isDemoMode: state.isDemoMode || false
+    }, '*');
+  } catch (_) {}
+});
+
 window.addEventListener('message', async function(e) {
   if (!e.data || e.data.type !== 'SP_BRIDGE_REQUEST') return;
   var callId = e.data.callId;

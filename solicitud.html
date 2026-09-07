@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solicitud de Documentación</title>
+    <link rel="stylesheet" href="solicitud.css">
+    <style>
+        /* Campos automáticos (solo lectura) */
+        .fila input[readonly]{ background:#eef2f6; color:#333; cursor:not-allowed; }
+        /* Mensaje de error de validación */
+        .sol-error{ color:#c0392b; font-weight:600; text-align:center; margin:14px 0 0; min-height:20px; }
+
+        /* Modal de confirmación */
+        .sol-modal{
+            display:none; position:fixed; inset:0; z-index:9999;
+            background:rgba(15,30,50,.6); align-items:center; justify-content:center; padding:24px;
+        }
+        .sol-modal-box{
+            background:#fff; width:min(460px,94vw); border-radius:16px; padding:34px 30px; text-align:center;
+            box-shadow:0 20px 60px rgba(0,0,0,.3); animation:entrada .35s ease;
+        }
+        .sol-modal-box .icono{
+            width:74px; height:74px; margin:0 auto 18px; border-radius:50%;
+            background:#e7f6ee; color:#27ae60; display:flex; align-items:center; justify-content:center; font-size:38px;
+        }
+        .sol-modal-box h3{ color:#1f4e79; font-size:22px; margin-bottom:12px; }
+        .sol-modal-box p{ color:#555; font-size:15px; line-height:22px; margin-bottom:24px; }
+        .sol-modal-box button{
+            background:#27ae60; color:#fff; border:none; border-radius:10px; padding:13px 34px;
+            font-size:16px; font-weight:600; cursor:pointer; transition:.3s;
+        }
+        .sol-modal-box button:hover{ background:#1e8449; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <div class="header">
+        SOLICITUD DE DOCUMENTACIÓN
+    </div>
+
+    <form onsubmit="return false;">
+
+        <div class="fila">
+            <label>Título del Documento</label>
+            <input type="text" id="sol-titulo" required>
+        </div>
+
+        <div class="fila">
+            <label>Tipo de documento</label>
+            <select id="sol-tipo" required>
+                <option value="">Seleccione un tipo de documento</option>
+            </select>
+        </div>
+
+        <div class="fila">
+            <label>Solicitante</label>
+            <input type="text" id="sol-solicitante" readonly placeholder="(usuario en sesión)">
+        </div>
+
+        <div class="fila">
+            <label>Correo Electrónico</label>
+            <input type="email" id="sol-correo" readonly placeholder="(correo del usuario)">
+        </div>
+
+        <div class="campo-grande">
+            <label>
+                Objetivo del Documento
+                <span class="help">
+                    ?
+                    <span class="tooltip">
+                        Describe cuál es el propósito del documento y qué necesidad busca cubrir dentro de la empresa.
+                    </span>
+                </span>
+            </label>
+
+            <textarea id="sol-objetivo" rows="4" required></textarea>
+        </div>
+
+        <div class="campo-grande">
+            <label>
+                Alcance del Documento
+                <span class="help">
+                    ?
+                    <span class="tooltip">
+                        Especifica las áreas, departamentos o procesos donde aplicará este documento.
+                    </span>
+                </span>
+            </label>
+
+            <textarea id="sol-alcance" rows="4" required></textarea>
+        </div>
+
+        <div class="campo-grande">
+            <label>
+                Responsables del Documento
+                <span class="help">
+                    ?
+                    <span class="tooltip">
+                        Indica los puestos responsables de ejecutar, revisar y aprobar el documento.
+                    </span>
+                </span>
+            </label>
+
+            <textarea id="sol-responsables" rows="4" required></textarea>
+        </div>
+
+        <div class="campo-grande">
+            <label>
+                Descripción General del Documento
+                <span class="help">
+                    ?
+                    <span class="tooltip">
+                        Escribe un resumen general del documento antes de documentar paso por paso.
+                    </span>
+                </span>
+            </label>
+
+            <textarea id="sol-descripcion" rows="5" required></textarea>
+        </div>
+
+        <div class="agenda">
+
+            <h4>Fecha y hora estimada para revisión</h4>
+
+            <input type="date" id="sol-fecha">
+
+            <input type="time" id="sol-hora" min="09:00" max="18:00">
+
+            <p class="nota">
+                *La solicitud no podrá programarse para el mismo día.<br>
+                *Horario disponible de 09:00 a 18:00 hrs.
+            </p>
+
+        </div>
+
+        <div class="sol-error" id="sol-error"></div>
+
+        <div class="botones">
+
+            <a href="Sistema_Gestion_Documental.html" class="regresar">
+                Regresar
+            </a>
+
+            <button type="button" class="siguiente" id="sol-registrar" onclick="sgdRegistrarSolicitud(event)">
+                Registrar
+            </button>
+
+        </div>
+
+    </form>
+
+</div>
+
+<!-- Modal de confirmación -->
+<div class="sol-modal" id="sol-modal-ok">
+    <div class="sol-modal-box">
+        <div class="icono">&#10003;</div>
+        <h3>Solicitud registrada</h3>
+        <p>Su solicitud ha sido registrada. La confirmación de la visita solicitada le será confirmada vía correo electrónico.</p>
+        <button type="button" onclick="sgdCerrarModalOK()">Aceptar</button>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

@@ -193,5 +193,29 @@
 </div>
 
 <script src="script.js"></script>
+<script>
+/* Habilita/obliga la agenda según el check "Se requiere revisión presencial".
+   Se define aquí de forma autónoma (no depende de script.js) para evitar
+   problemas de caché y garantizar que el check siempre funcione. */
+(function () {
+  function aplicar() {
+    var chk = document.getElementById('sol-revision-presencial');
+    var req = !!(chk && chk.checked);
+    var fecha = document.getElementById('sol-fecha');
+    var hora = document.getElementById('sol-hora');
+    var agenda = document.getElementById('sol-agenda');
+    if (fecha) { fecha.disabled = !req; if (!req) fecha.value = ''; }
+    if (hora)  { hora.disabled  = !req; if (!req) hora.value  = ''; }
+    if (agenda) { agenda.classList.toggle('deshabilitada', !req); }
+  }
+  // Exponer también con el nombre usado por el onchange inline (por compatibilidad)
+  window.sgdToggleRevisionPresencial = aplicar;
+  document.addEventListener('DOMContentLoaded', function () {
+    var chk = document.getElementById('sol-revision-presencial');
+    if (chk) chk.addEventListener('change', aplicar);
+    aplicar(); // estado inicial
+  });
+})();
+</script>
 </body>
 </html>

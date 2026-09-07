@@ -24,6 +24,20 @@
         }
         .btn-notif-cal:hover{ transform:translateY(-3px); }
 
+        /* Botón Actualizar */
+        .btn-actualizar-atc{
+            background:linear-gradient(135deg,#2f75a8,#1f4e79);
+            color:#fff; border:none; padding:12px 20px; border-radius:8px;
+            cursor:pointer; font-size:15px; font-weight:600; transition:.3s;
+            display:inline-flex; align-items:center; gap:9px;
+            box-shadow:0 6px 15px rgba(31,78,121,.3);
+        }
+        .btn-actualizar-atc:hover{ transform:translateY(-3px); }
+
+        /* Píldoras de estatus que faltan en el CSS base */
+        .estado.pendiente{ background:linear-gradient(135deg,#ffb15e,#f0932b); color:#3a2400; }
+        .estado.atendida{ background:linear-gradient(135deg,#2ecc71,#27ae60); color:#fff; }
+
         /* ===== Modal Notificaciones Calidad ===== */
         .cal-modal{
             display:none; position:fixed; inset:0; z-index:9999;
@@ -110,7 +124,7 @@
 
                 <label>Estatus de Solicitud</label>
 
-                <select>
+                <select id="atc-f-estatus" onchange="atencionRender()">
 
                     <option>Todos</option>
                     <option>Pendiente</option>
@@ -125,7 +139,7 @@
 
                 <label>Tipo de Modificación</label>
 
-                <select>
+                <select id="atc-f-tipo" onchange="atencionRender()">
 
                     <option>Todos</option>
                     <option>Nuevo Ingreso</option>
@@ -146,17 +160,17 @@
 
                 </button>
 
+                <button class="btn-actualizar-atc" onclick="atencionCargarSolicitudes()">
+
+                    <i class="fa-solid fa-rotate"></i>
+                    Actualizar
+
+                </button>
+
                 <button class="btn-notif-cal" onclick="calidadNotifAbrir()">
 
                     <i class="fa-solid fa-bell"></i>
                     Notificaciones Calidad
-
-                </button>
-
-                <button class="btn-atender">
-
-                    <i class="fa-solid fa-list-check"></i>
-                    Atención a las solicitudes
 
                 </button>
 
@@ -196,200 +210,8 @@
 
             </thead>
 
-            <tbody>
-
-                <tr>
-
-                    <td>1</td>
-
-                    <td>
-
-                        <span class="estado abierta">
-
-                            Abierta
-
-                        </span>
-
-                    </td>
-
-                    <td>Procedimiento X</td>
-
-                    <td>Compras</td>
-
-                    <td>
-
-                        <span class="tipo nuevo">
-
-                            Nuevo Ingreso
-
-                        </span>
-
-                    </td>
-
-                    <td>00</td>
-
-                    <td>09/12/2025</td>
-
-                    <td>10/12/2025</td>
-
-                    <td>13:00</td>
-
-                    <td>
-
-                        <button class="icono" onclick="abrirModal()">
-
-                            <i class="fa-regular fa-file-lines"></i>
-
-                        </button>
-
-                    </td>
-
-                </tr>
-
-                <tr>
-
-                    <td>2</td>
-
-                    <td>
-
-                        <span class="estado abierta">
-
-                            Abierta
-
-                        </span>
-
-                    </td>
-
-                    <td>Procedimiento X</td>
-
-                    <td>Ventas</td>
-
-                    <td>
-
-                        <span class="tipo nuevo">
-
-                            Nuevo Ingreso
-
-                        </span>
-
-                    </td>
-
-                    <td>00</td>
-
-                    <td>09/12/2025</td>
-
-                    <td>11/12/2025</td>
-
-                    <td>15:30</td>
-
-                    <td>
-
-                        <button class="icono" onclick="abrirModal()">
-
-                            <i class="fa-regular fa-file-lines"></i>
-
-                        </button>
-
-                    </td>
-
-                </tr>
-
-                <tr>
-
-                    <td>3</td>
-
-                    <td>
-
-                        <span class="estado abierta">
-
-                            Abierta
-
-                        </span>
-
-                    </td>
-
-                    <td>Procedimiento X</td>
-
-                    <td>Instalaciones</td>
-
-                    <td>
-
-                        <span class="tipo actualizacion">
-
-                            Actualización
-
-                        </span>
-
-                    </td>
-
-                    <td>01</td>
-
-                    <td>09/12/2025</td>
-
-                    <td>12/12/2025</td>
-
-                    <td>17:30</td>
-
-                    <td>
-
-                        <button class="icono" onclick="abrirModal()">
-
-                            <i class="fa-regular fa-file-lines"></i>
-
-                        </button>
-
-                    </td>
-
-                </tr>
-
-                <tr>
-
-                    <td>4</td>
-
-                    <td>
-
-                        <span class="estado abierta">
-
-                            Abierta
-
-                        </span>
-
-                    </td>
-
-                    <td>Procedimiento X</td>
-
-                    <td>Contabilidad</td>
-
-                    <td>
-
-                        <span class="tipo baja">
-
-                            Baja
-
-                        </span>
-
-                    </td>
-
-                    <td>02</td>
-
-                    <td>10/12/2025</td>
-
-                    <td>11/12/2025</td>
-
-                    <td>14:00</td>
-
-                    <td>
-
-                        <button class="icono" onclick="abrirModal()">
-
-                            <i class="fa-solid fa-xmark"></i>
-
-                        </button>
-
-                    </td>
-
-                </tr>
-
+            <tbody id="atc-tbody">
+                <tr><td colspan="10" style="text-align:center;padding:34px;color:#8a94a2;">Cargando solicitudes…</td></tr>
             </tbody>
 
         </table>
@@ -519,6 +341,95 @@ archivo.addEventListener("change",()=>{
 });
 
 /* ============================================================
+   TABLA: SOLICITUDES REALES (SGD_Solicitudes)
+   ------------------------------------------------------------
+   Reemplaza los registros de prueba. Carga desde SharePoint por
+   el puente del padre (index.html). En standalone usa demo.
+   ============================================================ */
+var ATC_ITEMS = [];  // solicitudes cargadas de SP
+
+var ATC_DEMO = [
+  { estatus:'Pendiente', documento:'Procedimiento de compras', departamento:'Compras', tipo:'Nuevo Ingreso', fecha:'09/12/2025', fechaCita:'12/12/2025', horaCita:'17:30' },
+  { estatus:'Abierta',   documento:'Procedimiento de ventas',  departamento:'Ventas',  tipo:'Nuevo Ingreso', fecha:'09/12/2025', fechaCita:'', horaCita:'' }
+];
+
+function atcEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function atcEmbebido(){ return !!(window.SGD && window.SGD.embebido && window.SGD.embebido()); }
+function atcFmtFecha(s){ if(!s) return ''; s=String(s).split('T')[0]; var p=s.split('-'); return p.length<3?s:(p[2]+'/'+p[1]+'/'+p[0]); }
+function atcTipoClase(t){ var s=(t||'').toLowerCase(); if(s.indexOf('actualiz')>=0)return'actualizacion'; if(s.indexOf('baja')>=0)return'baja'; return'nuevo'; }
+function atcEstadoClase(e){ var s=(e||'').toLowerCase(); if(s==='abierta')return'abierta'; if(s==='pendiente')return'pendiente'; if(s==='atendida')return'atendida'; return'abierta'; }
+
+async function atencionCargarSolicitudes(){
+  var tbody=document.getElementById('atc-tbody');
+  if(tbody) tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:34px;color:#8a94a2;">Cargando solicitudes…</td></tr>';
+
+  if(!atcEmbebido()){
+    ATC_ITEMS = ATC_DEMO.slice();
+    atencionRender();
+    return;
+  }
+  try{
+    var lista=(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes');
+    var r=await window.SGD.sp('list',{ lista:lista, queryParams:'$expand=fields&$top=1000' });
+    var items=(r&&r.value)?r.value:[];
+    ATC_ITEMS = items.map(function(it){
+      var f=it.fields||it;
+      return {
+        id:         (it.id!==undefined?it.id:''),
+        estatus:    f.Estatus||'Pendiente',
+        documento:  f.Title||'',
+        departamento:f.Departamento||'',
+        tipo:       f.Tipo_Modificacion||'Nuevo Ingreso',
+        fecha:      atcFmtFecha(f.Fecha_Solicitud),
+        fechaISO:   f.Fecha_Solicitud||'',
+        fechaCita:  atcFmtFecha(f.Fecha_Revision),
+        horaCita:   f.Hora_Revision||''
+      };
+    }).sort(function(a,b){ return (b.fechaISO||'').localeCompare(a.fechaISO||''); });
+    atencionRender();
+  }catch(e){
+    if(tbody) tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:34px;color:#c0392b;">No se pudieron cargar las solicitudes. Presiona Actualizar para reintentar.</td></tr>';
+  }
+}
+
+function atencionRender(){
+  var tbody=document.getElementById('atc-tbody');
+  if(!tbody) return;
+  var fEst=(document.getElementById('atc-f-estatus')||{}).value||'Todos';
+  var fTipo=(document.getElementById('atc-f-tipo')||{}).value||'Todos';
+  var datos=ATC_ITEMS.filter(function(s){
+    if(fEst!=='Todos' && (s.estatus||'')!==fEst) return false;
+    if(fTipo!=='Todos' && (s.tipo||'')!==fTipo) return false;
+    return true;
+  });
+  if(!datos.length){
+    tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:34px;color:#8a94a2;">No hay solicitudes que coincidan con los filtros.</td></tr>';
+    return;
+  }
+  var html='';
+  datos.forEach(function(s,i){
+    html+='<tr>'
+       +  '<td>'+(i+1)+'</td>'
+       +  '<td><span class="estado '+atcEstadoClase(s.estatus)+'">'+atcEsc(s.estatus)+'</span></td>'
+       +  '<td>'+atcEsc(s.documento)+'</td>'
+       +  '<td>'+atcEsc(s.departamento)+'</td>'
+       +  '<td><span class="tipo '+atcTipoClase(s.tipo)+'">'+atcEsc(s.tipo)+'</span></td>'
+       +  '<td>—</td>'
+       +  '<td>'+atcEsc(s.fecha)+'</td>'
+       +  '<td>'+(s.fechaCita?atcEsc(s.fechaCita):'—')+'</td>'
+       +  '<td>'+(s.horaCita?atcEsc(s.horaCita):'—')+'</td>'
+       +  '<td><button class="icono" onclick="abrirModal()"><i class="fa-regular fa-file-lines"></i></button></td>'
+       +  '</tr>';
+  });
+  tbody.innerHTML=html;
+}
+
+// Cargar solicitudes cuando el padre confirma el usuario, y al iniciar
+window.SGD = window.SGD || {};
+window.SGD._onAuth = atencionCargarSolicitudes;
+document.addEventListener('DOMContentLoaded', function(){ atencionCargarSolicitudes(); });
+
+/* ============================================================
    NOTIFICACIONES DE CALIDAD (lista de SharePoint, editable)
    ------------------------------------------------------------
    Lista SP: SGD_NotificacionesCalidad
@@ -621,10 +532,15 @@ async function calidadNotifGuardarItem(){
     CAL_BUSY=true; if(b){ b.disabled=true; b.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Guardando…'; }
     try{
         if(calEmbebido()){
+            var f = { Title:n, Correo:c };
+            if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(f);  // quién y cuándo
             if(CAL_EDIT>=0){
-                await window.SGD.sp('update', { lista:calLista(), itemId:CAL_LISTA[CAL_EDIT].id, fields:{ Title:n, Correo:c } });
+                var idEd = CAL_LISTA[CAL_EDIT].id;
+                await window.SGD.sp('update', { lista:calLista(), itemId:idEd, fields:f });
+                if(window.SGD.bitacora) window.SGD.bitacora('Editar analista de calidad', 'SGD_NotificacionesCalidad', n+' · '+c, { id:idEd, pantalla:'Notificaciones Calidad' });
             } else {
-                await window.SGD.sp('create', { lista:calLista(), fields:{ Title:n, Correo:c } });
+                var crN = await window.SGD.sp('create', { lista:calLista(), fields:f });
+                if(window.SGD.bitacora) window.SGD.bitacora('Alta analista de calidad', 'SGD_NotificacionesCalidad', n+' · '+c, { id:(crN&&crN.id!==undefined?crN.id:''), pantalla:'Notificaciones Calidad' });
             }
             await calidadNotifCargar();
         } else {
@@ -658,6 +574,7 @@ async function calidadNotifEliminar(i){
     try{
         if(calEmbebido()){
             await window.SGD.sp('delete', { lista:calLista(), itemId:p.id });
+            if(window.SGD.bitacora) window.SGD.bitacora('Baja analista de calidad', 'SGD_NotificacionesCalidad', (p.nombre||'')+' · '+(p.correo||''), { id:p.id, pantalla:'Notificaciones Calidad' });
             await calidadNotifCargar();
         } else {
             CAL_LISTA.splice(i,1); calidadNotifPersistirLocal();

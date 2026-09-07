@@ -65,6 +65,20 @@ window.SGD.getUsuario = function () {
   return null;
 };
 
+/* ---------- Trazabilidad / auditoría (norma) ----------
+   Estampa en el objeto de campos QUIÉN y CUÁNDO realiza el cambio.
+   Se usa en TODAS las escrituras del SGD para dejar rastro auditable.
+   Columnas SP requeridas en cada lista:  Usuario_Modifica (texto),  Ultima_Modificacion (fecha/hora o texto). */
+window.SGD.stampAuditoria = function (fields) {
+  fields = fields || {};
+  var u = (window.SGD.getUsuario && window.SGD.getUsuario()) || null;
+  var quien = u ? (u.nombre || u.correo || '') : '';
+  if (u && u.nombre && u.correo) quien = u.nombre + ' (' + u.correo + ')';
+  fields.Usuario_Modifica = quien || 'Desconocido';
+  fields.Ultima_Modificacion = new Date().toISOString();
+  return fields;
+};
+
 /* ---------- Nombres de las listas de SharePoint (dar de alta en SP) ---------- */
 //  SGD_TiposDocumento : columna Title = tipo de documento (Procedimiento, Política, Formato, Diagrama, ...)
 //  SGD_Solicitudes    : columnas para las solicitudes de documentación (ver documentación aparte)
@@ -72,6 +86,46 @@ window.SGD.LISTA_TIPOS = 'SGD_TiposDocumento';
 window.SGD.LISTA_SOLICITUDES = 'SGD_Solicitudes';
 //  SGD_NotificacionesCalidad : columnas Title = nombre del analista, Correo = correo electrónico
 window.SGD.LISTA_NOTIF_CALIDAD = 'SGD_NotificacionesCalidad';
+//  SGD_Bitacora : registro de auditoría (un renglón por acción). Columnas:
+//    Title (texto), Accion (texto), Entidad (texto), Entidad_Id (texto),
+//    Detalle (varias líneas), Usuario (texto), Correo (texto),
+//    Pantalla (texto), Fecha_Evento (fecha y hora)
+window.SGD.LISTA_BITACORA = 'SGD_Bitacora';
+
+/* ---------- Bitácora / trazabilidad global ----------
+   Escribe un renglón de auditoría en SGD_Bitacora. Es "a prueba de fallos":
+   nunca interrumpe el flujo principal (captura errores y no lanza).
+   Uso:  window.SGD.bitacora('Registrar solicitud', 'SGD_Solicitudes', 'Procedimiento X', { id: 12, estatus:'Abierta' }); */
+window.SGD.bitacora = function (accion, entidad, detalle, extra) {
+  try {
+    extra = extra || {};
+    var u = (window.SGD.getUsuario && window.SGD.getUsuario()) || null;
+    var nombre = u ? (u.nombre || '') : '';
+    var correo = u ? (u.correo || '') : '';
+    var pantalla = extra.pantalla || (document && document.title) || (location && location.pathname) || '';
+    var fields = {
+      Title: (accion || 'Acción') + (entidad ? (' · ' + entidad) : ''),
+      Accion: accion || '',
+      Entidad: entidad || '',
+      Entidad_Id: (extra.id !== undefined && extra.id !== null) ? String(extra.id) : '',
+      Detalle: detalle || '',
+      Usuario: nombre,
+      Correo: correo,
+      Pantalla: pantalla,
+      Fecha_Evento: new Date().toISOString()
+    };
+    if (!window.SGD.embebido()) {
+      // Standalone (pruebas): sin SP; solo dejamos rastro en consola
+      try { console.log('[SGD_Bitacora]', fields); } catch (_) {}
+      return Promise.resolve();
+    }
+    return window.SGD.sp('create', { lista: window.SGD.LISTA_BITACORA, fields: fields })
+      .catch(function (e) { try { console.warn('[SGD_Bitacora] no se pudo registrar:', e && e.message); } catch (_) {} });
+  } catch (e) {
+    try { console.warn('[SGD_Bitacora] error:', e && e.message); } catch (_) {}
+    return Promise.resolve();
+  }
+};
 
 // Tipos por defecto (respaldo cuando no hay conexión con SP / standalone)
 window.SGD.TIPOS_DEFAULT = ['Procedimiento', 'Política', 'Formato', 'Diagrama', 'Instructivo', 'Manual'];
@@ -140,6 +194,7 @@ function sgdVerDocumento(url, titulo) {
   if (frame) frame.src = url + sep + 'toolbar=0&navpanes=0&statusbar=0&view=FitH';
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+  if (window.SGD.bitacora) window.SGD.bitacora('Ver documento', 'Documento', titulo || '', {});
 }
 function sgdCerrarVisor() {
   var modal = document.getElementById('sgd-visor-modal');
@@ -160,6 +215,7 @@ function sgdDescargarCopia(url, nombre) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+  if (window.SGD.bitacora) window.SGD.bitacora('Descargar copia NO controlada', 'Documento', nombre || '', {});
 }
 
 /* ============================================================================
@@ -274,9 +330,13 @@ async function sgdRegistrarSolicitud(ev) {
     Estatus: estatusInicial,
     Fecha_Solicitud: new Date().toISOString()
   };
+  // Trazabilidad: quién y cuándo registró la solicitud
+  window.SGD.stampAuditoria(fields);
 
+  var nuevoId = null;
   try {
-    await window.SGD.sp('create', { lista: window.SGD.LISTA_SOLICITUDES, fields: fields });
+    var cr = await window.SGD.sp('create', { lista: window.SGD.LISTA_SOLICITUDES, fields: fields });
+    nuevoId = (cr && cr.id !== undefined) ? cr.id : null;
   } catch (e) {
     if (!window.SGD.embebido()) {
       // Standalone (pruebas): no hay SP; guardamos localmente y continuamos el flujo
@@ -289,6 +349,12 @@ async function sgdRegistrarSolicitud(ev) {
       if (err) err.textContent = 'No se pudo registrar la solicitud. Intenta de nuevo.';
       return;
     }
+  }
+
+  // Bitácora de auditoría
+  if (window.SGD.bitacora) {
+    window.SGD.bitacora('Registrar solicitud', 'SGD_Solicitudes', datos.titulo,
+      { id: nuevoId, pantalla: 'Solicitud de documentación' });
   }
 
   sgdMostrarModalOK();

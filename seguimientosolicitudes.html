@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seguimiento de Solicitudes</title>
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+
+    <!-- Reutiliza el mismo lenguaje visual que Atención a Solicitudes -->
+    <link rel="stylesheet" href="atencionsolicitudes.css">
+
+    <style>
+        .btn-actualizar-seg{
+            background:linear-gradient(135deg,#2f75a8,#1f4e79);
+            color:white;border:none;padding:12px 24px;border-radius:8px;
+            cursor:pointer;font-size:15px;font-weight:600;transition:.3s;
+            box-shadow:0 6px 15px rgba(31,78,121,.3);
+        }
+        .btn-actualizar-seg:hover{transform:translateY(-3px);}
+        .sub-encabezado{ padding:14px 35px 0 35px;color:#4b5563;font-size:14px; }
+        .sin-datos{ text-align:center;padding:40px;color:#7b8794;font-size:15px; }
+
+        /* Píldoras de estatus */
+        .estado-pill{ display:inline-block;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600;white-space:nowrap; }
+        .estado-pendiente{ background:#fff3e0;color:#c77700;border:1px solid #ffd8a8; }
+        .estado-abierta{ background:#e3f0ff;color:#1f6feb;border:1px solid #b6d4fb; }
+        .estado-otro{ background:#eef2f6;color:#55606c;border:1px solid #dfe6ee; }
+    </style>
+
+</head>
+
+<body>
+
+    <div class="contenedor">
+
+        <!-- Encabezado -->
+        <header>
+            SEGUIMIENTO DE MIS SOLICITUDES
+        </header>
+
+        <div class="sub-encabezado" id="seg-usuario">
+            Solicitudes en proceso de <strong id="seg-nombre-usuario">tu usuario</strong>.
+            Las solicitudes ya atendidas dejan de mostrarse aquí.
+        </div>
+
+        <!-- Barra superior -->
+        <div class="barra-filtros">
+
+            <div class="grupo-filtro">
+                <label>Tipo de Modificación</label>
+                <select id="seg-filtro-tipo" onchange="segRender()">
+                    <option value="">Todos</option>
+                    <option value="Nuevo Ingreso">Nuevo Ingreso</option>
+                    <option value="Actualización">Actualización</option>
+                    <option value="Baja">Baja</option>
+                </select>
+            </div>
+
+            <div class="grupo-botones">
+
+                <button class="btn-salir"
+                        onclick="window.location.href='Sistema_Gestion_Documental.html'">
+                    <i class="fa-solid fa-house"></i>
+                    Salir al menú principal
+                </button>
+
+                <button class="btn-actualizar-seg" onclick="segCargar()">
+                    <i class="fa-solid fa-rotate"></i>
+                    Actualizar
+                </button>
+
+            </div>
+
+        </div>
+
+        <!-- Tabla (solo lectura) -->
+        <table>
+
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Estatus de la Solicitud</th>
+                    <th>Nombre del Documento</th>
+                    <th>Departamento</th>
+                    <th>Tipo de Modificación</th>
+                    <th>Fecha de Solicitud</th>
+                    <th>Fecha de Cita</th>
+                    <th>Hora de Cita</th>
+                </tr>
+            </thead>
+
+            <tbody id="seg-tbody">
+                <!-- Filas generadas por segRender() -->
+            </tbody>
+
+        </table>
+
+    </div>
+
+<!-- Puente SP + usuario en sesión (inyectado por index.html) -->
+<script src="script.js"></script>
+<script>
+/* =====================================================================
+   SEGUIMIENTO DE SOLICITUDES (solo lectura)
+   ---------------------------------------------------------------------
+   Muestra las solicitudes del usuario en sesión registradas en
+   SGD_Solicitudes, EXCEPTO las que ya están "Atendida".
+   Los datos se leen de SharePoint por el puente del padre (index.html).
+   ===================================================================== */
+
+var SEG_ITEMS = [];  // solicitudes ya filtradas por usuario y estatus
+
+// Datos de ejemplo SOLO para modo standalone (sin padre / sin SP)
+var SEG_DATA_DEMO = [
+  { estatus:'Pendiente', documento:'Procedimiento de compras',  departamento:'Compras', tipo:'Nuevo Ingreso', fecha:'09/12/2025', fechaCita:'', horaCita:'' },
+  { estatus:'Abierta',   documento:'Procedimiento de ventas',   departamento:'Ventas',  tipo:'Nuevo Ingreso', fecha:'09/12/2025', fechaCita:'12/12/2025', horaCita:'17:30' }
+];
+
+function segClaseTipo(t){
+  var s=(t||'').toLowerCase();
+  if (s.indexOf('nuevo')>=0) return 'nuevo';
+  if (s.indexOf('actualiz')>=0) return 'actualizacion';
+  if (s.indexOf('baja')>=0) return 'baja';
+  return 'nuevo';
+}
+function segEstadoPill(est){
+  var e=(est||'').toLowerCase();
+  var cls = e==='abierta' ? 'estado-abierta' : (e==='pendiente' ? 'estado-pendiente' : 'estado-otro');
+  return '<span class="estado-pill '+cls+'">'+(est||'—')+'</span>';
+}
+function segFmtFecha(s){
+  if(!s) return '';
+  s=String(s).split('T')[0];
+  var p=s.split('-');
+  if(p.length<3) return s;
+  return p[2]+'/'+p[1]+'/'+p[0];
+}
+
+// Dibuja la tabla a partir de SEG_ITEMS aplicando el filtro de tipo
+function segRender(){
+  var tbody=document.getElementById('seg-tbody');
+  if(!tbody) return;
+  var filtroTipo=(document.getElementById('seg-filtro-tipo')||{}).value||'';
+  var datos=SEG_ITEMS.slice();
+  if(filtroTipo) datos=datos.filter(function(s){ return (s.tipo||'')===filtroTipo; });
+
+  if(!datos.length){
+    tbody.innerHTML='<tr><td colspan="8" class="sin-datos">No tienes solicitudes en proceso.</td></tr>';
+    return;
+  }
+  var html='';
+  datos.forEach(function(s,i){
+    html+='<tr>';
+    html+='<td>'+(i+1)+'</td>';
+    html+='<td>'+segEstadoPill(s.estatus)+'</td>';
+    html+='<td>'+(s.documento||'')+'</td>';
+    html+='<td>'+(s.departamento||'')+'</td>';
+    html+='<td><span class="tipo '+segClaseTipo(s.tipo)+'">'+(s.tipo||'')+'</span></td>';
+    html+='<td>'+(s.fecha||'')+'</td>';
+    html+='<td>'+(s.fechaCita||'—')+'</td>';
+    html+='<td>'+(s.horaCita||'—')+'</td>';
+    html+='</tr>';
+  });
+  tbody.innerHTML=html;
+}
+
+// Carga las solicitudes del usuario desde SharePoint (o demo en standalone)
+async function segCargar(){
+  var tbody=document.getElementById('seg-tbody');
+  var u=(window.SGD&&window.SGD.getUsuario)?window.SGD.getUsuario():null;
+  var correo=u&&u.correo?String(u.correo).toLowerCase():'';
+  var nEl=document.getElementById('seg-nombre-usuario');
+  if(nEl) nEl.textContent=(u&&u.nombre)?u.nombre:'tu usuario';
+
+  // Standalone (pruebas sin padre / sin SP): usar datos de ejemplo
+  if(!(window.SGD && window.SGD.embebido && window.SGD.embebido())){
+    SEG_ITEMS=SEG_DATA_DEMO.slice();
+    segRender();
+    return;
+  }
+
+  // Embebido pero aún sin usuario: esperar (el handshake llamará de nuevo)
+  if(!correo){
+    if(tbody) tbody.innerHTML='<tr><td colspan="8" class="sin-datos">Cargando tus solicitudes…</td></tr>';
+    return;
+  }
+
+  if(tbody) tbody.innerHTML='<tr><td colspan="8" class="sin-datos">Cargando tus solicitudes…</td></tr>';
+  try{
+    var lista=(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes');
+    var r=await window.SGD.sp('list',{ lista:lista, queryParams:'$expand=fields&$top=1000' });
+    var items=(r&&r.value)?r.value:[];
+    SEG_ITEMS=items.map(function(it){
+      var f=it.fields||it;
+      return {
+        estatus:      f.Estatus||'Pendiente',
+        documento:    f.Title||'',
+        departamento: f.Departamento||'',
+        tipo:         f.Tipo_Modificacion||'Nuevo Ingreso',
+        fecha:        segFmtFecha(f.Fecha_Solicitud),
+        fechaCita:    segFmtFecha(f.Fecha_Revision),
+        horaCita:     f.Hora_Revision||'',
+        correo:       f.Correo||''
+      };
+    })
+    .filter(function(s){ return String(s.correo).toLowerCase()===correo; })          // solo mis solicitudes
+    .filter(function(s){ return (s.estatus||'').toLowerCase()!=='atendida'; })        // excluir atendidas
+    .sort(function(a,b){ return (b.fecha||'').localeCompare(a.fecha||''); });
+    segRender();
+  }catch(e){
+    if(tbody) tbody.innerHTML='<tr><td colspan="8" class="sin-datos">No se pudieron cargar tus solicitudes. Presiona Actualizar para reintentar.</td></tr>';
+  }
+}
+
+// Cuando el padre confirma el usuario (handshake), recargar
+window.SGD = window.SGD || {};
+window.SGD._onAuth = segCargar;
+
+document.addEventListener('DOMContentLoaded', function(){ segCargar(); });
+</script>
+
+</body>
+</html>

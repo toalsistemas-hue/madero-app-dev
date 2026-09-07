@@ -38,6 +38,8 @@ window.addEventListener('message', function (e) {
   if (!d || d.type !== 'SGD_AUTH') return;
   if (d.user) window.SGD.setUsuario(d.user);
   window.SGD.setNivelAtencion(d.nivel || '');
+  // Aviso a la pantalla activa (p.ej. seguimiento) de que ya hay usuario en sesión
+  if (typeof window.SGD._onAuth === 'function') { try { window.SGD._onAuth(); } catch (_) {} }
 });
 function sgdPedirAuthAlPadre() {
   if (window.SGD.embebido()) {
@@ -201,6 +203,7 @@ async function sgdRegistrarSolicitud(ev) {
     tipo: val('sol-tipo'),
     solicitante: val('sol-solicitante'),
     correo: val('sol-correo'),
+    departamento: val('sol-departamento'),
     objetivo: val('sol-objetivo'),
     alcance: val('sol-alcance'),
     responsables: val('sol-responsables'),
@@ -239,6 +242,7 @@ async function sgdRegistrarSolicitud(ev) {
     Alcance: datos.alcance,
     Responsables: datos.responsables,
     Descripcion: datos.descripcion,
+    Departamento: datos.departamento,
     Fecha_Revision: datos.fecha ? (datos.fecha + 'T00:00:00Z') : '',
     Hora_Revision: datos.hora || '',
     Estatus: 'Pendiente',

@@ -6392,6 +6392,18 @@ window.addEventListener('message', async function(e) {
       await spEscribir(args.lista, args.fields, args.itemId);
       reply(null, { ok: true });
 
+    } else if (op === 'delete') {
+      if (LISTAS_PROTEGIDAS.indexOf(args.lista) !== -1) {
+        await flowEscribir(args.lista, 'eliminar', parseInt(args.itemId, 10), {});
+      } else {
+        var sidD = await getSiteId();
+        var tokD = await getToken();
+        var urlD = 'https://graph.microsoft.com/v1.0/sites/'+sidD+'/lists/'+args.lista+'/items/'+args.itemId;
+        var rD = await fetch(urlD, { method:'DELETE', headers:{ Authorization:'Bearer '+tokD } });
+        if (!rD.ok && rD.status !== 204) { reply('delete_' + rD.status, null); return; }
+      }
+      reply(null, { ok: true });
+
     } else if (op === 'uploadAttachment') {
       var sidU  = await getSiteId();
       var tokU  = await getToken();

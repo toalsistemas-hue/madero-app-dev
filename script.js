@@ -70,6 +70,8 @@ window.SGD.getUsuario = function () {
 //  SGD_Solicitudes    : columnas para las solicitudes de documentación (ver documentación aparte)
 window.SGD.LISTA_TIPOS = 'SGD_TiposDocumento';
 window.SGD.LISTA_SOLICITUDES = 'SGD_Solicitudes';
+//  SGD_NotificacionesCalidad : columnas Title = nombre del analista, Correo = correo electrónico
+window.SGD.LISTA_NOTIF_CALIDAD = 'SGD_NotificacionesCalidad';
 
 // Tipos por defecto (respaldo cuando no hay conexión con SP / standalone)
 window.SGD.TIPOS_DEFAULT = ['Procedimiento', 'Política', 'Formato', 'Diagrama', 'Instructivo', 'Manual'];
@@ -191,6 +193,18 @@ async function sgdCargarTipos() {
     tipos.map(function (t) { return '<option>' + t + '</option>'; }).join('');
 }
 
+// Habilita/deshabilita la agenda según el check "Se requiere revisión presencial"
+function sgdToggleRevisionPresencial() {
+  var chk = document.getElementById('sol-revision-presencial');
+  var req = !!(chk && chk.checked);
+  var fecha = document.getElementById('sol-fecha');
+  var hora = document.getElementById('sol-hora');
+  var agenda = document.getElementById('sol-agenda');
+  if (fecha) { fecha.disabled = !req; if (!req) fecha.value = ''; }
+  if (hora) { hora.disabled = !req; if (!req) hora.value = ''; }
+  if (agenda) { if (req) agenda.classList.remove('deshabilitada'); else agenda.classList.add('deshabilitada'); }
+}
+
 // Registra la solicitud de documentación
 async function sgdRegistrarSolicitud(ev) {
   if (ev) ev.preventDefault();
@@ -198,6 +212,8 @@ async function sgdRegistrarSolicitud(ev) {
   if (err) err.textContent = '';
 
   var val = function (id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  var chkPres = document.getElementById('sol-revision-presencial');
+  var requierePresencial = !!(chkPres && chkPres.checked);
   var datos = {
     titulo: val('sol-titulo'),
     tipo: val('sol-tipo'),
@@ -212,22 +228,30 @@ async function sgdRegistrarSolicitud(ev) {
     hora: val('sol-hora')
   };
 
-  // Validación de obligatorios
+  // Validación de obligatorios (la fecha/hora solo son obligatorias si se requiere revisión presencial)
   var obligatorios = [
     ['titulo', 'Título del Documento'],
     ['tipo', 'Tipo de documento'],
     ['objetivo', 'Objetivo del Documento'],
     ['alcance', 'Alcance del Documento'],
     ['responsables', 'Responsables del Documento'],
-    ['descripcion', 'Descripción General del Documento'],
-    ['fecha', 'Fecha estimada para revisión']
+    ['descripcion', 'Descripción General del Documento']
   ];
+  if (requierePresencial) {
+    obligatorios.push(['fecha', 'Fecha estimada para revisión']);
+    obligatorios.push(['hora', 'Hora estimada para revisión']);
+  }
   var faltan = obligatorios.filter(function (c) { return !datos[c[0]]; }).map(function (c) { return c[1]; });
   if (faltan.length) {
     if (err) err.textContent = 'Completa los campos obligatorios: ' + faltan.join(', ') + '.';
     else alert('Completa los campos obligatorios: ' + faltan.join(', '));
     return;
   }
+
+  // Estatus de arranque para solicitudes de Nuevo Ingreso:
+  //  - Con revisión presencial  -> "Pendiente" (queda a la espera de confirmar la cita)
+  //  - Sin revisión presencial  -> "Abierta" (lista para atenderse)
+  var estatusInicial = requierePresencial ? 'Pendiente' : 'Abierta';
 
   var btn = document.getElementById('sol-registrar');
   if (btn) { btn.disabled = true; btn.textContent = 'Registrando…'; }
@@ -236,6 +260,7 @@ async function sgdRegistrarSolicitud(ev) {
   var fields = {
     Title: datos.titulo,
     Tipo_Documento: datos.tipo,
+    Tipo_Modificacion: 'Nuevo Ingreso',
     Solicitante: datos.solicitante,
     Correo: datos.correo,
     Objetivo: datos.objetivo,
@@ -243,9 +268,10 @@ async function sgdRegistrarSolicitud(ev) {
     Responsables: datos.responsables,
     Descripcion: datos.descripcion,
     Departamento: datos.departamento,
-    Fecha_Revision: datos.fecha ? (datos.fecha + 'T00:00:00Z') : '',
-    Hora_Revision: datos.hora || '',
-    Estatus: 'Pendiente',
+    Requiere_Revision: requierePresencial ? 'Sí' : 'No',
+    Fecha_Revision: (requierePresencial && datos.fecha) ? (datos.fecha + 'T00:00:00Z') : '',
+    Hora_Revision: requierePresencial ? (datos.hora || '') : '',
+    Estatus: estatusInicial,
     Fecha_Solicitud: new Date().toISOString()
   };
 

@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Gestión</title>
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+
+    <link rel="stylesheet" href="atencionsolicitudes.css">
+
+    <style>
+        /* ===== Botón Notificaciones Calidad ===== */
+        .btn-notif-cal{
+            background:linear-gradient(135deg,#7a5cf0,#5b34d6);
+            color:#fff; border:none; padding:12px 20px; border-radius:8px;
+            cursor:pointer; font-size:15px; font-weight:600; transition:.3s;
+            display:inline-flex; align-items:center; gap:9px;
+            box-shadow:0 6px 15px rgba(91,52,214,.3);
+        }
+        .btn-notif-cal:hover{ transform:translateY(-3px); }
+
+        /* ===== Modal Notificaciones Calidad ===== */
+        .cal-modal{
+            display:none; position:fixed; inset:0; z-index:9999;
+            background:rgba(15,30,50,.65); align-items:center; justify-content:center; padding:24px;
+        }
+        .cal-modal.activo{ display:flex; }
+        .cal-box{
+            background:#fff; width:min(640px,96vw); max-height:92vh; border-radius:16px;
+            overflow:hidden; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.35);
+        }
+        .cal-head{
+            display:flex; align-items:center; justify-content:space-between;
+            padding:16px 22px; background:linear-gradient(135deg,#5b34d6,#7a5cf0); color:#fff;
+        }
+        .cal-head .t{ font-size:19px; font-weight:700; display:flex; align-items:center; gap:10px; }
+        .cal-head .cerrar{
+            background:rgba(255,255,255,.18); border:none; color:#fff; font-size:22px; cursor:pointer;
+            border-radius:8px; width:40px; height:40px; line-height:1;
+        }
+        .cal-body{ padding:20px 22px; overflow:auto; }
+        .cal-nota{
+            background:#f3efff; border:1px solid #ddd0fb; color:#4a3aa0; border-radius:10px;
+            padding:12px 14px; font-size:13px; line-height:19px; margin-bottom:18px;
+        }
+        .cal-nota strong{ color:#3a2a86; }
+
+        /* Formulario de alta/edición */
+        .cal-form{ display:grid; grid-template-columns:1fr 1.3fr auto; gap:10px; align-items:end; margin-bottom:16px; }
+        .cal-form .campo{ display:flex; flex-direction:column; gap:5px; }
+        .cal-form label{ font-size:12px; font-weight:600; color:#555; }
+        .cal-form input{
+            padding:10px 12px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; outline:none;
+        }
+        .cal-form input:focus{ border-color:#7a5cf0; box-shadow:0 0 0 3px rgba(122,92,240,.15); }
+        .cal-form .btn-add{
+            background:#5b34d6; color:#fff; border:none; border-radius:8px; padding:11px 16px;
+            font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap; transition:.2s;
+        }
+        .cal-form .btn-add:hover{ background:#4626ad; }
+        .cal-form .btn-add.editando{ background:#0f9d58; }
+        .cal-error{ color:#c0392b; font-size:13px; font-weight:600; min-height:18px; margin:-6px 0 12px; }
+
+        /* Lista de analistas */
+        .cal-lista{ border:1px solid #e6eaf0; border-radius:12px; overflow:hidden; }
+        .cal-item{
+            display:flex; align-items:center; justify-content:space-between; gap:12px;
+            padding:12px 15px; border-bottom:1px solid #eef1f6;
+        }
+        .cal-item:last-child{ border-bottom:none; }
+        .cal-item .info{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+        .cal-item .nom{ font-weight:600; color:#243244; font-size:15px; }
+        .cal-item .cor{ color:#6b7684; font-size:13px; word-break:break-all; }
+        .cal-item .acc{ display:flex; gap:8px; flex:0 0 auto; }
+        .cal-item .acc button{
+            border:none; cursor:pointer; width:36px; height:36px; border-radius:8px; font-size:15px; transition:.2s;
+        }
+        .cal-item .b-edit{ background:#eaf2fb; color:#1f6feb; }
+        .cal-item .b-edit:hover{ background:#d6e6fb; }
+        .cal-item .b-del{ background:#fdeaea; color:#c0392b; }
+        .cal-item .b-del:hover{ background:#f8d7d7; }
+        .cal-vacio{ text-align:center; color:#8a94a2; padding:26px 10px; font-size:14px; }
+        @media(max-width:560px){ .cal-form{ grid-template-columns:1fr; } }
+    </style>
+
+</head>
+
+<body>
+
+    <div class="contenedor">
+
+        <!-- Encabezado -->
+
+        <header>
+
+            MODULO DE CALIDAD: ATENCION A SOLICITUDES
+
+        </header>
+
+        <!-- Barra superior -->
+
+        <div class="barra-filtros">
+
+            <div class="grupo-filtro">
+
+                <label>Estatus de Solicitud</label>
+
+                <select>
+
+                    <option>Todos</option>
+                    <option>Pendiente</option>
+                    <option>Abierta</option>
+                    <option>Atendida</option>
+
+                </select>
+
+            </div>
+
+            <div class="grupo-filtro">
+
+                <label>Tipo de Modificación</label>
+
+                <select>
+
+                    <option>Todos</option>
+                    <option>Nuevo Ingreso</option>
+                    <option>Actualización</option>
+                    <option>Baja</option>
+
+                </select>
+
+            </div>
+
+            <div class="grupo-botones">
+
+                <button class="btn-salir"
+                        onclick="window.location.href='Sistema_Gestion_Documental.html'">
+
+                    <i class="fa-solid fa-house"></i>
+                    Salir al menú principal
+
+                </button>
+
+                <button class="btn-notif-cal" onclick="calidadNotifAbrir()">
+
+                    <i class="fa-solid fa-bell"></i>
+                    Notificaciones Calidad
+
+                </button>
+
+                <button class="btn-atender">
+
+                    <i class="fa-solid fa-list-check"></i>
+                    Atención a las solicitudes
+
+                </button>
+
+            </div>
+
+        </div>
+
+        <!-- Tabla -->
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    <th>#</th>
+
+                    <th>Estatus de la Solicitud</th>
+
+                    <th>Nombre del Documento</th>
+
+                    <th>Departamento</th>
+
+                    <th>Tipo de Modificación</th>
+
+                    <th>Versión</th>
+
+                    <th>Fecha de Solicitud</th>
+
+                    <th>Fecha de Cita</th>
+
+                    <th>Hora de Cita</th>
+
+                    <th>Documento Finalizado</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+                <tr>
+
+                    <td>1</td>
+
+                    <td>
+
+                        <span class="estado abierta">
+
+                            Abierta
+
+                        </span>
+
+                    </td>
+
+                    <td>Procedimiento X</td>
+
+                    <td>Compras</td>
+
+                    <td>
+
+                        <span class="tipo nuevo">
+
+                            Nuevo Ingreso
+
+                        </span>
+
+                    </td>
+
+                    <td>00</td>
+
+                    <td>09/12/2025</td>
+
+                    <td>10/12/2025</td>
+
+                    <td>13:00</td>
+
+                    <td>
+
+                        <button class="icono" onclick="abrirModal()">
+
+                            <i class="fa-regular fa-file-lines"></i>
+
+                        </button>
+
+                    </td>
+
+                </tr>
+
+                <tr>
+
+                    <td>2</td>
+
+                    <td>
+
+                        <span class="estado abierta">
+
+                            Abierta
+
+                        </span>
+
+                    </td>
+
+                    <td>Procedimiento X</td>
+
+                    <td>Ventas</td>
+
+                    <td>
+
+                        <span class="tipo nuevo">
+
+                            Nuevo Ingreso
+
+                        </span>
+
+                    </td>
+
+                    <td>00</td>
+
+                    <td>09/12/2025</td>
+
+                    <td>11/12/2025</td>
+
+                    <td>15:30</td>
+
+                    <td>
+
+                        <button class="icono" onclick="abrirModal()">
+
+                            <i class="fa-regular fa-file-lines"></i>
+
+                        </button>
+
+                    </td>
+
+                </tr>
+
+                <tr>
+
+                    <td>3</td>
+
+                    <td>
+
+                        <span class="estado abierta">
+
+                            Abierta
+
+                        </span>
+
+                    </td>
+
+                    <td>Procedimiento X</td>
+
+                    <td>Instalaciones</td>
+
+                    <td>
+
+                        <span class="tipo actualizacion">
+
+                            Actualización
+
+                        </span>
+
+                    </td>
+
+                    <td>01</td>
+
+                    <td>09/12/2025</td>
+
+                    <td>12/12/2025</td>
+
+                    <td>17:30</td>
+
+                    <td>
+
+                        <button class="icono" onclick="abrirModal()">
+
+                            <i class="fa-regular fa-file-lines"></i>
+
+                        </button>
+
+                    </td>
+
+                </tr>
+
+                <tr>
+
+                    <td>4</td>
+
+                    <td>
+
+                        <span class="estado abierta">
+
+                            Abierta
+
+                        </span>
+
+                    </td>
+
+                    <td>Procedimiento X</td>
+
+                    <td>Contabilidad</td>
+
+                    <td>
+
+                        <span class="tipo baja">
+
+                            Baja
+
+                        </span>
+
+                    </td>
+
+                    <td>02</td>
+
+                    <td>10/12/2025</td>
+
+                    <td>11/12/2025</td>
+
+                    <td>14:00</td>
+
+                    <td>
+
+                        <button class="icono" onclick="abrirModal()">
+
+                            <i class="fa-solid fa-xmark"></i>
+
+                        </button>
+
+                    </td>
+
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+<!-- ==========================
+     VENTANA EMERGENTE (cargar documento)
+========================== -->
+
+<div id="modalDocumento" class="modal">
+
+    <div class="modal-contenido">
+
+        <h2>Cargar Documento</h2>
+
+        <label class="zona-carga" for="archivoPDF">
+
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+
+            <p>Haz clic para seleccionar un documento</p>
+
+            <span id="nombreArchivo">
+                Ningún archivo seleccionado
+            </span>
+
+        </label>
+
+        <input
+            type="file"
+            id="archivoPDF"
+            accept=".pdf"
+            hidden>
+
+        <div class="botones-modal">
+
+            <button
+                class="btn-cancelar"
+                onclick="cerrarModal()">
+
+                Cancelar
+
+            </button>
+
+            <button
+                id="btnAceptar"
+                class="btn-aceptar"
+                disabled>
+
+                Aceptar
+
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- ==========================
+     MODAL: NOTIFICACIONES CALIDAD
+========================== -->
+<div class="cal-modal" id="cal-modal">
+    <div class="cal-box">
+
+        <div class="cal-head">
+            <div class="t"><i class="fa-solid fa-bell"></i> Notificaciones de Calidad</div>
+            <button class="cerrar" onclick="calidadNotifCerrar()" title="Cerrar">&times;</button>
+        </div>
+
+        <div class="cal-body">
+
+            <div class="cal-nota">
+                Estas personas reciben por correo las nuevas solicitudes (Nuevo Ingreso, Actualización y Baja)
+                que le corresponden al departamento de <strong>Calidad</strong>.
+                Las notificaciones se envían desde <strong>automatizaciones.madero@maderoequipos.com</strong>.
+            </div>
+
+            <!-- Alta / edición -->
+            <div class="cal-form">
+                <div class="campo">
+                    <label>Nombre del analista</label>
+                    <input type="text" id="cal-nombre" placeholder="Ej. Ana López">
+                </div>
+                <div class="campo">
+                    <label>Correo electrónico</label>
+                    <input type="email" id="cal-correo" placeholder="analista@maderoequipos.com">
+                </div>
+                <button class="btn-add" id="cal-btn-add" onclick="calidadNotifGuardarItem()">
+                    <i class="fa-solid fa-plus"></i> Agregar
+                </button>
+            </div>
+            <div class="cal-error" id="cal-error"></div>
+
+            <!-- Lista -->
+            <div class="cal-lista" id="cal-lista"></div>
+
+        </div>
+
+    </div>
+</div>
+
+<!-- Puente SP + usuario en sesión (inyectado por index.html) -->
+<script src="script.js"></script>
+
+<script>
+/* ====== Modal de carga de documento (existente) ====== */
+const modal=document.getElementById("modalDocumento");
+const archivo=document.getElementById("archivoPDF");
+const aceptar=document.getElementById("btnAceptar");
+const nombre=document.getElementById("nombreArchivo");
+
+function abrirModal(){ modal.classList.add("activo"); }
+function cerrarModal(){
+    modal.classList.remove("activo");
+    archivo.value="";
+    nombre.innerHTML="Ningún archivo seleccionado";
+    aceptar.disabled=true;
+    aceptar.classList.remove("activo");
+}
+archivo.addEventListener("change",()=>{
+    if(archivo.files.length>0){
+        nombre.innerHTML=archivo.files[0].name;
+        aceptar.disabled=false;
+        aceptar.classList.add("activo");
+    }
+});
+
+/* ============================================================
+   NOTIFICACIONES DE CALIDAD (lista de SharePoint, editable)
+   ------------------------------------------------------------
+   Lista SP: SGD_NotificacionesCalidad
+     · Title  = nombre del analista
+     · Correo = correo electrónico
+   Se administra por el puente SP del padre (index.html). En modo
+   standalone (pruebas suelto) se usa localStorage como respaldo.
+   Son los analistas que reciben por correo las nuevas solicitudes.
+   ============================================================ */
+var CAL_KEY   = 'sgd_calidad_notificaciones';   // respaldo standalone
+var CAL_LISTA = [];      // [{id, nombre, correo}]  (id = itemId de SP; '' en standalone)
+var CAL_EDIT  = -1;      // índice en edición (-1 = alta nueva)
+var CAL_BUSY  = false;
+
+function calLista(){ return (window.SGD && window.SGD.LISTA_NOTIF_CALIDAD) || 'SGD_NotificacionesCalidad'; }
+function calEmbebido(){ return !!(window.SGD && window.SGD.embebido && window.SGD.embebido()); }
+
+// Carga desde SP (o localStorage en standalone)
+async function calidadNotifCargar(){
+    if(!calEmbebido()){
+        try{ CAL_LISTA = JSON.parse(localStorage.getItem(CAL_KEY) || '[]'); }catch(_){ CAL_LISTA=[]; }
+        if(!Array.isArray(CAL_LISTA)) CAL_LISTA=[];
+        return;
+    }
+    var r = await window.SGD.sp('list', { lista: calLista(), queryParams:'$expand=fields&$top=500' });
+    var items = (r && r.value) ? r.value : [];
+    CAL_LISTA = items.map(function(it){
+        var f = it.fields || it;
+        return { id: (it.id!==undefined?it.id:(f.id||'')), nombre: f.Title||'', correo: f.Correo||'' };
+    }).sort(function(a,b){ return (a.nombre||'').localeCompare(b.nombre||''); });
+}
+function calidadNotifPersistirLocal(){
+    try{ localStorage.setItem(CAL_KEY, JSON.stringify(CAL_LISTA)); }catch(_){}
+}
+
+async function calidadNotifAbrir(){
+    document.getElementById('cal-modal').classList.add('activo');
+    calidadNotifReset();
+    var cont=document.getElementById('cal-lista');
+    if(cont) cont.innerHTML='<div class="cal-vacio">Cargando…</div>';
+    try{ await calidadNotifCargar(); calidadNotifRender(); }
+    catch(e){ if(cont) cont.innerHTML='<div class="cal-vacio">No se pudo cargar la lista. Cierra y vuelve a intentar.</div>'; }
+}
+function calidadNotifCerrar(){
+    document.getElementById('cal-modal').classList.remove('activo');
+}
+
+function calidadNotifRender(){
+    var cont = document.getElementById('cal-lista');
+    if(!cont) return;
+    if(!CAL_LISTA.length){
+        cont.innerHTML = '<div class="cal-vacio">Aún no hay analistas de calidad registrados. Agrega al menos uno para recibir las notificaciones.</div>';
+        return;
+    }
+    var html = '';
+    CAL_LISTA.forEach(function(p, i){
+        html += '<div class="cal-item">'
+             +    '<div class="info">'
+             +      '<span class="nom">'+ calEsc(p.nombre) +'</span>'
+             +      '<span class="cor">'+ calEsc(p.correo) +'</span>'
+             +    '</div>'
+             +    '<div class="acc">'
+             +      '<button class="b-edit" title="Editar" onclick="calidadNotifEditar('+i+')"><i class="fa-solid fa-pen"></i></button>'
+             +      '<button class="b-del" title="Dar de baja" onclick="calidadNotifEliminar('+i+')"><i class="fa-solid fa-trash"></i></button>'
+             +    '</div>'
+             +  '</div>';
+    });
+    cont.innerHTML = html;
+}
+
+function calEsc(s){
+    return String(s==null?'':s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function calEmailValido(c){
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c);
+}
+
+function calidadNotifReset(){
+    CAL_EDIT = -1;
+    var n=document.getElementById('cal-nombre'), c=document.getElementById('cal-correo');
+    if(n) n.value=''; if(c) c.value='';
+    var b=document.getElementById('cal-btn-add');
+    if(b){ b.classList.remove('editando'); b.disabled=false; b.innerHTML='<i class="fa-solid fa-plus"></i> Agregar'; }
+    var e=document.getElementById('cal-error'); if(e) e.textContent='';
+}
+
+async function calidadNotifGuardarItem(){
+    if(CAL_BUSY) return;
+    var n=document.getElementById('cal-nombre').value.trim();
+    var c=document.getElementById('cal-correo').value.trim();
+    var e=document.getElementById('cal-error');
+    if(e) e.textContent='';
+    if(!n){ if(e) e.textContent='Escribe el nombre del analista.'; return; }
+    if(!calEmailValido(c)){ if(e) e.textContent='Escribe un correo electrónico válido.'; return; }
+    var dup = CAL_LISTA.findIndex(function(p, i){ return (p.correo||'').toLowerCase()===c.toLowerCase() && i!==CAL_EDIT; });
+    if(dup>=0){ if(e) e.textContent='Ese correo ya está registrado.'; return; }
+
+    var b=document.getElementById('cal-btn-add');
+    CAL_BUSY=true; if(b){ b.disabled=true; b.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Guardando…'; }
+    try{
+        if(calEmbebido()){
+            if(CAL_EDIT>=0){
+                await window.SGD.sp('update', { lista:calLista(), itemId:CAL_LISTA[CAL_EDIT].id, fields:{ Title:n, Correo:c } });
+            } else {
+                await window.SGD.sp('create', { lista:calLista(), fields:{ Title:n, Correo:c } });
+            }
+            await calidadNotifCargar();
+        } else {
+            if(CAL_EDIT>=0){ CAL_LISTA[CAL_EDIT] = {id:'', nombre:n, correo:c}; }
+            else { CAL_LISTA.push({id:'', nombre:n, correo:c}); }
+            calidadNotifPersistirLocal();
+        }
+        calidadNotifReset();
+        calidadNotifRender();
+    }catch(err){
+        if(e) e.textContent='No se pudo guardar. Intenta de nuevo.';
+        if(b){ b.disabled=false; b.innerHTML = (CAL_EDIT>=0?'<i class="fa-solid fa-check"></i> Guardar':'<i class="fa-solid fa-plus"></i> Agregar'); }
+    }finally{ CAL_BUSY=false; }
+}
+
+function calidadNotifEditar(i){
+    var p = CAL_LISTA[i]; if(!p) return;
+    CAL_EDIT = i;
+    document.getElementById('cal-nombre').value = p.nombre || '';
+    document.getElementById('cal-correo').value = p.correo || '';
+    var b=document.getElementById('cal-btn-add');
+    if(b){ b.classList.add('editando'); b.innerHTML='<i class="fa-solid fa-check"></i> Guardar'; }
+    document.getElementById('cal-nombre').focus();
+}
+
+async function calidadNotifEliminar(i){
+    if(CAL_BUSY) return;
+    var p = CAL_LISTA[i]; if(!p) return;
+    if(!confirm('¿Dar de baja a "'+p.nombre+'" de las notificaciones de calidad?')) return;
+    CAL_BUSY=true;
+    try{
+        if(calEmbebido()){
+            await window.SGD.sp('delete', { lista:calLista(), itemId:p.id });
+            await calidadNotifCargar();
+        } else {
+            CAL_LISTA.splice(i,1); calidadNotifPersistirLocal();
+        }
+        if(CAL_EDIT===i) calidadNotifReset();
+        calidadNotifRender();
+    }catch(err){
+        alert('No se pudo dar de baja. Intenta de nuevo.');
+    }finally{ CAL_BUSY=false; }
+}
+
+// Cierra el modal al hacer clic fuera de la caja
+document.getElementById('cal-modal').addEventListener('click', function(ev){
+    if(ev.target===this) calidadNotifCerrar();
+});
+</script>
+
+</body>
+
+</html>

@@ -37,6 +37,54 @@
         /* Píldoras de estatus que faltan en el CSS base */
         .estado.pendiente{ background:linear-gradient(135deg,#ffb15e,#f0932b); color:#3a2400; }
         .estado.atendida{ background:linear-gradient(135deg,#2ecc71,#27ae60); color:#fff; }
+        .estado.enproceso{ background:linear-gradient(135deg,#56ccf2,#2f80ed); color:#fff; }
+        .estado.enrevision{ background:linear-gradient(135deg,#b06ab3,#8e44ad); color:#fff; }
+        .estado.enliberacion{ background:linear-gradient(135deg,#f7b733,#fc4a1a); color:#fff; }
+        .estado.cancelado{ background:linear-gradient(135deg,#8a97a6,#5c6b7a); color:#fff; }
+
+        /* Botón "Confirma resolución" en cada fila */
+        .btn-resol{
+            border:none; border-radius:8px; padding:9px 13px; font-size:13px; font-weight:700;
+            cursor:pointer; color:#fff; display:inline-flex; align-items:center; gap:7px; white-space:nowrap; transition:.2s;
+        }
+        .btn-resol.cita{ background:linear-gradient(135deg,#f0932b,#e67e22); }
+        .btn-resol.estatus{ background:linear-gradient(135deg,#2f75a8,#1f4e79); }
+        .btn-resol:hover{ transform:translateY(-2px); }
+        .btn-resol-nota{ color:#8a94a2; font-size:13px; }
+
+        /* ===== Modales (cita / estatus) ===== */
+        .sgd2-modal{ display:none; position:fixed; inset:0; z-index:9999; background:rgba(15,30,50,.65); align-items:center; justify-content:center; padding:24px; }
+        .sgd2-modal.activo{ display:flex; }
+        .sgd2-box{ background:#fff; width:min(600px,96vw); max-height:92vh; border-radius:16px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.35); }
+        .sgd2-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 22px; color:#fff; }
+        .sgd2-head.cita{ background:linear-gradient(135deg,#e67e22,#f0932b); }
+        .sgd2-head.estatus{ background:linear-gradient(135deg,#1f4e79,#2f75a8); }
+        .sgd2-head .t{ font-size:19px; font-weight:700; display:flex; align-items:center; gap:10px; }
+        .sgd2-head .cerrar{ background:rgba(255,255,255,.2); border:none; color:#fff; font-size:22px; cursor:pointer; border-radius:8px; width:40px; height:40px; line-height:1; }
+        .sgd2-body{ padding:20px 22px; overflow:auto; }
+        .sgd2-info{ background:#f4f7fb; border:1px solid #e2e9f2; border-radius:10px; padding:12px 14px; font-size:14px; color:#33455a; margin-bottom:18px; line-height:20px; }
+        .sgd2-info b{ color:#1f4e79; }
+        .sgd2-opt{ border:1.5px solid #e2e9f2; border-radius:12px; padding:14px 16px; margin-bottom:12px; cursor:pointer; transition:.15s; }
+        .sgd2-opt:hover{ border-color:#b9cbe0; }
+        .sgd2-opt.sel{ border-color:#2f75a8; background:#f0f7ff; }
+        .sgd2-opt .cab{ display:flex; align-items:center; gap:10px; font-weight:700; color:#243244; font-size:15px; }
+        .sgd2-opt .cab input{ width:18px; height:18px; accent-color:#2f75a8; }
+        .sgd2-opt .det{ margin:12px 0 0 28px; display:none; }
+        .sgd2-opt.sel .det{ display:block; }
+        .sgd2-opt .det label{ display:block; font-size:12px; font-weight:600; color:#555; margin:8px 0 4px; }
+        .sgd2-opt .det input, .sgd2-opt .det textarea, .sgd2-opt .det select{
+            width:100%; padding:9px 11px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;
+        }
+        .sgd2-opt .det .row2{ display:flex; gap:10px; }
+        .sgd2-opt .det .row2>div{ flex:1; }
+        .sgd2-error{ color:#c0392b; font-size:13px; font-weight:600; min-height:18px; margin:4px 0 10px; }
+        .sgd2-foot{ display:flex; justify-content:flex-end; gap:10px; padding:16px 22px; border-top:1px solid #eef1f6; }
+        .sgd2-btn{ border:none; border-radius:9px; padding:11px 20px; font-size:15px; font-weight:600; cursor:pointer; transition:.2s; }
+        .sgd2-btn.cancel{ background:#eef1f6; color:#33455a; }
+        .sgd2-btn.ok{ background:#1f4e79; color:#fff; }
+        .sgd2-btn.ok:hover{ background:#163a5c; }
+        .sgd2-btn:disabled{ opacity:.6; cursor:default; }
+        .file-hint{ font-size:12px; color:#7b8794; margin-top:4px; }
 
         /* ===== Modal Notificaciones Calidad ===== */
         .cal-modal{
@@ -129,6 +177,10 @@
                     <option>Todos</option>
                     <option>Pendiente</option>
                     <option>Abierta</option>
+                    <option>En proceso</option>
+                    <option>En revisión</option>
+                    <option>En liberación</option>
+                    <option>Cancelado</option>
                     <option>Atendida</option>
 
                 </select>
@@ -192,17 +244,19 @@
 
                     <th>Nombre del Documento</th>
 
+                    <th>Tipo de Documento</th>
+
                     <th>Departamento</th>
 
                     <th>Tipo de Modificación</th>
-
-                    <th>Versión</th>
 
                     <th>Fecha de Solicitud</th>
 
                     <th>Fecha de Cita</th>
 
                     <th>Hora de Cita</th>
+
+                    <th>Confirma resolución</th>
 
                     <th>Documento Finalizado</th>
 
@@ -211,7 +265,7 @@
             </thead>
 
             <tbody id="atc-tbody">
-                <tr><td colspan="10" style="text-align:center;padding:34px;color:#8a94a2;">Cargando solicitudes…</td></tr>
+                <tr><td colspan="11" style="text-align:center;padding:34px;color:#8a94a2;">Cargando solicitudes…</td></tr>
             </tbody>
 
         </table>
@@ -314,6 +368,92 @@
     </div>
 </div>
 
+<!-- ==========================
+     MODAL: CONFIRMACIÓN DE CITA  (estatus Pendiente)
+========================== -->
+<div class="sgd2-modal" id="cita-modal">
+  <div class="sgd2-box">
+    <div class="sgd2-head cita">
+      <div class="t"><i class="fa-solid fa-calendar-check"></i> Confirmación de cita</div>
+      <button class="cerrar" onclick="citaCerrar()">&times;</button>
+    </div>
+    <div class="sgd2-body">
+      <div class="sgd2-info" id="cita-info"></div>
+
+      <label class="sgd2-opt sel" id="cita-opt-a">
+        <div class="cab"><input type="radio" name="cita-op" value="aceptar" checked onchange="citaSelOpcion()"> Aceptar la fecha y hora solicitada</div>
+        <div class="det">
+          <p style="margin:0;color:#33455a;font-size:14px;">Se confirmará la cita en la fecha y hora que solicitó el usuario. El solicitante y tú recibirán un correo de confirmación indicando que <b id="cita-analista"></b> atenderá la cita.</p>
+        </div>
+      </label>
+
+      <label class="sgd2-opt" id="cita-opt-b">
+        <div class="cab"><input type="radio" name="cita-op" value="proponer" onchange="citaSelOpcion()"> Proponer nueva fecha y hora (o un rango)</div>
+        <div class="det">
+          <label>Días y horarios disponibles que propones</label>
+          <textarea id="cita-propuesta" rows="4" placeholder="Ej. Lunes 15 y martes 16 de dic, de 10:00 a 13:00 hrs. El usuario elegirá el día y la hora específica."></textarea>
+          <div class="row2">
+            <div><label>Desde (opcional)</label><input type="date" id="cita-desde"></div>
+            <div><label>Hasta (opcional)</label><input type="date" id="cita-hasta"></div>
+          </div>
+          <p class="file-hint">El usuario confirmará el día y la hora específicos desde su pantalla de Seguimiento.</p>
+        </div>
+      </label>
+
+      <div class="sgd2-error" id="cita-error"></div>
+    </div>
+    <div class="sgd2-foot">
+      <button class="sgd2-btn cancel" onclick="citaCerrar()">Cancelar</button>
+      <button class="sgd2-btn ok" id="cita-ok" onclick="citaConfirmar()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================
+     MODAL: CAMBIO DE ESTATUS  (estatus Abierta / En proceso / En revisión)
+========================== -->
+<div class="sgd2-modal" id="est-modal">
+  <div class="sgd2-box">
+    <div class="sgd2-head estatus">
+      <div class="t"><i class="fa-solid fa-arrows-rotate"></i> Cambio de estatus</div>
+      <button class="cerrar" onclick="estCerrar()">&times;</button>
+    </div>
+    <div class="sgd2-body">
+      <div class="sgd2-info" id="est-info"></div>
+
+      <label class="sgd2-opt sel" id="est-opt-proceso">
+        <div class="cab"><input type="radio" name="est-op" value="En proceso" checked onchange="estSelOpcion()"> En proceso</div>
+        <div class="det"><p style="margin:0;color:#33455a;font-size:14px;">La solicitud pasa a <b>En proceso</b>. El usuario lo verá en su pantalla de Seguimiento. No requiere datos adicionales.</p></div>
+      </label>
+
+      <label class="sgd2-opt" id="est-opt-revision">
+        <div class="cab"><input type="radio" name="est-op" value="En revisión" onchange="estSelOpcion()"> En revisión</div>
+        <div class="det">
+          <label>Comentarios para el solicitante</label>
+          <textarea id="est-comentarios" rows="3" placeholder="Indica al solicitante lo que debe revisar del borrador…"></textarea>
+          <label>Adjuntar borrador en PDF</label>
+          <input type="file" id="est-borrador" accept=".pdf">
+          <p class="file-hint">El solicitante podrá visualizar el borrador en su pantalla de Seguimiento y dar su visto bueno.</p>
+        </div>
+      </label>
+
+      <label class="sgd2-opt" id="est-opt-cancelado">
+        <div class="cab"><input type="radio" name="est-op" value="Cancelado" onchange="estSelOpcion()"> Cancelado</div>
+        <div class="det">
+          <label>Motivo de la cancelación</label>
+          <textarea id="est-motivo" rows="3" placeholder="Escribe el motivo. Se enviará al solicitante por correo."></textarea>
+        </div>
+      </label>
+
+      <div class="sgd2-error" id="est-error"></div>
+    </div>
+    <div class="sgd2-foot">
+      <button class="sgd2-btn cancel" onclick="estCerrar()">Cancelar</button>
+      <button class="sgd2-btn ok" id="est-ok" onclick="estConfirmar()">Guardar cambio</button>
+    </div>
+  </div>
+</div>
+
 <!-- Puente SP + usuario en sesión (inyectado por index.html) -->
 <script src="script.js"></script>
 
@@ -346,22 +486,34 @@ archivo.addEventListener("change",()=>{
    Reemplaza los registros de prueba. Carga desde SharePoint por
    el puente del padre (index.html). En standalone usa demo.
    ============================================================ */
-var ATC_ITEMS = [];  // solicitudes cargadas de SP
+var ATC_ITEMS = [];    // solicitudes cargadas de SP
+var ATC_VISIBLE = [];  // subconjunto visible tras filtros (base para los índices de los modales)
 
 var ATC_DEMO = [
-  { estatus:'Pendiente', documento:'Procedimiento de compras', departamento:'Compras', tipo:'Nuevo Ingreso', fecha:'09/12/2025', fechaCita:'12/12/2025', horaCita:'17:30' },
-  { estatus:'Abierta',   documento:'Procedimiento de ventas',  departamento:'Ventas',  tipo:'Nuevo Ingreso', fecha:'09/12/2025', fechaCita:'', horaCita:'' }
+  { id:'d1', estatus:'Pendiente', documento:'Procedimiento de compras', tipoDoc:'Procedimiento', departamento:'Compras', tipo:'Nuevo Ingreso', fecha:'09/12/2025', fechaCita:'12/12/2025', horaCita:'17:30' },
+  { id:'d2', estatus:'Abierta',   documento:'Procedimiento de ventas',  tipoDoc:'Procedimiento', departamento:'Ventas',  tipo:'Nuevo Ingreso', fecha:'09/12/2025', fechaCita:'', horaCita:'' },
+  { id:'d3', estatus:'En proceso',documento:'Instructivo de embarque', tipoDoc:'Instructivo', departamento:'Logística', tipo:'Actualización', fecha:'08/12/2025', fechaCita:'', horaCita:'' }
 ];
 
 function atcEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function atcEmbebido(){ return !!(window.SGD && window.SGD.embebido && window.SGD.embebido()); }
 function atcFmtFecha(s){ if(!s) return ''; s=String(s).split('T')[0]; var p=s.split('-'); return p.length<3?s:(p[2]+'/'+p[1]+'/'+p[0]); }
 function atcTipoClase(t){ var s=(t||'').toLowerCase(); if(s.indexOf('actualiz')>=0)return'actualizacion'; if(s.indexOf('baja')>=0)return'baja'; return'nuevo'; }
-function atcEstadoClase(e){ var s=(e||'').toLowerCase(); if(s==='abierta')return'abierta'; if(s==='pendiente')return'pendiente'; if(s==='atendida')return'atendida'; return'abierta'; }
+function atcEstadoClase(e){
+  var s=(e||'').toLowerCase();
+  if(s==='abierta')return'abierta';
+  if(s==='pendiente')return'pendiente';
+  if(s==='en proceso')return'enproceso';
+  if(s==='en revisión'||s==='en revision')return'enrevision';
+  if(s==='en liberación'||s==='en liberacion')return'enliberacion';
+  if(s==='cancelado')return'cancelado';
+  if(s==='atendida')return'atendida';
+  return'abierta';
+}
 
 async function atencionCargarSolicitudes(){
   var tbody=document.getElementById('atc-tbody');
-  if(tbody) tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:34px;color:#8a94a2;">Cargando solicitudes…</td></tr>';
+  if(tbody) tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:34px;color:#8a94a2;">Cargando solicitudes…</td></tr>';
 
   if(!atcEmbebido()){
     ATC_ITEMS = ATC_DEMO.slice();
@@ -378,18 +530,40 @@ async function atencionCargarSolicitudes(){
         id:         (it.id!==undefined?it.id:''),
         estatus:    f.Estatus||'Pendiente',
         documento:  f.Title||'',
+        tipoDoc:    f.Tipo_Documento||'',
         departamento:f.Departamento||'',
         tipo:       f.Tipo_Modificacion||'Nuevo Ingreso',
+        solicitante:f.Solicitante||'',
+        correo:     f.Correo||'',
         fecha:      atcFmtFecha(f.Fecha_Solicitud),
         fechaISO:   f.Fecha_Solicitud||'',
+        fechaCitaISO:(f.Fecha_Revision||'').split('T')[0],
         fechaCita:  atcFmtFecha(f.Fecha_Revision),
-        horaCita:   f.Hora_Revision||''
+        horaCita:   f.Hora_Revision||'',
+        docFinalURL:f.Documento_Final_URL||''
       };
     }).sort(function(a,b){ return (b.fechaISO||'').localeCompare(a.fechaISO||''); });
     atencionRender();
   }catch(e){
-    if(tbody) tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:34px;color:#c0392b;">No se pudieron cargar las solicitudes. Presiona Actualizar para reintentar.</td></tr>';
+    if(tbody) tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:34px;color:#c0392b;">No se pudieron cargar las solicitudes. Presiona Actualizar para reintentar.</td></tr>';
   }
+}
+
+// Botón "Confirma resolución" según el estatus
+function atcBotonResolucion(s, idx){
+  var est=(s.estatus||'').toLowerCase();
+  if(est==='pendiente'){
+    return '<button class="btn-resol cita" onclick="citaAbrir('+idx+')"><i class="fa-solid fa-calendar-check"></i> Confirmar cita</button>';
+  }
+  if(est==='abierta' || est==='en proceso' || est==='en revisión' || est==='en revision'){
+    return '<button class="btn-resol estatus" onclick="estAbrir('+idx+')"><i class="fa-solid fa-arrows-rotate"></i> Cambiar estatus</button>';
+  }
+  if(est==='en liberación' || est==='en liberacion'){
+    return '<span class="btn-resol-nota">En liberación…</span>';
+  }
+  if(est==='cancelado'){ return '<span class="btn-resol-nota">Cancelada</span>'; }
+  if(est==='atendida'){ return '<span class="btn-resol-nota">Atendida</span>'; }
+  return '—';
 }
 
 function atencionRender(){
@@ -397,32 +571,202 @@ function atencionRender(){
   if(!tbody) return;
   var fEst=(document.getElementById('atc-f-estatus')||{}).value||'Todos';
   var fTipo=(document.getElementById('atc-f-tipo')||{}).value||'Todos';
-  var datos=ATC_ITEMS.filter(function(s){
+  ATC_VISIBLE=ATC_ITEMS.filter(function(s){
     if(fEst!=='Todos' && (s.estatus||'')!==fEst) return false;
     if(fTipo!=='Todos' && (s.tipo||'')!==fTipo) return false;
     return true;
   });
-  if(!datos.length){
-    tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:34px;color:#8a94a2;">No hay solicitudes que coincidan con los filtros.</td></tr>';
+  if(!ATC_VISIBLE.length){
+    tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:34px;color:#8a94a2;">No hay solicitudes que coincidan con los filtros.</td></tr>';
     return;
   }
   var html='';
-  datos.forEach(function(s,i){
+  ATC_VISIBLE.forEach(function(s,i){
+    var docFin = s.docFinalURL
+      ? '<button class="icono" title="Ver documento finalizado" onclick="atcVerDocFinal('+i+')"><i class="fa-regular fa-file-lines"></i></button>'
+      : '<span class="btn-resol-nota">—</span>';
     html+='<tr>'
        +  '<td>'+(i+1)+'</td>'
        +  '<td><span class="estado '+atcEstadoClase(s.estatus)+'">'+atcEsc(s.estatus)+'</span></td>'
        +  '<td>'+atcEsc(s.documento)+'</td>'
+       +  '<td>'+(s.tipoDoc?atcEsc(s.tipoDoc):'—')+'</td>'
        +  '<td>'+atcEsc(s.departamento)+'</td>'
        +  '<td><span class="tipo '+atcTipoClase(s.tipo)+'">'+atcEsc(s.tipo)+'</span></td>'
-       +  '<td>—</td>'
        +  '<td>'+atcEsc(s.fecha)+'</td>'
        +  '<td>'+(s.fechaCita?atcEsc(s.fechaCita):'—')+'</td>'
        +  '<td>'+(s.horaCita?atcEsc(s.horaCita):'—')+'</td>'
-       +  '<td><button class="icono" onclick="abrirModal()"><i class="fa-regular fa-file-lines"></i></button></td>'
+       +  '<td>'+atcBotonResolucion(s,i)+'</td>'
+       +  '<td>'+docFin+'</td>'
        +  '</tr>';
   });
   tbody.innerHTML=html;
 }
+
+function atcVerDocFinal(idx){
+  var s=ATC_VISIBLE[idx]; if(!s||!s.docFinalURL) return;
+  if(typeof sgdVerDocumento==='function') sgdVerDocumento(s.docFinalURL, s.documento||'Documento finalizado');
+  else window.open(s.docFinalURL,'_blank');
+}
+
+/* ============================================================
+   HELPERS de escritura + utilidades para los modales
+   ============================================================ */
+function atcUsuarioActual(){ return (window.SGD && window.SGD.getUsuario && window.SGD.getUsuario()) || { nombre:'', correo:'' }; }
+function atcFileB64(file){
+  return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){ res(String(r.result).split(',')[1]||''); }; r.onerror=rej; r.readAsDataURL(file); });
+}
+
+// Aplica un cambio a una solicitud: estampa auditoría, escribe en SP, deja bitácora y recarga.
+async function atcAplicarCambio(s, fields, accion, detalle){
+  if(!atcEmbebido()){
+    // Standalone (pruebas): actualiza el item demo en memoria
+    if(fields.Estatus) s.estatus = fields.Estatus;
+    atencionRender();
+    return;
+  }
+  if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
+  await window.SGD.sp('update', { lista:(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes'), itemId:s.id, fields:fields });
+  if(window.SGD.bitacora) window.SGD.bitacora(accion, 'SGD_Solicitudes', detalle||'', { id:s.id, pantalla:'Atención a solicitudes' });
+  await atencionCargarSolicitudes();
+}
+
+/* ============================================================
+   MODAL: CONFIRMACIÓN DE CITA  (solicitud Pendiente)
+   ============================================================ */
+var CITA_IDX = -1;
+function citaAbrir(idx){
+  CITA_IDX = idx;
+  var s = ATC_VISIBLE[idx]; if(!s) return;
+  var u = atcUsuarioActual();
+  document.getElementById('cita-info').innerHTML =
+    '<b>'+atcEsc(s.documento)+'</b><br>Solicitante: '+atcEsc(s.solicitante||'—')+
+    '<br>Fecha y hora solicitada: <b>'+(s.fechaCita?atcEsc(s.fechaCita):'—')+(s.horaCita?(' · '+atcEsc(s.horaCita)):'')+'</b>';
+  document.getElementById('cita-analista').textContent = u.nombre || 'el analista de calidad';
+  // reset opciones
+  document.querySelector('#cita-modal input[value="aceptar"]').checked = true;
+  document.getElementById('cita-propuesta').value='';
+  document.getElementById('cita-desde').value='';
+  document.getElementById('cita-hasta').value='';
+  document.getElementById('cita-error').textContent='';
+  citaSelOpcion();
+  document.getElementById('cita-modal').classList.add('activo');
+}
+function citaCerrar(){ document.getElementById('cita-modal').classList.remove('activo'); }
+function citaSelOpcion(){
+  var v = (document.querySelector('#cita-modal input[name="cita-op"]:checked')||{}).value;
+  document.getElementById('cita-opt-a').classList.toggle('sel', v==='aceptar');
+  document.getElementById('cita-opt-b').classList.toggle('sel', v==='proponer');
+}
+async function citaConfirmar(){
+  var s = ATC_VISIBLE[CITA_IDX]; if(!s) return;
+  var v = (document.querySelector('#cita-modal input[name="cita-op"]:checked')||{}).value;
+  var err = document.getElementById('cita-error'); err.textContent='';
+  var u = atcUsuarioActual();
+  var btn = document.getElementById('cita-ok');
+  var fields, accion, detalle;
+
+  if(v==='aceptar'){
+    fields = {
+      Estatus:'Abierta',
+      Analista_Asignado: u.nombre || '',
+      Analista_Correo: u.correo || '',
+      Cita_Confirmada:'Sí',
+      Evento_Notificacion:'CITA_CONFIRMADA'
+    };
+    accion='Confirmar cita (aceptada)';
+    detalle='Cita aceptada para '+(s.fechaCita||'')+' '+(s.horaCita||'')+'. Atiende: '+(u.nombre||'');
+  } else {
+    var prop = document.getElementById('cita-propuesta').value.trim();
+    if(!prop){ err.textContent='Escribe los días y horarios que propones.'; return; }
+    var desde=document.getElementById('cita-desde').value, hasta=document.getElementById('cita-hasta').value;
+    fields = {
+      Estatus:'Pendiente',
+      Analista_Asignado: u.nombre || '',
+      Analista_Correo: u.correo || '',
+      Cita_Confirmada:'No',
+      Propuesta_Cita: prop + (desde||hasta ? ('\n(Rango: '+(desde||'—')+' a '+(hasta||'—')+')') : ''),
+      Evento_Notificacion:'CITA_PROPUESTA'
+    };
+    accion='Confirmar cita (propuesta)';
+    detalle='Propuesta de fechas/horarios al solicitante.';
+  }
+
+  btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    await atcAplicarCambio(s, fields, accion, detalle);
+    citaCerrar();
+  }catch(e){ err.textContent='No se pudo guardar. Intenta de nuevo.'; }
+  finally{ btn.disabled=false; btn.textContent='Confirmar'; }
+}
+
+/* ============================================================
+   MODAL: CAMBIO DE ESTATUS  (solicitud Abierta / En proceso / En revisión)
+   ============================================================ */
+var EST_IDX = -1;
+function estAbrir(idx){
+  EST_IDX = idx;
+  var s = ATC_VISIBLE[idx]; if(!s) return;
+  document.getElementById('est-info').innerHTML =
+    '<b>'+atcEsc(s.documento)+'</b><br>Estatus actual: <b>'+atcEsc(s.estatus)+'</b> · Solicitante: '+atcEsc(s.solicitante||'—');
+  document.querySelector('#est-modal input[value="En proceso"]').checked = true;
+  document.getElementById('est-comentarios').value='';
+  document.getElementById('est-motivo').value='';
+  var fb=document.getElementById('est-borrador'); if(fb) fb.value='';
+  document.getElementById('est-error').textContent='';
+  estSelOpcion();
+  document.getElementById('est-modal').classList.add('activo');
+}
+function estCerrar(){ document.getElementById('est-modal').classList.remove('activo'); }
+function estSelOpcion(){
+  var v = (document.querySelector('#est-modal input[name="est-op"]:checked')||{}).value;
+  document.getElementById('est-opt-proceso').classList.toggle('sel', v==='En proceso');
+  document.getElementById('est-opt-revision').classList.toggle('sel', v==='En revisión');
+  document.getElementById('est-opt-cancelado').classList.toggle('sel', v==='Cancelado');
+}
+async function estConfirmar(){
+  var s = ATC_VISIBLE[EST_IDX]; if(!s) return;
+  var v = (document.querySelector('#est-modal input[name="est-op"]:checked')||{}).value;
+  var err = document.getElementById('est-error'); err.textContent='';
+  var u = atcUsuarioActual();
+  var btn = document.getElementById('est-ok');
+  var fields, accion, detalle;
+
+  if(v==='En proceso'){
+    fields = { Estatus:'En proceso', Analista_Asignado:u.nombre||'', Analista_Correo:u.correo||'', Evento_Notificacion:'EN_PROCESO' };
+    accion='Cambio de estatus: En proceso'; detalle='';
+  } else if(v==='Cancelado'){
+    var motivo = document.getElementById('est-motivo').value.trim();
+    if(!motivo){ err.textContent='Escribe el motivo de la cancelación.'; return; }
+    fields = { Estatus:'Cancelado', Analista_Asignado:u.nombre||'', Analista_Correo:u.correo||'', Motivo_Cancelacion:motivo, Evento_Notificacion:'CANCELADO' };
+    accion='Cambio de estatus: Cancelado'; detalle=motivo;
+  } else { // En revisión
+    var coment = document.getElementById('est-comentarios').value.trim();
+    var file = (document.getElementById('est-borrador').files||[])[0];
+    fields = { Estatus:'En revisión', Analista_Asignado:u.nombre||'', Analista_Correo:u.correo||'', Comentarios_Analista:coment, Evento_Notificacion:'EN_REVISION' };
+    accion='Cambio de estatus: En revisión'; detalle=coment||'';
+    btn.disabled=true; btn.textContent='Subiendo…';
+    try{
+      if(file && atcEmbebido()){
+        var b64 = await atcFileB64(file);
+        var up = await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Borradores', itemId:s.id, fileName:file.name, contentBase64:b64 });
+        if(up && up.webUrl) fields.Documento_Borrador_URL = up.webUrl;
+      }
+    }catch(e){ err.textContent='No se pudo subir el borrador. Se guardará el estatus sin el archivo.'; }
+  }
+
+  btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    await atcAplicarCambio(s, fields, accion, detalle);
+    estCerrar();
+  }catch(e){ err.textContent='No se pudo guardar. Intenta de nuevo.'; }
+  finally{ btn.disabled=false; btn.textContent='Guardar cambio'; }
+}
+
+// Cerrar modales al hacer clic fuera de la caja
+['cita-modal','est-modal'].forEach(function(id){
+  var el=document.getElementById(id);
+  if(el) el.addEventListener('click', function(ev){ if(ev.target===this) this.classList.remove('activo'); });
+});
 
 // Cargar solicitudes cuando el padre confirma el usuario, y al iniciar
 window.SGD = window.SGD || {};

@@ -249,7 +249,13 @@ async function sgdVerDocumento(ref, titulo) {
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
   var res = await window.SGD.obtenerBlobUrl(ref);
-  if (!res || !res.url) { alert('No se pudo abrir el documento. Verifica que se haya cargado correctamente.'); return; }
+  if (!res || !res.url) { alert('No se pudo abrir el documento. Verifica que se haya cargado correctamente.'); sgdCerrarVisor(); return; }
+  // Documentos guardados con una versión anterior (URL de SharePoint) no se pueden incrustar:
+  if (!res.revocar && /sharepoint\.com|login\.microsoftonline\.com|1drv\.ms|onedrive\.live\.com/i.test(res.url)) {
+    sgdCerrarVisor();
+    alert('Este documento se cargó con una versión anterior y no puede mostrarse en el visor.\n\nEntra a Control Documental, edita el documento y vuelve a adjuntar el archivo PDF para guardarlo con el nuevo formato.');
+    return;
+  }
   if (_sgdVisorBlobUrl) { try { URL.revokeObjectURL(_sgdVisorBlobUrl); } catch (e) {} }
   _sgdVisorBlobUrl = res.revocar ? res.url : null;
   var sep = res.url.indexOf('#') >= 0 ? '&' : '#';

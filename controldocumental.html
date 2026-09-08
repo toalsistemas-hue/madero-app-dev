@@ -49,6 +49,15 @@
         .cd-check{ display:flex; align-items:center; gap:10px; font-size:14px; font-weight:600; color:#1f4e79; cursor:pointer; }
         .cd-check input{ width:18px; height:18px; accent-color:#1f4e79; }
         .cd-hint{ font-size:12px; color:#7b8794; margin-top:4px; }
+        /* Lista de usuarios con checkbox */
+        .cd-users{ border:1px solid #e6eaf0; border-radius:8px; max-height:210px; overflow:auto; }
+        .cd-users .u{ display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid #f0f3f7; cursor:pointer; }
+        .cd-users .u:last-child{ border-bottom:none; }
+        .cd-users .u:hover{ background:#f7f9fc; }
+        .cd-users .u input{ width:16px; height:16px; accent-color:#1f4e79; flex:0 0 auto; }
+        .cd-users .u .nom{ font-weight:600; color:#243244; font-size:14px; }
+        .cd-users .u .cor{ color:#6b7684; font-size:12px; margin-left:6px; }
+        .cd-users .vacio{ padding:14px; text-align:center; color:#8a94a2; font-size:13px; }
         .cd-error{ color:#c0392b; font-size:13px; font-weight:600; min-height:18px; margin:4px 0; }
         .cd-foot{ display:flex; justify-content:flex-end; gap:10px; padding:16px 22px; border-top:1px solid #eef1f6; }
         .cd-foot button{ border:none; border-radius:9px; padding:11px 20px; font-size:15px; font-weight:600; cursor:pointer; }
@@ -130,9 +139,12 @@
 
       <div class="cd-fila">
         <label class="cd-check"><input type="checkbox" id="cd-todos" checked onchange="cdToggleAccesos()"> Visible para todos los usuarios</label>
-        <div id="cd-accesos-wrap" style="display:none; margin-top:10px;">
-          <label>Correos con acceso (uno por línea o separados por ; )</label>
-          <textarea id="cd-accesos" rows="3" placeholder="usuario1@maderoequipos.com; usuario2@maderoequipos.com"></textarea>
+        <div id="cd-accesos-wrap" style="display:none; margin-top:12px;">
+          <label>Usuarios con acceso</label>
+          <input type="text" id="cd-usuarios-buscar" placeholder="Buscar por nombre o correo…" oninput="cdFiltrarUsuarios(this.value)" style="margin-bottom:8px;">
+          <div id="cd-usuarios-lista" class="cd-users"><div class="vacio">Cargando usuarios…</div></div>
+          <label style="margin-top:12px;">Otros correos (opcional, separados por ; )</label>
+          <input type="text" id="cd-accesos-extra" placeholder="externo@dominio.com; otro@dominio.com">
         </div>
       </div>
 
@@ -253,9 +265,71 @@ function cdVer(idx){
   if(typeof sgdVerDocumento==='function') sgdVerDocumento(d.url, d.nombre||'Documento');
 }
 
+/* ---- Lista de usuarios (checkbox) para asignar accesos ---- */
+var CD_USERS=[]; var CD_USERS_LOADED=false; var CD_USERS_RENDERED=false; var CD_SEL_PENDIENTE=[];
+
+async function cdCargarUsuarios(){
+  if(CD_USERS_LOADED) return;
+  if(!cdEmbebido()){
+    CD_USERS=[
+      { nombre:'Daniel Martinez', correo:'dmartinez@maderoequipos.com' },
+      { nombre:'Irma Jaqueline Ibarra', correo:'iibarra@maderoequipos.com' },
+      { nombre:'Edson Rios', correo:'purchasinganalyst@maderoequipos.com' }
+    ];
+    CD_USERS_LOADED=true; return;
+  }
+  try{
+    var r=await window.SGD.sp('list',{ lista:'Usuarios', queryParams:'$expand=fields&$top=1000' });
+    var items=(r&&r.value)?r.value:[];
+    CD_USERS=items.map(function(it){ var f=it.fields||it; return { nombre:(f.Title||f.Nombre||''), correo:(f.Email||f.Correo||'').toString().trim() }; })
+      .filter(function(u){ return u.correo; })
+      .sort(function(a,b){ return (a.nombre||'').localeCompare(b.nombre||''); });
+    CD_USERS_LOADED=true;
+  }catch(e){ CD_USERS=[]; CD_USERS_LOADED=true; }
+}
+
+function cdRenderUsuarios(sel){
+  var cont=document.getElementById('cd-usuarios-lista'); if(!cont) return;
+  sel=(sel||[]).map(function(c){ return String(c).toLowerCase(); });
+  if(!CD_USERS.length){ cont.innerHTML='<div class="vacio">No se pudo cargar la lista de usuarios. Usa el campo "Otros correos".</div>'; return; }
+  cont.innerHTML=CD_USERS.map(function(u){
+    var chk=sel.indexOf(u.correo.toLowerCase())>=0?'checked':'';
+    return '<label class="u"><input type="checkbox" class="cd-uchk" value="'+cdEsc(u.correo)+'" '+chk+'>'
+      +'<span><span class="nom">'+cdEsc(u.nombre)+'</span><span class="cor">'+cdEsc(u.correo)+'</span></span></label>';
+  }).join('');
+}
+
+function cdFiltrarUsuarios(txt){
+  var q=(txt||'').toLowerCase().trim();
+  document.querySelectorAll('#cd-usuarios-lista .u').forEach(function(el){
+    el.style.display=(!q || el.textContent.toLowerCase().indexOf(q)>=0)?'':'none';
+  });
+}
+
+// Correos seleccionados (checkboxes) + los escritos manualmente en "Otros correos"
+function cdCorreosSeleccionados(){
+  var arr=[];
+  document.querySelectorAll('#cd-usuarios-lista .cd-uchk:checked').forEach(function(c){ arr.push(c.value); });
+  var extra=(document.getElementById('cd-accesos-extra')||{}).value||'';
+  extra.split(/[;,\n]+/).forEach(function(x){ x=x.trim(); if(x) arr.push(x); });
+  var seen={}, out=[];
+  arr.forEach(function(c){ var k=c.toLowerCase(); if(!seen[k]){ seen[k]=1; out.push(c); } });
+  return out;
+}
+
 function cdToggleAccesos(){
   var todos=document.getElementById('cd-todos').checked;
   document.getElementById('cd-accesos-wrap').style.display = todos ? 'none' : 'block';
+  if(!todos && !CD_USERS_RENDERED){
+    cdCargarUsuarios().then(function(){
+      var sel=CD_SEL_PENDIENTE||[];
+      var known=CD_USERS.map(function(u){ return u.correo.toLowerCase(); });
+      cdRenderUsuarios(sel.filter(function(c){ return known.indexOf(c.toLowerCase())>=0; }));
+      var fuera=sel.filter(function(c){ return known.indexOf(c.toLowerCase())<0; });
+      var ex=document.getElementById('cd-accesos-extra'); if(ex) ex.value=fuera.join('; ');
+      CD_USERS_RENDERED=true;
+    });
+  }
 }
 
 function cdAbrirModal(idx){
@@ -263,12 +337,17 @@ function cdAbrirModal(idx){
   document.getElementById('cd-pdf').value=''; document.getElementById('cd-word').value='';
   document.getElementById('cd-pdf-actual').textContent=''; document.getElementById('cd-word-actual').textContent='';
   if(window.SGD.cargarTiposEnSelect) window.SGD.cargarTiposEnSelect('cd-tipo','Seleccione…');
+  // reinicia la lista de usuarios para que se vuelva a pintar con la preselección correcta
+  CD_USERS_RENDERED=false;
+  var exEl=document.getElementById('cd-accesos-extra'); if(exEl) exEl.value='';
+  var buscarEl=document.getElementById('cd-usuarios-buscar'); if(buscarEl) buscarEl.value='';
   if(idx===undefined || idx===null){
     CD_EDIT_ID=null;
     document.getElementById('cd-modal-titulo').textContent='Agregar documento';
     document.getElementById('cd-nombre').value=''; document.getElementById('cd-codigo').value='';
     document.getElementById('cd-version').value='1'; document.getElementById('cd-fecha').value=cdHoyISO();
-    document.getElementById('cd-todos').checked=true; document.getElementById('cd-accesos').value='';
+    document.getElementById('cd-todos').checked=true;
+    CD_SEL_PENDIENTE=[];
   } else {
     var d=CD_ITEMS[idx]; if(!d) return;
     CD_EDIT_ID=d.id;
@@ -276,7 +355,8 @@ function cdAbrirModal(idx){
     document.getElementById('cd-nombre').value=d.nombre||''; document.getElementById('cd-codigo').value=d.codigo||'';
     document.getElementById('cd-version').value=d.version||''; document.getElementById('cd-fecha').value=(d.fechaCambio||'').split('T')[0]||cdHoyISO();
     var todos=(String(d.accesoTodos).toLowerCase()==='sí'||String(d.accesoTodos).toLowerCase()==='si');
-    document.getElementById('cd-todos').checked=todos; document.getElementById('cd-accesos').value=d.accesos||'';
+    document.getElementById('cd-todos').checked=todos;
+    CD_SEL_PENDIENTE=(d.accesos||'').split(/[;,\n]+/).map(function(x){ return x.trim(); }).filter(Boolean);
     // set tipo tras cargar opciones
     setTimeout(function(){ var sel=document.getElementById('cd-tipo'); if(sel) sel.value=d.tipo||''; }, 300);
     if(d.url) document.getElementById('cd-pdf-actual').textContent='Actual: PDF cargado (deja vacío para conservarlo)';
@@ -296,11 +376,12 @@ async function cdGuardar(){
   var tipo=document.getElementById('cd-tipo').value;
   var fecha=document.getElementById('cd-fecha').value;
   var todos=document.getElementById('cd-todos').checked;
-  var accesos=document.getElementById('cd-accesos').value.trim();
+  var accesosArr = todos ? [] : cdCorreosSeleccionados();
+  var accesos = accesosArr.join('; ');
   if(!nombre){ err.textContent='Escribe el nombre del documento.'; return; }
   if(!codigo){ err.textContent='Escribe el código del documento.'; return; }
   if(!tipo){ err.textContent='Selecciona el tipo de documento.'; return; }
-  if(!todos && !accesos){ err.textContent='Indica los correos con acceso o marca "Visible para todos".'; return; }
+  if(!todos && !accesosArr.length){ err.textContent='Selecciona al menos un usuario (o marca "Visible para todos").'; return; }
 
   var pdf=(document.getElementById('cd-pdf').files||[])[0];
   var word=(document.getElementById('cd-word').files||[])[0];

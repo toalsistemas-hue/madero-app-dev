@@ -86,6 +86,21 @@
         .sgd2-btn:disabled{ opacity:.6; cursor:default; }
         .file-hint{ font-size:12px; color:#7b8794; margin-top:4px; }
 
+        /* Enlace del nombre del documento (abre el detalle) */
+        .atc-detalle-link{ color:#1f4e79; font-weight:600; text-decoration:none; cursor:pointer; }
+        .atc-detalle-link:hover{ text-decoration:underline; }
+
+        /* Detalle de la solicitud (lo que escribió el solicitante) */
+        .det-head{ background:linear-gradient(135deg,#0f9d58,#2f80ed); }
+        .det-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px 18px; margin-bottom:16px; }
+        .det-grid .campo{ display:flex; flex-direction:column; gap:2px; }
+        .det-grid .k{ font-size:11px; font-weight:700; color:#8a94a2; text-transform:uppercase; letter-spacing:.4px; }
+        .det-grid .v{ font-size:14px; color:#243244; }
+        .det-block{ margin-bottom:14px; }
+        .det-block .k{ font-size:11px; font-weight:700; color:#8a94a2; text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px; }
+        .det-block .v{ font-size:14px; color:#33455a; line-height:20px; white-space:pre-wrap; background:#f7f9fc; border:1px solid #edf1f6; border-radius:8px; padding:10px 12px; }
+        @media(max-width:560px){ .det-grid{ grid-template-columns:1fr; } }
+
         /* ===== Modal Notificaciones Calidad ===== */
         .cal-modal{
             display:none; position:fixed; inset:0; z-index:9999;
@@ -250,6 +265,8 @@
 
                     <th>Tipo de Modificación</th>
 
+                    <th>Analista asignado</th>
+
                     <th>Fecha de Solicitud</th>
 
                     <th>Fecha de Cita</th>
@@ -265,7 +282,7 @@
             </thead>
 
             <tbody id="atc-tbody">
-                <tr><td colspan="11" style="text-align:center;padding:34px;color:#8a94a2;">Cargando solicitudes…</td></tr>
+                <tr><td colspan="12" style="text-align:center;padding:34px;color:#8a94a2;">Cargando solicitudes…</td></tr>
             </tbody>
 
         </table>
@@ -366,6 +383,22 @@
         </div>
 
     </div>
+</div>
+
+<!-- ==========================
+     MODAL: DETALLE DE LA SOLICITUD (lo que escribió el solicitante)
+========================== -->
+<div class="sgd2-modal" id="det-modal">
+  <div class="sgd2-box">
+    <div class="sgd2-head det-head">
+      <div class="t"><i class="fa-regular fa-file-lines"></i> Detalle de la solicitud</div>
+      <button class="cerrar" onclick="atcCerrarDetalle()">&times;</button>
+    </div>
+    <div class="sgd2-body" id="det-body"></div>
+    <div class="sgd2-foot">
+      <button class="sgd2-btn cancel" onclick="atcCerrarDetalle()">Cerrar</button>
+    </div>
+  </div>
 </div>
 
 <!-- ==========================
@@ -513,7 +546,7 @@ function atcEstadoClase(e){
 
 async function atencionCargarSolicitudes(){
   var tbody=document.getElementById('atc-tbody');
-  if(tbody) tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:34px;color:#8a94a2;">Cargando solicitudes…</td></tr>';
+  if(tbody) tbody.innerHTML='<tr><td colspan="12" style="text-align:center;padding:34px;color:#8a94a2;">Cargando solicitudes…</td></tr>';
 
   if(!atcEmbebido()){
     ATC_ITEMS = ATC_DEMO.slice();
@@ -535,6 +568,12 @@ async function atencionCargarSolicitudes(){
         tipo:       f.Tipo_Modificacion||'Nuevo Ingreso',
         solicitante:f.Solicitante||'',
         correo:     f.Correo||'',
+        objetivo:   f.Objetivo||'',
+        alcance:    f.Alcance||'',
+        responsables:f.Responsables||'',
+        descripcion:f.Descripcion||'',
+        requiereRev:f.Requiere_Revision||'',
+        analista:   f.Analista_Asignado||'',
         fecha:      atcFmtFecha(f.Fecha_Solicitud),
         fechaISO:   f.Fecha_Solicitud||'',
         fechaCitaISO:(f.Fecha_Revision||'').split('T')[0],
@@ -545,7 +584,7 @@ async function atencionCargarSolicitudes(){
     }).sort(function(a,b){ return (b.fechaISO||'').localeCompare(a.fechaISO||''); });
     atencionRender();
   }catch(e){
-    if(tbody) tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:34px;color:#c0392b;">No se pudieron cargar las solicitudes. Presiona Actualizar para reintentar.</td></tr>';
+    if(tbody) tbody.innerHTML='<tr><td colspan="12" style="text-align:center;padding:34px;color:#c0392b;">No se pudieron cargar las solicitudes. Presiona Actualizar para reintentar.</td></tr>';
   }
 }
 
@@ -577,7 +616,7 @@ function atencionRender(){
     return true;
   });
   if(!ATC_VISIBLE.length){
-    tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:34px;color:#8a94a2;">No hay solicitudes que coincidan con los filtros.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="12" style="text-align:center;padding:34px;color:#8a94a2;">No hay solicitudes que coincidan con los filtros.</td></tr>';
     return;
   }
   var html='';
@@ -588,10 +627,11 @@ function atencionRender(){
     html+='<tr>'
        +  '<td>'+(i+1)+'</td>'
        +  '<td><span class="estado '+atcEstadoClase(s.estatus)+'">'+atcEsc(s.estatus)+'</span></td>'
-       +  '<td>'+atcEsc(s.documento)+'</td>'
+       +  '<td><a href="#" class="atc-detalle-link" onclick="atcVerDetalle('+i+');return false;" title="Ver detalle de la solicitud">'+atcEsc(s.documento)+'</a></td>'
        +  '<td>'+(s.tipoDoc?atcEsc(s.tipoDoc):'—')+'</td>'
        +  '<td>'+atcEsc(s.departamento)+'</td>'
        +  '<td><span class="tipo '+atcTipoClase(s.tipo)+'">'+atcEsc(s.tipo)+'</span></td>'
+       +  '<td>'+(s.analista?atcEsc(s.analista):'—')+'</td>'
        +  '<td>'+atcEsc(s.fecha)+'</td>'
        +  '<td>'+(s.fechaCita?atcEsc(s.fechaCita):'—')+'</td>'
        +  '<td>'+(s.horaCita?atcEsc(s.horaCita):'—')+'</td>'
@@ -607,6 +647,38 @@ function atcVerDocFinal(idx){
   if(typeof sgdVerDocumento==='function') sgdVerDocumento(s.docFinalURL, s.documento||'Documento finalizado');
   else window.open(s.docFinalURL,'_blank');
 }
+
+/* ============================================================
+   MODAL: DETALLE DE LA SOLICITUD (información que capturó el solicitante)
+   ============================================================ */
+function atcCampo(k, v){ return '<div class="campo"><span class="k">'+k+'</span><span class="v">'+(v?atcEsc(v):'—')+'</span></div>'; }
+function atcBloque(k, v){ return '<div class="det-block"><div class="k">'+k+'</div><div class="v">'+(v?atcEsc(v):'—')+'</div></div>'; }
+function atcVerDetalle(idx){
+  var s=ATC_VISIBLE[idx]; if(!s) return;
+  var citaTxt = (s.fechaCita?atcEsc(s.fechaCita):'—') + (s.horaCita?(' · '+atcEsc(s.horaCita)):'');
+  var revision = (String(s.requiereRev).toLowerCase()==='sí'||String(s.requiereRev).toLowerCase()==='si') ? 'Sí' : (s.requiereRev||'No');
+  var html =
+    '<div class="det-grid">'
+    + atcCampo('Estatus', s.estatus)
+    + atcCampo('Analista asignado', s.analista)
+    + atcCampo('Nombre del documento', s.documento)
+    + atcCampo('Tipo de documento', s.tipoDoc)
+    + atcCampo('Tipo de modificación', s.tipo)
+    + atcCampo('Departamento', s.departamento)
+    + atcCampo('Solicitante', s.solicitante)
+    + atcCampo('Correo', s.correo)
+    + atcCampo('Fecha de solicitud', s.fecha)
+    + atcCampo('Requiere revisión presencial', revision)
+    + atcCampo('Fecha/hora de cita', citaTxt)
+    + '</div>'
+    + atcBloque('Objetivo del documento', s.objetivo)
+    + atcBloque('Alcance del documento', s.alcance)
+    + atcBloque('Responsables del documento', s.responsables)
+    + atcBloque('Descripción general', s.descripcion);
+  document.getElementById('det-body').innerHTML = html;
+  document.getElementById('det-modal').classList.add('activo');
+}
+function atcCerrarDetalle(){ document.getElementById('det-modal').classList.remove('activo'); }
 
 /* ============================================================
    HELPERS de escritura + utilidades para los modales
@@ -763,7 +835,7 @@ async function estConfirmar(){
 }
 
 // Cerrar modales al hacer clic fuera de la caja
-['cita-modal','est-modal'].forEach(function(id){
+['cita-modal','est-modal','det-modal'].forEach(function(id){
   var el=document.getElementById(id);
   if(el) el.addEventListener('click', function(ev){ if(ev.target===this) this.classList.remove('activo'); });
 });

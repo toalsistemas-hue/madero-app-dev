@@ -320,19 +320,22 @@ window.SGD.DOCS_DEMO = [
   { id:'d2', nombre:'Procedimiento de ventas',  codigo:'PR-VEN-01', tipo:'Procedimiento', version:'1', fechaCambio:'2025-11-10', url:'', wordUrl:'', accesoTodos:'Sí', estatus:'Vigente' }
 ];
 
+var SGD_DOCS_ALL = [];  // documentos visibles para el usuario (antes del filtro de tipo)
+
 async function sgdCargarDocumentos(){
   var tbody = document.getElementById('sgd-doc-tbody');
   if (!tbody) return;
   if (!(window.SGD.embebido && window.SGD.embebido())){
-    sgdRenderDocumentos(window.SGD.DOCS_DEMO.slice());
+    SGD_DOCS_ALL = window.SGD.DOCS_DEMO.slice();
+    sgdPoblarFiltroTipos(); sgdRenderDocsFiltrado();
     return;
   }
-  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#8a94a2;">Cargando documentos…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" style="display:table-cell;text-align:center;padding:30px;color:#8a94a2;">Cargando documentos…</td></tr>';
   try{
     var u = window.SGD.getUsuario();
     var r = await window.SGD.sp('list', { lista: window.SGD.LISTA_DOCUMENTOS, queryParams:'$expand=fields&$top=1000' });
     var items = (r && r.value) ? r.value : [];
-    var docs = items.map(function(it){
+    SGD_DOCS_ALL = items.map(function(it){
       var f = it.fields || it;
       return {
         id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo||'', tipo:f.Tipo_Doc||'',
@@ -343,17 +346,39 @@ async function sgdCargarDocumentos(){
     .filter(function(d){ var e=String(d.estatus).toLowerCase(); return e!=='obsoleto' && e!=='baja'; })
     .filter(function(d){ return sgdDocPuedeVer(d, u); })
     .sort(function(a,b){ return (a.codigo||'').localeCompare(b.codigo||''); });
-    sgdRenderDocumentos(docs);
+    sgdPoblarFiltroTipos();
+    sgdRenderDocsFiltrado();
   }catch(e){
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#c0392b;">No se pudieron cargar los documentos.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="display:table-cell;text-align:center;padding:30px;color:#c0392b;">No se pudieron cargar los documentos.</td></tr>';
   }
+}
+
+// Llena el <select> de tipos con los tipos presentes en los documentos visibles
+function sgdPoblarFiltroTipos(){
+  var sel = document.getElementById('sgd-f-tipo');
+  if (!sel) return;
+  var actual = sel.value;
+  var tipos = [];
+  SGD_DOCS_ALL.forEach(function(d){ if (d.tipo && tipos.indexOf(d.tipo) < 0) tipos.push(d.tipo); });
+  tipos.sort(function(a,b){ return a.localeCompare(b); });
+  sel.innerHTML = '<option value="">Todos</option>' + tipos.map(function(t){ return '<option>'+sgdDocEsc(t)+'</option>'; }).join('');
+  if (tipos.indexOf(actual) >= 0) sel.value = actual;
+}
+
+// Aplica el filtro de tipo y vuelve a pintar; conserva el texto del buscador
+function sgdRenderDocsFiltrado(){
+  var tipo = (document.getElementById('sgd-f-tipo')||{}).value || '';
+  var docs = tipo ? SGD_DOCS_ALL.filter(function(d){ return (d.tipo||'') === tipo; }) : SGD_DOCS_ALL.slice();
+  sgdRenderDocumentos(docs);
+  var buscar = (document.getElementById('sgd-buscar')||{}).value || '';
+  if (buscar) sgdFiltrarTabla(buscar);
 }
 
 function sgdRenderDocumentos(docs){
   var tbody = document.getElementById('sgd-doc-tbody');
   if (!tbody) return;
   if (!docs.length){
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#8a94a2;">No hay documentos disponibles.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="display:table-cell;text-align:center;padding:30px;color:#8a94a2;">No hay documentos disponibles para tu usuario.</td></tr>';
     return;
   }
   tbody.innerHTML = docs.map(function(d){

@@ -83,6 +83,18 @@
 
         </div>
 
+        <div class="sgd-tools" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <label style="color:#eaf2fb; font-size:14px; font-weight:600;">Tipo:</label>
+            <select id="sgd-f-tipo" onchange="sgdRenderDocsFiltrado()"
+                    style="padding:10px 12px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; background:#fff;">
+                <option value="">Todos</option>
+            </select>
+            <button type="button" onclick="sgdCargarDocumentos()"
+                    style="background:linear-gradient(135deg,#2f75a8,#1f4e79); color:#fff; border:none; border-radius:8px; padding:11px 18px; font-size:14px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:8px;">
+                <i class="fa-solid fa-rotate"></i> Actualizar
+            </button>
+        </div>
+
          <div class="buscador">
 
             <button class="btn-buscar">
@@ -122,7 +134,7 @@
         </thead>
 
         <tbody id="sgd-doc-tbody">
-                <tr><td colspan="6" style="text-align:center;padding:30px;color:#8a94a2;">Cargando documentos…</td></tr>
+                <tr><td colspan="6" style="display:table-cell;text-align:center;padding:30px;color:#8a94a2;">Cargando documentos…</td></tr>
             </tbody>
 
     </table>

@@ -29,7 +29,19 @@
         .estado-pill{ display:inline-block;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600;white-space:nowrap; }
         .estado-pendiente{ background:#fff3e0;color:#c77700;border:1px solid #ffd8a8; }
         .estado-abierta{ background:#e3f0ff;color:#1f6feb;border:1px solid #b6d4fb; }
+        .estado-proceso{ background:#e6f7ff;color:#0b7285;border:1px solid #b3e5f2; }
+        .estado-revision{ background:#f3e8ff;color:#6b34b3;border:1px solid #ddc7f5; }
+        .estado-liberacion{ background:#fff1e6;color:#c2410c;border:1px solid #ffd3b0; }
+        .estado-cancelado{ background:#f3f4f6;color:#6b7280;border:1px solid #dfe3e8; }
+        .estado-atendida{ background:#e7f6ee;color:#1e8449;border:1px solid #b6e3c8; }
         .estado-otro{ background:#eef2f6;color:#55606c;border:1px solid #dfe6ee; }
+
+        /* Ayuda y leyenda */
+        .seg-ayuda{ display:inline-block; margin-top:8px; color:#1f6feb; font-size:13px; }
+        .seg-ayuda i{ margin-right:5px; }
+        .seg-leyenda{ display:flex; flex-wrap:wrap; gap:10px 22px; padding:12px 35px 4px; }
+        .seg-leyenda .ley-item{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:#55606c; }
+        .seg-leyenda .estado-pill{ padding:3px 10px; font-size:11.5px; }
 
         /* Enlace del nombre del documento */
         .seg-detalle-link{ color:#1f4e79;font-weight:600;text-decoration:none;cursor:pointer; }
@@ -70,6 +82,17 @@
         <div class="sub-encabezado" id="seg-usuario">
             Solicitudes en proceso de <strong id="seg-nombre-usuario">tu usuario</strong>.
             Las solicitudes ya atendidas dejan de mostrarse aquí.
+            <br><span class="seg-ayuda"><i class="fa-solid fa-circle-info"></i> Selecciona el <strong>Nombre del Documento</strong> para ver los detalles de la solicitud.</span>
+        </div>
+
+        <!-- Leyenda de estatus -->
+        <div class="seg-leyenda">
+            <span class="ley-item"><span class="estado-pill estado-pendiente">Pendiente</span> En espera de que Calidad confirme la fecha de tu cita.</span>
+            <span class="ley-item"><span class="estado-pill estado-abierta">Abierta</span> Cita confirmada; la solicitud está lista para atenderse por Calidad.</span>
+            <span class="ley-item"><span class="estado-pill estado-proceso">En proceso</span> Calidad está elaborando el documento.</span>
+            <span class="ley-item"><span class="estado-pill estado-revision">En revisión</span> Hay un borrador disponible para tu visto bueno.</span>
+            <span class="ley-item"><span class="estado-pill estado-liberacion">En liberación</span> Documento aprobado, en proceso de liberación.</span>
+            <span class="ley-item"><span class="estado-pill estado-cancelado">Cancelado</span> La solicitud fue cancelada (revisa el motivo en el detalle).</span>
         </div>
 
         <!-- Barra superior -->
@@ -170,7 +193,14 @@ function segClaseTipo(t){
 }
 function segEstadoPill(est){
   var e=(est||'').toLowerCase();
-  var cls = e==='abierta' ? 'estado-abierta' : (e==='pendiente' ? 'estado-pendiente' : 'estado-otro');
+  var cls='estado-otro';
+  if(e==='abierta') cls='estado-abierta';
+  else if(e==='pendiente') cls='estado-pendiente';
+  else if(e==='en proceso') cls='estado-proceso';
+  else if(e==='en revisión'||e==='en revision') cls='estado-revision';
+  else if(e==='en liberación'||e==='en liberacion') cls='estado-liberacion';
+  else if(e==='cancelado') cls='estado-cancelado';
+  else if(e==='atendida') cls='estado-atendida';
   return '<span class="estado-pill '+cls+'">'+(est||'—')+'</span>';
 }
 function segFmtFecha(s){

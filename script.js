@@ -494,6 +494,7 @@ async function sgdRegistrarSolicitud(ev) {
   var obligatorios = [
     ['titulo', 'Título del Documento'],
     ['tipo', 'Tipo de documento'],
+    ['departamento', 'Departamento'],
     ['objetivo', 'Objetivo del Documento'],
     ['alcance', 'Alcance del Documento'],
     ['responsables', 'Responsables del Documento'],

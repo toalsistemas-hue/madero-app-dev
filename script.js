@@ -391,20 +391,20 @@ function sgdRenderDocumentos(docs){
       + '<td class="tipo"><span>'+sgdDocEsc(d.tipo)+'</span></td>'
       + '<td>'
         + '<div class="tooltip"><button class="accion descargar" onclick="sgdDescargarCopia(\''+urlA+'\',\''+nomA+'\')"><i class="fa-solid fa-circle-down"></i></button><span class="tooltiptext">Descargar Copia NO controlada</span></div>'
-        + '<div class="tooltip"><button class="accion actualizar" onclick="sgdSolicitarActualizacion(\''+sgdDocApos(d.id)+'\',\''+nomA+'\',\''+sgdDocApos(d.codigo)+'\',\''+sgdDocApos(d.tipo)+'\')"><i class="fa-solid fa-rotate"></i></button><span class="tooltiptext">Solicitar Actualización</span></div>'
-        + '<div class="tooltip"><button class="accion eliminar" onclick="sgdSolicitarBaja(\''+sgdDocApos(d.id)+'\',\''+nomA+'\',\''+sgdDocApos(d.codigo)+'\',\''+sgdDocApos(d.tipo)+'\')"><i class="fa-solid fa-xmark"></i></button><span class="tooltiptext">Solicitar Baja</span></div>'
+        + '<div class="tooltip"><button class="accion actualizar" onclick="sgdSolicitarActualizacion(\''+sgdDocApos(d.id)+'\',\''+nomA+'\',\''+sgdDocApos(d.codigo)+'\',\''+sgdDocApos(d.tipo)+'\',\''+sgdDocApos(d.url)+'\')"><i class="fa-solid fa-rotate"></i></button><span class="tooltiptext">Solicitar Actualización</span></div>'
+        + '<div class="tooltip"><button class="accion eliminar" onclick="sgdSolicitarBaja(\''+sgdDocApos(d.id)+'\',\''+nomA+'\',\''+sgdDocApos(d.codigo)+'\',\''+sgdDocApos(d.tipo)+'\',\''+sgdDocApos(d.url)+'\')"><i class="fa-solid fa-xmark"></i></button><span class="tooltiptext">Solicitar Baja</span></div>'
       + '</td>'
       + '</tr>';
   }).join('');
 }
 
 // Guarda el documento seleccionado y navega a la pantalla de solicitud correspondiente
-function sgdSolicitarActualizacion(id, nombre, codigo, tipo){
-  try{ localStorage.setItem('sgd_doc_sel', JSON.stringify({ id:id, nombre:nombre, codigo:codigo, tipoDoc:tipo, modificacion:'Actualización' })); }catch(_){}
+function sgdSolicitarActualizacion(id, nombre, codigo, tipo, url){
+  try{ localStorage.setItem('sgd_doc_sel', JSON.stringify({ id:id, nombre:nombre, codigo:codigo, tipoDoc:tipo, url:url||'', modificacion:'Actualización' })); }catch(_){}
   window.location.href = 'actualizar.html';
 }
-function sgdSolicitarBaja(id, nombre, codigo, tipo){
-  try{ localStorage.setItem('sgd_doc_sel', JSON.stringify({ id:id, nombre:nombre, codigo:codigo, tipoDoc:tipo, modificacion:'Baja' })); }catch(_){}
+function sgdSolicitarBaja(id, nombre, codigo, tipo, url){
+  try{ localStorage.setItem('sgd_doc_sel', JSON.stringify({ id:id, nombre:nombre, codigo:codigo, tipoDoc:tipo, url:url||'', modificacion:'Baja' })); }catch(_){}
   window.location.href = 'baja.html';
 }
 

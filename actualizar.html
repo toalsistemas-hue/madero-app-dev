@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solicitud de Actualización de Documento</title>
+
+    <link rel="stylesheet" href="actualizar.css">
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <style>
+        .campo input[readonly], .campo input:disabled{ background:#eef2f6; color:#333; cursor:not-allowed; }
+        /* Check de revisión presencial */
+        .act-check{ width:750px; margin:8px auto 0; }
+        .act-check .chk{ display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:600; color:#1f4e79; font-size:16px; }
+        .act-check .chk input{ width:18px; height:18px; accent-color:#1f4e79; cursor:pointer; }
+        .act-check .nota{ color:#667; font-size:13px; line-height:19px; margin:8px 0 0 28px; }
+        /* Agenda de cita */
+        .agenda{ width:750px; margin:16px auto 0; background:#f7f9fc; border:1px solid #e6eaf0; border-radius:12px; padding:18px; }
+        .agenda.deshabilitada{ opacity:.5; }
+        .agenda h4{ color:#1f4e79; margin-bottom:12px; }
+        .agenda input{ padding:12px; border:1px solid #ccd5df; border-radius:8px; font-size:15px; margin-right:10px; }
+        .agenda input[disabled]{ background:#eef2f6; cursor:not-allowed; }
+        .agenda .nota{ color:#667; font-size:12.5px; margin-top:10px; }
+        .act-error{ width:750px; margin:16px auto 0; color:#c0392b; font-weight:600; text-align:center; min-height:20px; }
+        .visor-nota{ width:750px; margin:0 auto 8px; text-align:center; color:#7b8794; font-size:13px; }
+
+        /* Modal OK */
+        .act-modal{ display:none; position:fixed; inset:0; z-index:9999; background:rgba(15,30,50,.6); align-items:center; justify-content:center; padding:24px; }
+        .act-modal.activo{ display:flex; }
+        .act-modal-box{ background:#fff; width:min(460px,94vw); border-radius:16px; padding:34px 30px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+        .act-modal-box .icono{ width:74px; height:74px; margin:0 auto 18px; border-radius:50%; background:#e7f6ee; color:#27ae60; display:flex; align-items:center; justify-content:center; font-size:38px; }
+        .act-modal-box h3{ color:#1f4e79; font-size:22px; margin-bottom:12px; }
+        .act-modal-box p{ color:#555; font-size:15px; line-height:22px; margin-bottom:24px; }
+        .act-modal-box button{ background:#27ae60; color:#fff; border:none; border-radius:10px; padding:13px 34px; font-size:16px; font-weight:600; cursor:pointer; }
+    </style>
+</head>
+
+<body>
+
+<div class="contenedor">
+
+    <header>
+        <h1>SOLICITUD DE ACTUALIZACIÓN DE DOCUMENTO</h1>
+    </header>
+
+    <div class="formulario">
+
+        <div class="campo">
+            <label>Título del Documento</label>
+            <input type="text" id="act-titulo" readonly placeholder="(documento seleccionado)">
+        </div>
+
+        <div class="campo">
+            <label>Tipo de documento</label>
+            <input type="text" id="act-tipo" readonly placeholder="(tipo del documento)">
+        </div>
+
+        <div class="campo">
+            <label>Solicitante</label>
+            <input type="text" id="act-solicitante" readonly placeholder="(usuario en sesión)">
+        </div>
+
+        <div class="campo">
+            <label>Correo Electrónico</label>
+            <input type="email" id="act-correo" readonly placeholder="(correo del usuario)">
+        </div>
+
+        <div class="campo">
+            <label>Departamento</label>
+            <input type="text" id="act-departamento" placeholder="Departamento solicitante" required>
+        </div>
+
+    </div>
+
+    <h2>Visualización Previa del documento</h2>
+
+    <div class="visor-nota" id="act-visor-nota">Cargando documento…</div>
+    <div class="visor">
+        <iframe id="act-visor-frame" class="pdf" src="about:blank"></iframe>
+    </div>
+
+    <div class="motivo">
+        <label>Puntos a Cambiar</label>
+        <textarea id="act-puntos" placeholder="Describe los puntos que deben cambiarse en el documento…"></textarea>
+    </div>
+
+    <!-- Revisión presencial (cita) -->
+    <div class="act-check">
+        <label class="chk">
+            <input type="checkbox" id="act-revision-presencial" onchange="actToggleRevision()">
+            <span>Se requiere revisión presencial</span>
+        </label>
+        <p class="nota">
+            Marca esta opción si necesitas agendar una revisión presencial con el analista de calidad.
+            La solicitud quedará <strong>Pendiente</strong> hasta confirmar la cita.
+            Si no la marcas, se registra directamente como <strong>Abierta</strong>.
+        </p>
+    </div>
+
+    <div class="agenda deshabilitada" id="act-agenda">
+        <h4>Fecha y hora estimada para revisión</h4>
+        <input type="date" id="act-fecha" disabled>
+        <input type="time" id="act-hora" min="09:00" max="18:00" disabled>
+        <p class="nota">*La solicitud no podrá programarse para el mismo día. *Horario disponible de 09:00 a 18:00 hrs.</p>
+    </div>
+
+    <div class="act-error" id="act-error"></div>
+
+    <div class="botones">
+        <button class="regresar" onclick="window.location.href='Sistema_Gestion_Documental.html'">
+            <i class="fa-solid fa-arrow-left"></i>
+            Regresar
+        </button>
+        <button class="siguiente" id="act-registrar" onclick="actRegistrar()">
+            Registrar
+            <i class="fa-solid fa-check"></i>
+        </button>
+    </div>
+
+</div>
+
+<!-- Modal de confirmación -->
+<div class="act-modal" id="act-modal-ok">
+    <div class="act-modal-box">
+        <div class="icono">&#10003;</div>
+        <h3>Solicitud registrada</h3>
+        <p>Tu solicitud de actualización ha sido registrada. Podrás darle seguimiento en "Seguimiento de mis solicitudes".</p>
+        <button type="button" onclick="window.location.href='Sistema_Gestion_Documental.html'">Aceptar</button>
+    </div>
+</div>
+
+<script src="script.js"></script>
+<script>
+/* ============================================================
+   SOLICITUD DE ACTUALIZACIÓN DE DOCUMENTO
+   ============================================================ */
+var ACT_DOC = null;   // documento seleccionado desde la pantalla principal
+
+function actToggleRevision(){
+    var req = document.getElementById('act-revision-presencial').checked;
+    var f=document.getElementById('act-fecha'), h=document.getElementById('act-hora'), ag=document.getElementById('act-agenda');
+    if(f){ f.disabled=!req; if(!req) f.value=''; }
+    if(h){ h.disabled=!req; if(!req) h.value=''; }
+    if(ag) ag.classList.toggle('deshabilitada', !req);
+}
+
+// Carga el documento seleccionado y llena los campos automáticos
+function actCargarDoc(){
+    try{ ACT_DOC = JSON.parse(localStorage.getItem('sgd_doc_sel')||'null'); }catch(_){ ACT_DOC=null; }
+    if(ACT_DOC){
+        document.getElementById('act-titulo').value = ACT_DOC.nombre||'';
+        document.getElementById('act-tipo').value   = ACT_DOC.tipoDoc||'';
+    }
+    // Fecha mínima = mañana
+    var f=document.getElementById('act-fecha');
+    if(f){ var m=new Date(); m.setDate(m.getDate()+1);
+        f.min = m.getFullYear()+'-'+String(m.getMonth()+1).padStart(2,'0')+'-'+String(m.getDate()).padStart(2,'0'); }
+}
+
+// Cuando el padre confirma el usuario: llena solicitante/correo y carga el visor
+async function actOnAuth(){
+    var u = (window.SGD.getUsuario && window.SGD.getUsuario()) || null;
+    if(u){
+        document.getElementById('act-solicitante').value = u.nombre||'';
+        document.getElementById('act-correo').value = u.correo||'';
+    }
+    await actCargarVisor();
+}
+
+// Carga el documento controlado en el visor (mismo mecanismo blob que en el resto del SGD)
+async function actCargarVisor(){
+    var nota=document.getElementById('act-visor-nota');
+    var frame=document.getElementById('act-visor-frame');
+    var ref = ACT_DOC ? ACT_DOC.url : '';
+    if(!ref){ if(nota) nota.textContent='Este documento aún no tiene archivo cargado.'; return; }
+    if(nota) nota.textContent='Cargando documento…';
+    try{
+        var res = await window.SGD.obtenerBlobUrl(ref);
+        if(res && res.url){
+            var sep = res.url.indexOf('#')>=0?'&':'#';
+            frame.src = res.url + sep + 'toolbar=0&navpanes=0&statusbar=0&view=FitH';
+            if(nota) nota.style.display='none';
+        } else {
+            if(nota) nota.textContent='No se pudo cargar el documento (verifica permisos de lectura).';
+        }
+    }catch(e){
+        if(nota) nota.textContent='No se pudo cargar el documento.';
+    }
+}
+
+async function actRegistrar(){
+    var err=document.getElementById('act-error'); err.textContent='';
+    var val=function(id){ var el=document.getElementById(id); return el?el.value.trim():''; };
+    var departamento=val('act-departamento');
+    var puntos=val('act-puntos');
+    var requierePresencial=document.getElementById('act-revision-presencial').checked;
+    var fecha=val('act-fecha'), hora=val('act-hora');
+
+    if(!ACT_DOC){ err.textContent='No se identificó el documento a actualizar. Regresa y vuelve a seleccionarlo.'; return; }
+    if(!departamento){ err.textContent='Escribe el Departamento (obligatorio).'; return; }
+    if(!puntos){ err.textContent='Describe los Puntos a Cambiar.'; return; }
+    if(requierePresencial && (!fecha || !hora)){ err.textContent='Indica la fecha y hora para la revisión presencial.'; return; }
+
+    var estatusInicial = requierePresencial ? 'Pendiente' : 'Abierta';
+    var u = (window.SGD.getUsuario && window.SGD.getUsuario()) || {};
+
+    var descripcion = 'Puntos a cambiar del documento '+(ACT_DOC.codigo||'')+' ('+(ACT_DOC.nombre||'')+'):\n'+puntos;
+
+    var fields = {
+        Title: ACT_DOC.nombre||'',
+        Tipo_Documento: ACT_DOC.tipoDoc||'',
+        Tipo_Modificacion: 'Actualización',
+        Solicitante: u.nombre||'',
+        Correo: u.correo||'',
+        Departamento: departamento,
+        Descripcion: descripcion,
+        Requiere_Revision: requierePresencial ? 'Sí' : 'No',
+        Fecha_Revision: (requierePresencial && fecha) ? (fecha+'T00:00:00Z') : '',
+        Hora_Revision: requierePresencial ? (hora||'') : '',
+        Estatus: estatusInicial,
+        Fecha_Solicitud: new Date().toISOString()
+    };
+    if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
+
+    var btn=document.getElementById('act-registrar');
+    btn.disabled=true; btn.textContent='Registrando…';
+    var nuevoId=null;
+    try{
+        if(window.SGD.embebido && window.SGD.embebido()){
+            var cr=await window.SGD.sp('create',{ lista:(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes'), fields:fields });
+            nuevoId=(cr&&cr.id!==undefined)?cr.id:null;
+        } else {
+            try{ var pend=JSON.parse(localStorage.getItem('sgd_solicitudes_local')||'[]'); pend.push(fields); localStorage.setItem('sgd_solicitudes_local',JSON.stringify(pend)); }catch(_){}
+        }
+    }catch(e){
+        btn.disabled=false; btn.innerHTML='Registrar <i class="fa-solid fa-check"></i>';
+        err.textContent='No se pudo registrar la solicitud. Intenta de nuevo.';
+        return;
+    }
+
+    if(window.SGD.bitacora) window.SGD.bitacora('Registrar solicitud de actualización', 'SGD_Solicitudes', (ACT_DOC.codigo||'')+' · '+(ACT_DOC.nombre||''), { id:nuevoId, pantalla:'Solicitud de actualización' });
+
+    document.getElementById('act-modal-ok').classList.add('activo');
+    btn.disabled=false; btn.innerHTML='Registrar <i class="fa-solid fa-check"></i>';
+}
+
+// Arranque
+window.SGD = window.SGD || {};
+window.SGD._onAuth = actOnAuth;
+document.addEventListener('DOMContentLoaded', function(){ actCargarDoc(); actOnAuth(); });
+</script>
+</body>
+</html>

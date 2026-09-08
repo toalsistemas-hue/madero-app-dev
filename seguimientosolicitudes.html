@@ -30,6 +30,30 @@
         .estado-pendiente{ background:#fff3e0;color:#c77700;border:1px solid #ffd8a8; }
         .estado-abierta{ background:#e3f0ff;color:#1f6feb;border:1px solid #b6d4fb; }
         .estado-otro{ background:#eef2f6;color:#55606c;border:1px solid #dfe6ee; }
+
+        /* Enlace del nombre del documento */
+        .seg-detalle-link{ color:#1f4e79;font-weight:600;text-decoration:none;cursor:pointer; }
+        .seg-detalle-link:hover{ text-decoration:underline; }
+
+        /* ===== Modal de detalle ===== */
+        .seg-modal{ display:none;position:fixed;inset:0;z-index:9999;background:rgba(15,30,50,.65);align-items:center;justify-content:center;padding:24px; }
+        .seg-modal.activo{ display:flex; }
+        .seg-box{ background:#fff;width:min(600px,96vw);max-height:92vh;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35); }
+        .seg-head{ display:flex;align-items:center;justify-content:space-between;padding:16px 22px;color:#fff;background:linear-gradient(135deg,#1f4e79,#2f75a8); }
+        .seg-head .t{ font-size:19px;font-weight:700;display:flex;align-items:center;gap:10px; }
+        .seg-head .cerrar{ background:rgba(255,255,255,.2);border:none;color:#fff;font-size:22px;cursor:pointer;border-radius:8px;width:40px;height:40px;line-height:1; }
+        .seg-body{ padding:20px 22px;overflow:auto; }
+        .seg-foot{ display:flex;justify-content:flex-end;padding:16px 22px;border-top:1px solid #eef1f6; }
+        .seg-btn{ background:#1f4e79;color:#fff;border:none;border-radius:9px;padding:11px 20px;font-size:15px;font-weight:600;cursor:pointer; }
+        .seg-btn:hover{ background:#163a5c; }
+        .det-grid{ display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;margin-bottom:16px; }
+        .det-grid .campo{ display:flex;flex-direction:column;gap:2px; }
+        .det-grid .k{ font-size:11px;font-weight:700;color:#8a94a2;text-transform:uppercase;letter-spacing:.4px; }
+        .det-grid .v{ font-size:14px;color:#243244; }
+        .det-block{ margin-bottom:14px; }
+        .det-block .k{ font-size:11px;font-weight:700;color:#8a94a2;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px; }
+        .det-block .v{ font-size:14px;color:#33455a;line-height:20px;white-space:pre-wrap;background:#f7f9fc;border:1px solid #edf1f6;border-radius:8px;padding:10px 12px; }
+        @media(max-width:560px){ .det-grid{ grid-template-columns:1fr; } }
     </style>
 
 </head>
@@ -102,6 +126,22 @@
 
     </div>
 
+<!-- ==========================
+     MODAL: DETALLE DE LA SOLICITUD
+========================== -->
+<div class="seg-modal" id="seg-det-modal">
+  <div class="seg-box">
+    <div class="seg-head">
+      <div class="t"><i class="fa-regular fa-file-lines"></i> Detalle de la solicitud</div>
+      <button class="cerrar" onclick="segCerrarDetalle()">&times;</button>
+    </div>
+    <div class="seg-body" id="seg-det-body"></div>
+    <div class="seg-foot">
+      <button class="seg-btn" onclick="segCerrarDetalle()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Puente SP + usuario en sesión (inyectado por index.html) -->
 <script src="script.js"></script>
 <script>
@@ -142,25 +182,28 @@ function segFmtFecha(s){
 }
 
 // Dibuja la tabla a partir de SEG_ITEMS aplicando el filtro de tipo
+var SEG_VISIBLE=[];  // subconjunto visible (base para los índices del detalle)
+function segEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 function segRender(){
   var tbody=document.getElementById('seg-tbody');
   if(!tbody) return;
   var filtroTipo=(document.getElementById('seg-filtro-tipo')||{}).value||'';
-  var datos=SEG_ITEMS.slice();
-  if(filtroTipo) datos=datos.filter(function(s){ return (s.tipo||'')===filtroTipo; });
+  SEG_VISIBLE=SEG_ITEMS.slice();
+  if(filtroTipo) SEG_VISIBLE=SEG_VISIBLE.filter(function(s){ return (s.tipo||'')===filtroTipo; });
 
-  if(!datos.length){
+  if(!SEG_VISIBLE.length){
     tbody.innerHTML='<tr><td colspan="8" class="sin-datos">No tienes solicitudes en proceso.</td></tr>';
     return;
   }
   var html='';
-  datos.forEach(function(s,i){
+  SEG_VISIBLE.forEach(function(s,i){
     html+='<tr>';
     html+='<td>'+(i+1)+'</td>';
     html+='<td>'+segEstadoPill(s.estatus)+'</td>';
-    html+='<td>'+(s.documento||'')+'</td>';
-    html+='<td>'+(s.departamento||'')+'</td>';
-    html+='<td><span class="tipo '+segClaseTipo(s.tipo)+'">'+(s.tipo||'')+'</span></td>';
+    html+='<td><a href="#" class="seg-detalle-link" onclick="segVerDetalle('+i+');return false;" title="Ver detalle de la solicitud">'+segEsc(s.documento)+'</a></td>';
+    html+='<td>'+segEsc(s.departamento)+'</td>';
+    html+='<td><span class="tipo '+segClaseTipo(s.tipo)+'">'+segEsc(s.tipo)+'</span></td>';
     html+='<td>'+(s.fecha||'')+'</td>';
     html+='<td>'+(s.fechaCita||'—')+'</td>';
     html+='<td>'+(s.horaCita||'—')+'</td>';
@@ -168,6 +211,35 @@ function segRender(){
   });
   tbody.innerHTML=html;
 }
+
+/* ===== Detalle de la solicitud (lo que capturó el solicitante) ===== */
+function segCampo(k,v){ return '<div class="campo"><span class="k">'+k+'</span><span class="v">'+(v?segEsc(v):'—')+'</span></div>'; }
+function segBloque(k,v){ return '<div class="det-block"><div class="k">'+k+'</div><div class="v">'+(v?segEsc(v):'—')+'</div></div>'; }
+function segVerDetalle(idx){
+  var s=SEG_VISIBLE[idx]; if(!s) return;
+  var citaTxt=(s.fechaCita?segEsc(s.fechaCita):'—')+(s.horaCita?(' · '+segEsc(s.horaCita)):'');
+  var rev=(String(s.requiereRev).toLowerCase()==='sí'||String(s.requiereRev).toLowerCase()==='si')?'Sí':(s.requiereRev||'No');
+  var html=
+    '<div class="det-grid">'
+    + segCampo('Estatus', s.estatus)
+    + segCampo('Analista asignado', s.analista)
+    + segCampo('Nombre del documento', s.documento)
+    + segCampo('Tipo de documento', s.tipoDoc)
+    + segCampo('Tipo de modificación', s.tipo)
+    + segCampo('Departamento', s.departamento)
+    + segCampo('Solicitante', s.solicitante)
+    + segCampo('Fecha de solicitud', s.fecha)
+    + segCampo('Requiere revisión presencial', rev)
+    + segCampo('Fecha/hora de cita', citaTxt)
+    + '</div>'
+    + segBloque('Objetivo del documento', s.objetivo)
+    + segBloque('Alcance del documento', s.alcance)
+    + segBloque('Responsables del documento', s.responsables)
+    + segBloque('Descripción general', s.descripcion);
+  document.getElementById('seg-det-body').innerHTML=html;
+  document.getElementById('seg-det-modal').classList.add('activo');
+}
+function segCerrarDetalle(){ document.getElementById('seg-det-modal').classList.remove('activo'); }
 
 // Carga las solicitudes del usuario desde SharePoint (o demo en standalone)
 async function segCargar(){
@@ -200,8 +272,16 @@ async function segCargar(){
       return {
         estatus:      f.Estatus||'Pendiente',
         documento:    f.Title||'',
+        tipoDoc:      f.Tipo_Documento||'',
         departamento: f.Departamento||'',
         tipo:         f.Tipo_Modificacion||'Nuevo Ingreso',
+        solicitante:  f.Solicitante||'',
+        objetivo:     f.Objetivo||'',
+        alcance:      f.Alcance||'',
+        responsables: f.Responsables||'',
+        descripcion:  f.Descripcion||'',
+        requiereRev:  f.Requiere_Revision||'',
+        analista:     f.Analista_Asignado||'',
         fecha:        segFmtFecha(f.Fecha_Solicitud),
         fechaCita:    segFmtFecha(f.Fecha_Revision),
         horaCita:     f.Hora_Revision||'',
@@ -222,6 +302,9 @@ window.SGD = window.SGD || {};
 window.SGD._onAuth = segCargar;
 
 document.addEventListener('DOMContentLoaded', function(){ segCargar(); });
+
+// Cerrar el detalle al hacer clic fuera de la caja
+(function(){ var el=document.getElementById('seg-det-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segCerrarDetalle(); }); })();
 </script>
 
 </body>

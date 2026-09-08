@@ -14,6 +14,10 @@
     <link rel="stylesheet" href="atencionsolicitudes.css">
 
     <style>
+        /* Scroll horizontal de la tabla en pantallas pequeñas */
+        .tabla-scroll{ width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+        .tabla-scroll table{ min-width:1180px; }
+
         /* ===== Botón Notificaciones Calidad ===== */
         .btn-notif-cal{
             background:linear-gradient(135deg,#7a5cf0,#5b34d6);
@@ -247,6 +251,8 @@
 
         <!-- Tabla -->
 
+        <div class="tabla-scroll">
+
         <table>
 
             <thead>
@@ -286,6 +292,8 @@
             </tbody>
 
         </table>
+
+        </div>
 
     </div>
 

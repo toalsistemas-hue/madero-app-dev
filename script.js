@@ -232,8 +232,8 @@ window.SGD.obtenerBlobUrl = async function (ref) {
   try {
     var r = await window.SGD.sp('getFileBase64', { driveId: ref });
     if (r && r.base64) return { url: URL.createObjectURL(window.SGD._b64ToBlob(r.base64, r.mime || 'application/pdf')), revocar: true };
-  } catch (e) {}
-  return null;
+    return null;
+  } catch (e) { return { error: (e && e.message) || 'error' }; }
 };
 
 var _sgdVisorBlobUrl = null;
@@ -249,7 +249,17 @@ async function sgdVerDocumento(ref, titulo) {
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
   var res = await window.SGD.obtenerBlobUrl(ref);
-  if (!res || !res.url) { alert('No se pudo abrir el documento. Verifica que se haya cargado correctamente.'); sgdCerrarVisor(); return; }
+  if (!res || !res.url) {
+    sgdCerrarVisor();
+    if (res && res.error && /403|forbidden/i.test(res.error)) {
+      alert('No tienes permiso para abrir este documento.\n\nTu cuenta necesita acceso de lectura a la biblioteca de documentos donde se guardan los archivos controlados. Solicita al administrador que te otorgue ese acceso.');
+    } else if (res && res.error && /404|not.?found/i.test(res.error)) {
+      alert('El archivo del documento no se encontró. Es posible que se haya movido o que el documento se cargó con una versión anterior; vuelve a adjuntarlo en Control Documental.');
+    } else {
+      alert('No se pudo abrir el documento. Verifica que se haya cargado correctamente.');
+    }
+    return;
+  }
   // Documentos guardados con una versión anterior (URL de SharePoint) no se pueden incrustar:
   if (!res.revocar && /sharepoint\.com|login\.microsoftonline\.com|1drv\.ms|onedrive\.live\.com/i.test(res.url)) {
     sgdCerrarVisor();

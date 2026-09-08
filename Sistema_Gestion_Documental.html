@@ -63,6 +63,12 @@
                 ATENCIÓN A SOLICITUDES DE DOCUMENTOS
             </a>
 
+            <!-- Solo visible con acceso Completo (Calidad). Administra la lista maestra. -->
+            <a href="controldocumental.html" class="btn-atencion" id="btn-control-documental" style="display:none;">
+                <i class="fa-solid fa-folder-open"></i>
+                CONTROL DOCUMENTAL
+            </a>
+
             <a href="solicitud.html" class="btn-documentar">
                 <i class="fa-solid fa-plus"></i>
                 SOLICITUD DE DOCUMENTO
@@ -114,144 +120,9 @@
 
         </thead>
 
-        <tbody>
-
-            <tr>
-
-                <td>1</td>
-
-                <td>10/11/2025</td>
-
-                <td class="codigo">PR-COM-01</td>
-
-                <td class="nombre">
-                    <a href="#" onclick="sgdVerDocumento('','Procedimiento de compras');return false;">Procedimiento de compras</a>
-                </td>
-
-                <td class="tipo"><span>Procedimiento</span></td>
-
-                <td>
-
-                    <div class="tooltip">
-                        <button class="accion descargar" onclick="sgdDescargarCopia('','Procedimiento de compras')">
-                            <i class="fa-solid fa-circle-down"></i>
-                        </button>
-                        <span class="tooltiptext">Descargar Copia NO controlada</span>
-                    </div>
-
-                    <div class="tooltip">
-                        <button class="accion actualizar"
-                        onclick="abrirActualizar('compras')">
-
-                            <i class="fa-solid fa-rotate"></i>
-
-                        </button>
-                        <span class="tooltiptext">Solicitar Actualización</span>
-                    </div>
-
-                    <div class="tooltip">
-                        <button class="accion eliminar"
-                                onclick="window.location.href='baja.html'">
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
-                        <span class="tooltiptext">Solicitar Baja</span>
-                    </div>
-
-                </td>
-
-            </tr>
-
-            <tr>
-
-                <td>1</td>
-
-                <td>10/11/2025</td>
-
-                <td class="codigo">PR-VEN-01</td>
-
-                <td class="nombre">
-                    <a href="#" onclick="sgdVerDocumento('','Procedimiento de ventas');return false;">Procedimiento de ventas</a>
-                </td>
-
-                <td class="tipo"><span>Procedimiento</span></td>
-
-                <td>
-
-                    <div class="tooltip">
-                        <button class="accion descargar" onclick="sgdDescargarCopia('','Procedimiento de ventas')">
-                            <i class="fa-solid fa-circle-down"></i>
-                        </button>
-                        <span class="tooltiptext">Descargar Copia NO controlada</span>
-                    </div>
-
-                    <div class="tooltip">
-                        <button class="accion actualizar"
-                        onclick="abrirActualizar('ventas')">
-
-                            <i class="fa-solid fa-rotate"></i>
-
-                        </button>
-                        <span class="tooltiptext">Solicitar Actualización</span>
-                    </div>
-
-                    <div class="tooltip">
-                        <button class="accion eliminar"
-                                onclick="window.location.href='baja.html'">
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
-                        <span class="tooltiptext">Solicitar Baja</span>
-                    </div>
-
-                </td>
-
-            </tr>
-
-            <tr>
-
-                <td>1</td>
-
-                <td>10/11/2025</td>
-
-                <td class="codigo">PR-INS-01</td>
-
-                <td class="nombre">
-                    <a href="#" onclick="sgdVerDocumento('','Procedimiento de instalacion');return false;">Procedimiento de instalacion</a>
-                </td>
-
-                <td class="tipo"><span>Procedimiento</span></td>
-
-                <td>
-
-                    <div class="tooltip">
-                        <button class="accion descargar" onclick="sgdDescargarCopia('','Procedimiento de instalacion')">
-                            <i class="fa-solid fa-circle-down"></i>
-                        </button>
-                        <span class="tooltiptext">Descargar Copia NO controlada</span>
-                    </div>
-
-                    <div class="tooltip">
-                        <button class="accion actualizar"
-                        onclick="abrirActualizar('instalacion')">
-
-                            <i class="fa-solid fa-rotate"></i>
-
-                        </button>
-                        <span class="tooltiptext">Solicitar Actualización</span>
-                    </div>
-
-                    <div class="tooltip">
-                        <button class="accion eliminar"
-                                onclick="window.location.href='baja.html'">
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
-                        <span class="tooltiptext">Solicitar Baja</span>
-                    </div>
-
-                </td>
-
-            </tr>
-
-        </tbody>
+        <tbody id="sgd-doc-tbody">
+                <tr><td colspan="6" style="text-align:center;padding:30px;color:#8a94a2;">Cargando documentos…</td></tr>
+            </tbody>
 
     </table>
 
@@ -270,5 +141,11 @@
 </div>
 
 <script src="script.js"></script>
+<script>
+  // Cargar la lista maestra de documentos (y recargar cuando el padre confirma el usuario)
+  window.SGD = window.SGD || {};
+  window.SGD._onAuth = function(){ sgdAplicarPermisos(); if(typeof sgdCargarDocumentos==='function') sgdCargarDocumentos(); };
+  document.addEventListener('DOMContentLoaded', function(){ if(typeof sgdCargarDocumentos==='function') sgdCargarDocumentos(); });
+</script>
 </body>
 </html>

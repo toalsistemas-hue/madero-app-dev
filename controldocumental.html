@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control Documental</title>
+
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <style>
+        .cd-barra{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:0 35px; margin-bottom:12px; }
+        .cd-btns{ display:flex; gap:10px; flex-wrap:wrap; }
+        .cd-btn{ border:none; border-radius:8px; padding:12px 18px; font-size:15px; font-weight:600; cursor:pointer; color:#fff; display:inline-flex; align-items:center; gap:9px; transition:.25s; text-decoration:none; }
+        .cd-btn.volver{ background:linear-gradient(135deg,#2f75a8,#1f4e79); }
+        .cd-btn.nuevo{ background:linear-gradient(135deg,#0f9d58,#0b7a43); }
+        .cd-btn:hover{ transform:translateY(-2px); }
+        .cd-filtro{ display:flex; align-items:center; gap:8px; font-size:14px; color:#4b5563; }
+        .cd-filtro select{ padding:9px 12px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; }
+
+        .tabla1 td.codigo{ text-align:center; font-family:"Consolas","DM Mono",monospace; color:#1f4e79; font-weight:600; }
+        .tabla1 td.tipo{ text-align:center; }
+        .tabla1 td.tipo span{ display:inline-block; background:#eaf2fb; color:#1f4e79; border:1px solid #cfe0f2; border-radius:20px; padding:3px 12px; font-size:14px; font-weight:600; }
+        .estatus-pill{ display:inline-block; padding:4px 12px; border-radius:20px; font-size:13px; font-weight:600; }
+        .est-vigente{ background:#e7f6ee; color:#1e8449; border:1px solid #b6e3c8; }
+        .est-obsoleto{ background:#f3f4f6; color:#6b7280; border:1px solid #dfe3e8; }
+        .cd-acc button{ border:none; cursor:pointer; width:38px; height:38px; border-radius:8px; font-size:15px; margin:0 2px; transition:.2s; }
+        .cd-acc .b-edit{ background:#eaf2fb; color:#1f6feb; }
+        .cd-acc .b-baja{ background:#fdeaea; color:#c0392b; }
+        .cd-acc .b-ver{ background:#eef7f0; color:#1e8449; }
+        .cd-acc button:hover{ filter:brightness(.95); }
+        .cd-vacio{ text-align:center; padding:34px; color:#8a94a2; }
+        .cd-noauth{ margin:40px 35px; padding:30px; text-align:center; color:#8a5b00; background:#fff8e6; border:1px solid #ffe4a3; border-radius:12px; font-size:16px; }
+
+        /* Modal */
+        .cd-modal{ display:none; position:fixed; inset:0; z-index:9999; background:rgba(15,30,50,.65); align-items:center; justify-content:center; padding:24px; }
+        .cd-modal.activo{ display:flex; }
+        .cd-box{ background:#fff; width:min(640px,96vw); max-height:94vh; border-radius:16px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.35); }
+        .cd-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 22px; background:linear-gradient(135deg,#1f4e79,#2f75a8); color:#fff; }
+        .cd-head .t{ font-size:19px; font-weight:700; display:flex; align-items:center; gap:10px; }
+        .cd-head .cerrar{ background:rgba(255,255,255,.2); border:none; color:#fff; font-size:22px; cursor:pointer; border-radius:8px; width:40px; height:40px; line-height:1; }
+        .cd-body{ padding:20px 22px; overflow:auto; }
+        .cd-fila{ margin-bottom:14px; }
+        .cd-fila label{ display:block; font-size:12px; font-weight:700; color:#556; margin-bottom:5px; text-transform:uppercase; letter-spacing:.3px; }
+        .cd-fila input, .cd-fila select, .cd-fila textarea{ width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; outline:none; }
+        .cd-fila input:focus, .cd-fila select:focus, .cd-fila textarea:focus{ border-color:#2f75a8; box-shadow:0 0 0 3px rgba(47,117,168,.15); }
+        .cd-row2{ display:flex; gap:12px; } .cd-row2>div{ flex:1; }
+        .cd-check{ display:flex; align-items:center; gap:10px; font-size:14px; font-weight:600; color:#1f4e79; cursor:pointer; }
+        .cd-check input{ width:18px; height:18px; accent-color:#1f4e79; }
+        .cd-hint{ font-size:12px; color:#7b8794; margin-top:4px; }
+        .cd-error{ color:#c0392b; font-size:13px; font-weight:600; min-height:18px; margin:4px 0; }
+        .cd-foot{ display:flex; justify-content:flex-end; gap:10px; padding:16px 22px; border-top:1px solid #eef1f6; }
+        .cd-foot button{ border:none; border-radius:9px; padding:11px 20px; font-size:15px; font-weight:600; cursor:pointer; }
+        .cd-foot .cancel{ background:#eef1f6; color:#33455a; }
+        .cd-foot .ok{ background:#0f9d58; color:#fff; }
+        .cd-foot .ok:disabled{ opacity:.6; cursor:default; }
+    </style>
+</head>
+<body>
+
+<div class="contenedor">
+
+    <header>
+        <h1>CONTROL DOCUMENTAL</h1>
+    </header>
+
+    <div class="cd-barra">
+        <div class="cd-btns">
+            <a href="Sistema_Gestion_Documental.html" class="cd-btn volver"><i class="fa-solid fa-arrow-left"></i> Regresar</a>
+            <button class="cd-btn nuevo" id="cd-btn-nuevo" onclick="cdAbrirModal()"><i class="fa-solid fa-plus"></i> Agregar documento</button>
+        </div>
+        <div class="cd-filtro">
+            <span>Estatus:</span>
+            <select id="cd-f-estatus" onchange="cdRender()">
+                <option>Vigentes</option>
+                <option>Obsoletos</option>
+                <option>Todos</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="cd-noauth" class="cd-noauth" style="display:none;">
+        <i class="fa-solid fa-lock"></i> No tienes acceso a Control Documental. Esta sección es solo para el rol de Calidad (acceso completo).
+    </div>
+
+    <table class="tabla1" id="cd-tabla">
+        <thead>
+            <tr>
+                <th class="columna1">Versión</th>
+                <th class="columna2">Último cambio</th>
+                <th>Código</th>
+                <th>Nombre del documento</th>
+                <th>Tipo</th>
+                <th>Acceso</th>
+                <th>Estatus</th>
+                <th class="columna4">Acciones</th>
+            </tr>
+        </thead>
+        <tbody id="cd-tbody">
+            <tr><td colspan="8" class="cd-vacio">Cargando…</td></tr>
+        </tbody>
+    </table>
+
+</div>
+
+<!-- ===== Modal Agregar / Editar documento ===== -->
+<div class="cd-modal" id="cd-modal">
+  <div class="cd-box">
+    <div class="cd-head">
+      <div class="t"><i class="fa-solid fa-folder-open"></i> <span id="cd-modal-titulo">Agregar documento</span></div>
+      <button class="cerrar" onclick="cdCerrarModal()">&times;</button>
+    </div>
+    <div class="cd-body">
+
+      <div class="cd-fila">
+        <label>Nombre del documento</label>
+        <input type="text" id="cd-nombre" placeholder="Ej. Procedimiento de compras">
+      </div>
+
+      <div class="cd-row2">
+        <div class="cd-fila"><label>Código</label><input type="text" id="cd-codigo" placeholder="Ej. PR-COM-01"></div>
+        <div class="cd-fila"><label>Versión</label><input type="text" id="cd-version" placeholder="Ej. 1"></div>
+      </div>
+
+      <div class="cd-row2">
+        <div class="cd-fila"><label>Tipo de documento</label><select id="cd-tipo"><option value="">Seleccione…</option></select></div>
+        <div class="cd-fila"><label>Fecha de último cambio</label><input type="date" id="cd-fecha"></div>
+      </div>
+
+      <div class="cd-fila">
+        <label class="cd-check"><input type="checkbox" id="cd-todos" checked onchange="cdToggleAccesos()"> Visible para todos los usuarios</label>
+        <div id="cd-accesos-wrap" style="display:none; margin-top:10px;">
+          <label>Correos con acceso (uno por línea o separados por ; )</label>
+          <textarea id="cd-accesos" rows="3" placeholder="usuario1@maderoequipos.com; usuario2@maderoequipos.com"></textarea>
+        </div>
+      </div>
+
+      <div class="cd-row2">
+        <div class="cd-fila"><label>Documento controlado (PDF)</label><input type="file" id="cd-pdf" accept=".pdf"><div class="cd-hint" id="cd-pdf-actual"></div></div>
+        <div class="cd-fila"><label>Documento fuente (WORD)</label><input type="file" id="cd-word" accept=".doc,.docx"><div class="cd-hint" id="cd-word-actual"></div></div>
+      </div>
+
+      <div class="cd-error" id="cd-error"></div>
+    </div>
+    <div class="cd-foot">
+      <button class="cancel" onclick="cdCerrarModal()">Cancelar</button>
+      <button class="ok" id="cd-ok" onclick="cdGuardar()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Visor de PDF (reutiliza el del SGD) -->
+<div class="cd-modal" id="sgd-visor-modal" style="z-index:10000;">
+  <div class="cd-box" style="height:92vh;">
+    <div class="cd-head">
+      <div class="t"><i class="fa-solid fa-file-pdf"></i> <span id="sgd-visor-titulo">Documento</span></div>
+      <button class="cerrar" onclick="sgdCerrarVisor()">&times;</button>
+    </div>
+    <iframe id="sgd-visor-frame" src="about:blank" style="flex:1;width:100%;border:none;background:#525659;"></iframe>
+  </div>
+</div>
+
+<script src="script.js"></script>
+<script>
+/* ============================================================
+   CONTROL DOCUMENTAL — lista maestra (SGD_Documentos)
+   ============================================================ */
+var CD_ITEMS = [];
+var CD_EDIT_ID = null;     // itemId en edición (null = alta)
+var CD_BUSY = false;
+
+function cdEmbebido(){ return !!(window.SGD && window.SGD.embebido && window.SGD.embebido()); }
+function cdLista(){ return (window.SGD && window.SGD.LISTA_DOCUMENTOS) || 'SGD_Documentos'; }
+function cdEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function cdFmtFecha(s){ if(!s) return ''; var p=String(s).split('T')[0].split('-'); return p.length<3?s:(p[2]+'/'+p[1]+'/'+p[0]); }
+function cdHoyISO(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function cdFileB64(file){ return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){ res(String(r.result).split(',')[1]||''); }; r.onerror=rej; r.readAsDataURL(file); }); }
+
+var CD_DEMO = [
+  { id:'d1', nombre:'Procedimiento de compras', codigo:'PR-COM-01', tipo:'Procedimiento', version:'1', fechaCambio:'2025-11-10', accesoTodos:'Sí', accesos:'', estatus:'Vigente', url:'', wordUrl:'' }
+];
+
+// Arranque: valida acceso (solo completo) y carga
+function cdInit(){
+  var noauth = document.getElementById('cd-noauth');
+  var tabla  = document.getElementById('cd-tabla');
+  var btnNuevo = document.getElementById('cd-btn-nuevo');
+  if(cdEmbebido()){
+    var nivel = (window.SGD.getNivelAtencion && window.SGD.getNivelAtencion()) || '';
+    if(!nivel){ return; }                 // aún sin auth; el handshake volverá a llamar
+    if(nivel !== 'completo'){
+      noauth.style.display='block'; tabla.style.display='none'; if(btnNuevo) btnNuevo.style.display='none';
+      return;
+    }
+  }
+  noauth.style.display='none'; tabla.style.display=''; if(btnNuevo) btnNuevo.style.display='';
+  cdCargar();
+}
+
+async function cdCargar(){
+  var tbody=document.getElementById('cd-tbody');
+  if(tbody) tbody.innerHTML='<tr><td colspan="8" class="cd-vacio">Cargando…</td></tr>';
+  if(!cdEmbebido()){ CD_ITEMS=CD_DEMO.slice(); cdRender(); return; }
+  try{
+    var r=await window.SGD.sp('list',{ lista:cdLista(), queryParams:'$expand=fields&$top=1000' });
+    var items=(r&&r.value)?r.value:[];
+    CD_ITEMS=items.map(function(it){ var f=it.fields||it; return {
+      id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo||'', tipo:f.Tipo||'',
+      version:f.Version||'', fechaCambio:(f.Fecha_Cambio||''), url:f.Documento_URL||'', wordUrl:f.Documento_Word_URL||'',
+      accesos:f.Accesos||'', accesoTodos:f.Acceso_Todos||'', estatus:f.Estatus||'Vigente'
+    };}).sort(function(a,b){ return (a.codigo||'').localeCompare(b.codigo||''); });
+    cdRender();
+  }catch(e){
+    if(tbody) tbody.innerHTML='<tr><td colspan="8" class="cd-vacio" style="color:#c0392b;">No se pudieron cargar los documentos.</td></tr>';
+  }
+}
+
+function cdRender(){
+  var tbody=document.getElementById('cd-tbody'); if(!tbody) return;
+  var f=(document.getElementById('cd-f-estatus')||{}).value||'Vigentes';
+  var datos=CD_ITEMS.filter(function(d){
+    var e=String(d.estatus).toLowerCase();
+    if(f==='Vigentes') return e!=='obsoleto' && e!=='baja';
+    if(f==='Obsoletos') return e==='obsoleto' || e==='baja';
+    return true;
+  });
+  if(!datos.length){ tbody.innerHTML='<tr><td colspan="8" class="cd-vacio">No hay documentos.</td></tr>'; return; }
+  tbody.innerHTML=datos.map(function(d,i){
+    var acceso = (String(d.accesoTodos).toLowerCase()==='sí'||String(d.accesoTodos).toLowerCase()==='si') ? 'Todos' : (d.accesos? (d.accesos.split(/[;,\n]+/).filter(Boolean).length+' usuario(s)') : '—');
+    var vig = String(d.estatus).toLowerCase()!=='obsoleto' && String(d.estatus).toLowerCase()!=='baja';
+    var pill = vig ? '<span class="estatus-pill est-vigente">Vigente</span>' : '<span class="estatus-pill est-obsoleto">Obsoleto</span>';
+    var idx = CD_ITEMS.indexOf(d);
+    var ver = d.url ? '<button class="b-ver" title="Ver documento" onclick="cdVer('+idx+')"><i class="fa-regular fa-file-lines"></i></button>' : '';
+    return '<tr>'
+      +'<td>'+cdEsc(d.version||'—')+'</td>'
+      +'<td>'+cdEsc(cdFmtFecha(d.fechaCambio))+'</td>'
+      +'<td class="codigo">'+cdEsc(d.codigo)+'</td>'
+      +'<td>'+cdEsc(d.nombre)+'</td>'
+      +'<td class="tipo"><span>'+cdEsc(d.tipo)+'</span></td>'
+      +'<td>'+cdEsc(acceso)+'</td>'
+      +'<td>'+pill+'</td>'
+      +'<td class="cd-acc">'+ver
+        +'<button class="b-edit" title="Editar" onclick="cdAbrirModal('+idx+')"><i class="fa-solid fa-pen"></i></button>'
+        +(vig?'<button class="b-baja" title="Dar de baja (Obsoleto)" onclick="cdDarBaja('+idx+')"><i class="fa-solid fa-xmark"></i></button>':'')
+      +'</td>'
+      +'</tr>';
+  }).join('');
+}
+
+function cdVer(idx){
+  var d=CD_ITEMS[idx]; if(!d||!d.url) return;
+  if(typeof sgdVerDocumento==='function') sgdVerDocumento(d.url, d.nombre||'Documento');
+}
+
+function cdToggleAccesos(){
+  var todos=document.getElementById('cd-todos').checked;
+  document.getElementById('cd-accesos-wrap').style.display = todos ? 'none' : 'block';
+}
+
+function cdAbrirModal(idx){
+  document.getElementById('cd-error').textContent='';
+  document.getElementById('cd-pdf').value=''; document.getElementById('cd-word').value='';
+  document.getElementById('cd-pdf-actual').textContent=''; document.getElementById('cd-word-actual').textContent='';
+  if(window.SGD.cargarTiposEnSelect) window.SGD.cargarTiposEnSelect('cd-tipo','Seleccione…');
+  if(idx===undefined || idx===null){
+    CD_EDIT_ID=null;
+    document.getElementById('cd-modal-titulo').textContent='Agregar documento';
+    document.getElementById('cd-nombre').value=''; document.getElementById('cd-codigo').value='';
+    document.getElementById('cd-version').value='1'; document.getElementById('cd-fecha').value=cdHoyISO();
+    document.getElementById('cd-todos').checked=true; document.getElementById('cd-accesos').value='';
+  } else {
+    var d=CD_ITEMS[idx]; if(!d) return;
+    CD_EDIT_ID=d.id;
+    document.getElementById('cd-modal-titulo').textContent='Editar documento';
+    document.getElementById('cd-nombre').value=d.nombre||''; document.getElementById('cd-codigo').value=d.codigo||'';
+    document.getElementById('cd-version').value=d.version||''; document.getElementById('cd-fecha').value=(d.fechaCambio||'').split('T')[0]||cdHoyISO();
+    var todos=(String(d.accesoTodos).toLowerCase()==='sí'||String(d.accesoTodos).toLowerCase()==='si');
+    document.getElementById('cd-todos').checked=todos; document.getElementById('cd-accesos').value=d.accesos||'';
+    // set tipo tras cargar opciones
+    setTimeout(function(){ var sel=document.getElementById('cd-tipo'); if(sel) sel.value=d.tipo||''; }, 300);
+    if(d.url) document.getElementById('cd-pdf-actual').textContent='Actual: PDF cargado (deja vacío para conservarlo)';
+    if(d.wordUrl) document.getElementById('cd-word-actual').textContent='Actual: WORD cargado (deja vacío para conservarlo)';
+  }
+  cdToggleAccesos();
+  document.getElementById('cd-modal').classList.add('activo');
+}
+function cdCerrarModal(){ document.getElementById('cd-modal').classList.remove('activo'); }
+
+async function cdGuardar(){
+  if(CD_BUSY) return;
+  var err=document.getElementById('cd-error'); err.textContent='';
+  var nombre=document.getElementById('cd-nombre').value.trim();
+  var codigo=document.getElementById('cd-codigo').value.trim();
+  var version=document.getElementById('cd-version').value.trim();
+  var tipo=document.getElementById('cd-tipo').value;
+  var fecha=document.getElementById('cd-fecha').value;
+  var todos=document.getElementById('cd-todos').checked;
+  var accesos=document.getElementById('cd-accesos').value.trim();
+  if(!nombre){ err.textContent='Escribe el nombre del documento.'; return; }
+  if(!codigo){ err.textContent='Escribe el código del documento.'; return; }
+  if(!tipo){ err.textContent='Selecciona el tipo de documento.'; return; }
+  if(!todos && !accesos){ err.textContent='Indica los correos con acceso o marca "Visible para todos".'; return; }
+
+  var pdf=(document.getElementById('cd-pdf').files||[])[0];
+  var word=(document.getElementById('cd-word').files||[])[0];
+
+  var fields={
+    Title:nombre, Codigo:codigo, Tipo:tipo, Version:version,
+    Fecha_Cambio: fecha ? (fecha+'T00:00:00Z') : '',
+    Acceso_Todos: todos ? 'Sí' : 'No',
+    Accesos: todos ? '' : accesos,
+    Estatus:'Vigente'
+  };
+  if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
+
+  var btn=document.getElementById('cd-ok'); CD_BUSY=true; btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    if(!cdEmbebido()){
+      // standalone (pruebas): solo en memoria
+      if(CD_EDIT_ID){ var it=CD_ITEMS.filter(function(x){return x.id===CD_EDIT_ID;})[0]; if(it){ it.nombre=nombre; it.codigo=codigo; it.tipo=tipo; it.version=version; it.fechaCambio=fecha; it.accesoTodos=todos?'Sí':'No'; it.accesos=accesos; } }
+      else { CD_ITEMS.push({ id:'tmp'+Date.now(), nombre:nombre, codigo:codigo, tipo:tipo, version:version, fechaCambio:fecha, accesoTodos:todos?'Sí':'No', accesos:accesos, estatus:'Vigente', url:'', wordUrl:'' }); }
+      cdRender(); cdCerrarModal(); return;
+    }
+
+    var itemId=CD_EDIT_ID;
+    if(itemId){
+      await window.SGD.sp('update',{ lista:cdLista(), itemId:itemId, fields:fields });
+    } else {
+      var cr=await window.SGD.sp('create',{ lista:cdLista(), fields:fields });
+      itemId=(cr && cr.id!==undefined)?cr.id:null;
+    }
+    // Subir archivos (si se seleccionaron) y guardar sus URLs
+    var urls={};
+    if(itemId && pdf){ btn.textContent='Subiendo PDF…'; var b1=await cdFileB64(pdf); var up1=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:pdf.name, contentBase64:b1 }); if(up1&&up1.webUrl) urls.Documento_URL=up1.webUrl; }
+    if(itemId && word){ btn.textContent='Subiendo WORD…'; var b2=await cdFileB64(word); var up2=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:word.name, contentBase64:b2 }); if(up2&&up2.webUrl) urls.Documento_Word_URL=up2.webUrl; }
+    if(itemId && (urls.Documento_URL || urls.Documento_Word_URL)){
+      if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(urls);
+      await window.SGD.sp('update',{ lista:cdLista(), itemId:itemId, fields:urls });
+    }
+    if(window.SGD.bitacora) window.SGD.bitacora(CD_EDIT_ID?'Editar documento (lista maestra)':'Alta documento (lista maestra)', 'SGD_Documentos', codigo+' · '+nombre, { id:itemId, pantalla:'Control Documental' });
+    await cdCargar();
+    cdCerrarModal();
+  }catch(e){
+    err.textContent='No se pudo guardar. Intenta de nuevo.';
+  }finally{ CD_BUSY=false; btn.disabled=false; btn.textContent='Guardar'; }
+}
+
+async function cdDarBaja(idx){
+  var d=CD_ITEMS[idx]; if(!d) return;
+  if(!confirm('¿Dar de baja (marcar como Obsoleto) el documento "'+d.nombre+'"? Dejará de mostrarse a los usuarios.')) return;
+  try{
+    if(cdEmbebido()){
+      var fields={ Estatus:'Obsoleto' };
+      if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
+      await window.SGD.sp('update',{ lista:cdLista(), itemId:d.id, fields:fields });
+      if(window.SGD.bitacora) window.SGD.bitacora('Baja de documento (Obsoleto)', 'SGD_Documentos', d.codigo+' · '+d.nombre, { id:d.id, pantalla:'Control Documental' });
+      await cdCargar();
+    } else { d.estatus='Obsoleto'; cdRender(); }
+  }catch(e){ alert('No se pudo dar de baja. Intenta de nuevo.'); }
+}
+
+// Cerrar modal al hacer clic fuera
+document.getElementById('cd-modal').addEventListener('click', function(ev){ if(ev.target===this) cdCerrarModal(); });
+
+// Arranque + recarga cuando el padre confirma el usuario/nivel
+window.SGD = window.SGD || {};
+window.SGD._onAuth = cdInit;
+document.addEventListener('DOMContentLoaded', cdInit);
+</script>
+</body>
+</html>

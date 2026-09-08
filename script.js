@@ -91,6 +91,12 @@ window.SGD.LISTA_NOTIF_CALIDAD = 'SGD_NotificacionesCalidad';
 //    Detalle (varias líneas), Usuario (texto), Correo (texto),
 //    Pantalla (texto), Fecha_Evento (fecha y hora)
 window.SGD.LISTA_BITACORA = 'SGD_Bitacora';
+//  SGD_Documentos : lista maestra de documentos liberados (Control Documental).
+//    Title (Nombre), Codigo (texto), Tipo (texto), Version (texto),
+//    Fecha_Cambio (fecha), Documento_URL (texto), Documento_Word_URL (texto),
+//    Acceso_Todos (texto Sí/No), Accesos (varias líneas: correos separados por ; , o salto),
+//    Estatus (texto: Vigente | Obsoleto), Usuario_Modifica, Ultima_Modificacion
+window.SGD.LISTA_DOCUMENTOS = 'SGD_Documentos';
 
 /* ---------- Bitácora / trazabilidad global ----------
    Escribe un renglón de auditoría en SGD_Bitacora. Es "a prueba de fallos":
@@ -162,8 +168,12 @@ function sgdPuedeAtender() {
   return window.SGD.getNivelAtencion() === 'completo';
 }
 function sgdAplicarPermisos() {
+  var puede = sgdPuedeAtender();
   var btn = document.getElementById('btn-atencion-solicitudes');
-  if (btn) btn.style.display = sgdPuedeAtender() ? '' : 'none';
+  if (btn) btn.style.display = puede ? '' : 'none';
+  // El botón "CONTROL DOCUMENTAL" solo se muestra con acceso COMPLETO
+  var btnCd = document.getElementById('btn-control-documental');
+  if (btnCd) btnCd.style.display = puede ? '' : 'none';
 }
 
 /* ============================================================================
@@ -217,6 +227,108 @@ function sgdDescargarCopia(url, nombre) {
   document.body.removeChild(a);
   if (window.SGD.bitacora) window.SGD.bitacora('Descargar copia NO controlada', 'Documento', nombre || '', {});
 }
+
+/* ============================================================================
+   PANTALLA PRINCIPAL — documentos liberados (leídos de la lista maestra)
+   ============================================================================ */
+function sgdDocEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function sgdDocFmtFecha(s){ if(!s) return ''; var p=String(s).split('T')[0].split('-'); return p.length<3?s:(p[2]+'/'+p[1]+'/'+p[0]); }
+function sgdDocApos(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+
+// ¿El usuario en sesión puede ver este documento?
+function sgdDocPuedeVer(d, u){
+  var todos = String(d.accesoTodos||'').toLowerCase();
+  if (todos==='sí' || todos==='si' || todos==='true' || d.accesoTodos===true) return true;
+  var correo = (u && u.correo) ? String(u.correo).toLowerCase() : '';
+  if (!correo) return false;
+  var lista = (d.accesos||'').toLowerCase().split(/[;,\n]+/).map(function(x){ return x.trim(); });
+  return lista.indexOf(correo) >= 0;
+}
+
+// Documentos de ejemplo (solo standalone)
+window.SGD.DOCS_DEMO = [
+  { id:'d1', nombre:'Procedimiento de compras', codigo:'PR-COM-01', tipo:'Procedimiento', version:'1', fechaCambio:'2025-11-10', url:'', wordUrl:'', accesoTodos:'Sí', estatus:'Vigente' },
+  { id:'d2', nombre:'Procedimiento de ventas',  codigo:'PR-VEN-01', tipo:'Procedimiento', version:'1', fechaCambio:'2025-11-10', url:'', wordUrl:'', accesoTodos:'Sí', estatus:'Vigente' }
+];
+
+async function sgdCargarDocumentos(){
+  var tbody = document.getElementById('sgd-doc-tbody');
+  if (!tbody) return;
+  if (!(window.SGD.embebido && window.SGD.embebido())){
+    sgdRenderDocumentos(window.SGD.DOCS_DEMO.slice());
+    return;
+  }
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#8a94a2;">Cargando documentos…</td></tr>';
+  try{
+    var u = window.SGD.getUsuario();
+    var r = await window.SGD.sp('list', { lista: window.SGD.LISTA_DOCUMENTOS, queryParams:'$expand=fields&$top=1000' });
+    var items = (r && r.value) ? r.value : [];
+    var docs = items.map(function(it){
+      var f = it.fields || it;
+      return {
+        id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo||'', tipo:f.Tipo||'',
+        version:f.Version||'', fechaCambio:(f.Fecha_Cambio||''), url:f.Documento_URL||'', wordUrl:f.Documento_Word_URL||'',
+        accesos:f.Accesos||'', accesoTodos:f.Acceso_Todos||'', estatus:f.Estatus||'Vigente'
+      };
+    })
+    .filter(function(d){ var e=String(d.estatus).toLowerCase(); return e!=='obsoleto' && e!=='baja'; })
+    .filter(function(d){ return sgdDocPuedeVer(d, u); })
+    .sort(function(a,b){ return (a.codigo||'').localeCompare(b.codigo||''); });
+    sgdRenderDocumentos(docs);
+  }catch(e){
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#c0392b;">No se pudieron cargar los documentos.</td></tr>';
+  }
+}
+
+function sgdRenderDocumentos(docs){
+  var tbody = document.getElementById('sgd-doc-tbody');
+  if (!tbody) return;
+  if (!docs.length){
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#8a94a2;">No hay documentos disponibles.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = docs.map(function(d){
+    var nom = sgdDocEsc(d.nombre), nomA = sgdDocApos(d.nombre), urlA = sgdDocApos(d.url);
+    return '<tr>'
+      + '<td>'+sgdDocEsc(d.version||'—')+'</td>'
+      + '<td>'+sgdDocEsc(sgdDocFmtFecha(d.fechaCambio))+'</td>'
+      + '<td class="codigo">'+sgdDocEsc(d.codigo)+'</td>'
+      + '<td class="nombre"><a href="#" onclick="sgdVerDocumento(\''+urlA+'\',\''+nomA+'\');return false;">'+nom+'</a></td>'
+      + '<td class="tipo"><span>'+sgdDocEsc(d.tipo)+'</span></td>'
+      + '<td>'
+        + '<div class="tooltip"><button class="accion descargar" onclick="sgdDescargarCopia(\''+urlA+'\',\''+nomA+'\')"><i class="fa-solid fa-circle-down"></i></button><span class="tooltiptext">Descargar Copia NO controlada</span></div>'
+        + '<div class="tooltip"><button class="accion actualizar" onclick="sgdSolicitarActualizacion(\''+sgdDocApos(d.id)+'\',\''+nomA+'\',\''+sgdDocApos(d.codigo)+'\',\''+sgdDocApos(d.tipo)+'\')"><i class="fa-solid fa-rotate"></i></button><span class="tooltiptext">Solicitar Actualización</span></div>'
+        + '<div class="tooltip"><button class="accion eliminar" onclick="sgdSolicitarBaja(\''+sgdDocApos(d.id)+'\',\''+nomA+'\',\''+sgdDocApos(d.codigo)+'\',\''+sgdDocApos(d.tipo)+'\')"><i class="fa-solid fa-xmark"></i></button><span class="tooltiptext">Solicitar Baja</span></div>'
+      + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+// Guarda el documento seleccionado y navega a la pantalla de solicitud correspondiente
+function sgdSolicitarActualizacion(id, nombre, codigo, tipo){
+  try{ localStorage.setItem('sgd_doc_sel', JSON.stringify({ id:id, nombre:nombre, codigo:codigo, tipoDoc:tipo, modificacion:'Actualización' })); }catch(_){}
+  window.location.href = 'actualizar.html';
+}
+function sgdSolicitarBaja(id, nombre, codigo, tipo){
+  try{ localStorage.setItem('sgd_doc_sel', JSON.stringify({ id:id, nombre:nombre, codigo:codigo, tipoDoc:tipo, modificacion:'Baja' })); }catch(_){}
+  window.location.href = 'baja.html';
+}
+
+// Carga los tipos de documento en CUALQUIER <select> (reutilizable)
+window.SGD.cargarTiposEnSelect = async function(selectId, placeholder){
+  var sel = document.getElementById(selectId);
+  if (!sel) return;
+  var tipos = null;
+  try{
+    var r = await window.SGD.sp('list', { lista: window.SGD.LISTA_TIPOS, queryParams:'$expand=fields&$top=200' });
+    var items = (r && r.value) ? r.value : [];
+    tipos = items.map(function(i){ var f=i.fields||i; return (f.Title||f.Tipo||'').toString().trim(); }).filter(Boolean);
+  }catch(e){}
+  if (!tipos || !tipos.length) tipos = window.SGD.TIPOS_DEFAULT.slice();
+  tipos.sort(function(a,b){ return a.localeCompare(b); });
+  sel.innerHTML = '<option value="">'+(placeholder||'Seleccione un tipo')+'</option>' +
+    tipos.map(function(t){ return '<option>'+t+'</option>'; }).join('');
+};
 
 /* ============================================================================
    PANTALLA "solicitud" — tipos de documento, usuario y registro en SharePoint

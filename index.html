@@ -6410,6 +6410,22 @@ window.addEventListener('message', async function(e) {
       }
       reply(null, { ok: true });
 
+    } else if (op === 'getFileBase64') {
+      // Devuelve el contenido de un archivo del drive (por su driveItem id) en base64.
+      // Se usa para mostrar documentos controlados en un visor (blob) sin exponer enlaces.
+      var sidF = await getSiteId();
+      var tokF = await getToken();
+      var resF = await fetch('https://graph.microsoft.com/v1.0/sites/'+sidF+'/drive/items/'+encodeURIComponent(args.driveId)+'/content', {
+        headers: { Authorization: 'Bearer ' + tokF }
+      });
+      if (!resF.ok) { reply('file_' + resF.status, null); return; }
+      var bufF = await resF.arrayBuffer();
+      var bytesF = new Uint8Array(bufF), binF = '', CH = 0x8000;
+      for (var iF = 0; iF < bytesF.length; iF += CH) {
+        binF += String.fromCharCode.apply(null, bytesF.subarray(iF, iF + CH));
+      }
+      reply(null, { base64: btoa(binF), mime: (resF.headers.get('content-type') || 'application/octet-stream') });
+
     } else if (op === 'uploadAttachment') {
       var sidU  = await getSiteId();
       var tokU  = await getToken();

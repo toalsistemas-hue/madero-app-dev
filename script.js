@@ -217,19 +217,43 @@ function sgdFiltrarTabla(txt) {
   });
 }
 
+// ---- Resolución de archivos controlados ----
+// Los documentos se guardan como driveItem id (no como URL, porque el webUrl de
+// SharePoint redirige a login y no se puede incrustar). Aquí traemos el contenido
+// por el puente y lo mostramos como blob local (siempre embebible).
+window.SGD._b64ToBlob = function (b64, mime) {
+  var bin = atob(b64), len = bin.length, bytes = new Uint8Array(len);
+  for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime || 'application/octet-stream' });
+};
+window.SGD.obtenerBlobUrl = async function (ref) {
+  if (!ref) return null;
+  if (/^https?:/i.test(ref)) return { url: ref, revocar: false };  // compatibilidad con URLs antiguas
+  try {
+    var r = await window.SGD.sp('getFileBase64', { driveId: ref });
+    if (r && r.base64) return { url: URL.createObjectURL(window.SGD._b64ToBlob(r.base64, r.mime || 'application/pdf')), revocar: true };
+  } catch (e) {}
+  return null;
+};
+
+var _sgdVisorBlobUrl = null;
 // Abre el visor de PDF (solo lectura; se ocultan las barras de descarga/impresión del visor)
-function sgdVerDocumento(url, titulo) {
-  if (!url) { alert('El documento aún no está disponible.'); return; }
+async function sgdVerDocumento(ref, titulo) {
+  if (!ref) { alert('El documento aún no está disponible.'); return; }
   var modal = document.getElementById('sgd-visor-modal');
   if (!modal) return;
   var frame = document.getElementById('sgd-visor-frame');
   var tit = document.getElementById('sgd-visor-titulo');
   if (tit) tit.textContent = titulo || 'Documento';
-  // #toolbar=0&navpanes=0 oculta los controles (descargar/imprimir) del visor nativo del navegador
-  var sep = url.indexOf('#') >= 0 ? '&' : '#';
-  if (frame) frame.src = url + sep + 'toolbar=0&navpanes=0&statusbar=0&view=FitH';
+  if (frame) frame.src = 'about:blank';
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+  var res = await window.SGD.obtenerBlobUrl(ref);
+  if (!res || !res.url) { alert('No se pudo abrir el documento. Verifica que se haya cargado correctamente.'); return; }
+  if (_sgdVisorBlobUrl) { try { URL.revokeObjectURL(_sgdVisorBlobUrl); } catch (e) {} }
+  _sgdVisorBlobUrl = res.revocar ? res.url : null;
+  var sep = res.url.indexOf('#') >= 0 ? '&' : '#';
+  if (frame) frame.src = res.url + sep + 'toolbar=0&navpanes=0&statusbar=0&view=FitH';
   if (window.SGD.bitacora) window.SGD.bitacora('Ver documento', 'Documento', titulo || '', {});
 }
 function sgdCerrarVisor() {
@@ -238,19 +262,22 @@ function sgdCerrarVisor() {
   if (frame) frame.src = 'about:blank';
   if (modal) modal.style.display = 'none';
   document.body.style.overflow = '';
+  if (_sgdVisorBlobUrl) { try { URL.revokeObjectURL(_sgdVisorBlobUrl); } catch (e) {} _sgdVisorBlobUrl = null; }
 }
 
 // Descarga la "Copia NO controlada" del documento
-function sgdDescargarCopia(url, nombre) {
-  if (!url) { alert('El documento aún no está disponible para descargar.'); return; }
+async function sgdDescargarCopia(ref, nombre) {
+  if (!ref) { alert('El documento aún no está disponible para descargar.'); return; }
+  var res = await window.SGD.obtenerBlobUrl(ref);
+  if (!res || !res.url) { alert('No se pudo preparar la descarga.'); return; }
   var a = document.createElement('a');
-  a.href = url;
+  a.href = res.url;
   a.download = ((nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_')) + ' (COPIA NO CONTROLADA).pdf';
-  a.target = '_blank';
   a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+  if (res.revocar) setTimeout(function () { try { URL.revokeObjectURL(res.url); } catch (e) {} }, 4000);
   if (window.SGD.bitacora) window.SGD.bitacora('Descargar copia NO controlada', 'Documento', nombre || '', {});
 }
 

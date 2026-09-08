@@ -413,8 +413,8 @@ async function cdGuardar(){
     }
     // Subir archivos (si se seleccionaron) y guardar sus URLs
     var urls={};
-    if(itemId && pdf){ btn.textContent='Subiendo PDF…'; var b1=await cdFileB64(pdf); var up1=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:pdf.name, contentBase64:b1 }); if(up1&&up1.webUrl) urls.Documento_URL=up1.webUrl; }
-    if(itemId && word){ btn.textContent='Subiendo WORD…'; var b2=await cdFileB64(word); var up2=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:word.name, contentBase64:b2 }); if(up2&&up2.webUrl) urls.Documento_Word_URL=up2.webUrl; }
+    if(itemId && pdf){ btn.textContent='Subiendo PDF…'; var b1=await cdFileB64(pdf); var up1=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:pdf.name, contentBase64:b1 }); if(up1&&up1.id) urls.Documento_URL=up1.id; }
+    if(itemId && word){ btn.textContent='Subiendo WORD…'; var b2=await cdFileB64(word); var up2=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:word.name, contentBase64:b2 }); if(up2&&up2.id) urls.Documento_Word_URL=up2.id; }
     if(itemId && (urls.Documento_URL || urls.Documento_Word_URL)){
       if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(urls);
       await window.SGD.sp('update',{ lista:cdLista(), itemId:itemId, fields:urls });

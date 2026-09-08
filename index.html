@@ -3222,7 +3222,10 @@ function navigateToPantalla(pantallaID) {
               type: 'SGD_AUTH',
               user: {
                 nombre: state.currentUser ? state.currentUser.nombre : '',
-                correo: state.currentUser ? (state.currentUser.email || '') : ''
+                correo: state.currentUser ? (state.currentUser.email || '') : '',
+                puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+                puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+                esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
               },
               nivel: nivelCd,
               isDemoMode: state.isDemoMode || false
@@ -6349,7 +6352,10 @@ window.addEventListener('message', function (e) {
       type: 'SGD_AUTH',
       user: {
         nombre: state.currentUser ? state.currentUser.nombre : '',
-        correo: state.currentUser ? (state.currentUser.email || '') : ''
+        correo: state.currentUser ? (state.currentUser.email || '') : '',
+        puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+        puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+        esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
       },
       nivel: nivelCd,
       isDemoMode: state.isDemoMode || false

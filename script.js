@@ -92,7 +92,7 @@ window.SGD.LISTA_NOTIF_CALIDAD = 'SGD_NotificacionesCalidad';
 //    Pantalla (texto), Fecha_Evento (fecha y hora)
 window.SGD.LISTA_BITACORA = 'SGD_Bitacora';
 //  SGD_Documentos : lista maestra de documentos liberados (Control Documental).
-//    Title (Nombre), Codigo (texto), Tipo (texto), Version (texto),
+//    Title (Nombre), Codigo (texto), Tipo_Doc (texto), Version (texto),
 //    Fecha_Cambio (fecha), Documento_URL (texto), Documento_Word_URL (texto),
 //    Acceso_Todos (texto Sí/No), Accesos (varias líneas: correos separados por ; , o salto),
 //    Estatus (texto: Vigente | Obsoleto), Usuario_Modifica, Ultima_Modificacion
@@ -167,13 +167,25 @@ function sgdPuedeAtender() {
   // Con acceso de solo Lectura NO se muestra.
   return window.SGD.getNivelAtencion() === 'completo';
 }
+// El botón "CONTROL DOCUMENTAL" solo lo ven los puestos autorizados:
+// Administrador General y Coordinador de Calidad (o esAdmin).
+function sgdPuedeControlDocumental() {
+  var u = window.SGD.getUsuario() || {};
+  if (u.esAdmin) return true;
+  var norm = function (s) { return (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); };
+  var p = norm(u.puesto), pid = norm(u.puestoID);
+  if (p === 'administrador general' || p === 'coordinador de calidad') return true;
+  if (pid === 'admingeneral' || pid === 'coordcalidad' || pid === 'coordinadorcalidad') return true;
+  try { var q = norm(new URLSearchParams(location.search).get('puesto')); if (q === 'administrador general' || q === 'coordinador de calidad') return true; } catch (e) {}
+  return false;
+}
+
 function sgdAplicarPermisos() {
-  var puede = sgdPuedeAtender();
   var btn = document.getElementById('btn-atencion-solicitudes');
-  if (btn) btn.style.display = puede ? '' : 'none';
-  // El botón "CONTROL DOCUMENTAL" solo se muestra con acceso COMPLETO
+  if (btn) btn.style.display = sgdPuedeAtender() ? '' : 'none';
+  // El botón "CONTROL DOCUMENTAL" solo para Administrador General / Coordinador de Calidad
   var btnCd = document.getElementById('btn-control-documental');
-  if (btnCd) btnCd.style.display = puede ? '' : 'none';
+  if (btnCd) btnCd.style.display = sgdPuedeControlDocumental() ? '' : 'none';
 }
 
 /* ============================================================================
@@ -266,7 +278,7 @@ async function sgdCargarDocumentos(){
     var docs = items.map(function(it){
       var f = it.fields || it;
       return {
-        id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo||'', tipo:f.Tipo||'',
+        id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo||'', tipo:f.Tipo_Doc||'',
         version:f.Version||'', fechaCambio:(f.Fecha_Cambio||''), url:f.Documento_URL||'', wordUrl:f.Documento_Word_URL||'',
         accesos:f.Accesos||'', accesoTodos:f.Acceso_Todos||'', estatus:f.Estatus||'Vigente'
       };

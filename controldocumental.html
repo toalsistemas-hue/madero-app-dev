@@ -206,7 +206,7 @@ async function cdCargar(){
     var r=await window.SGD.sp('list',{ lista:cdLista(), queryParams:'$expand=fields&$top=1000' });
     var items=(r&&r.value)?r.value:[];
     CD_ITEMS=items.map(function(it){ var f=it.fields||it; return {
-      id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo||'', tipo:f.Tipo||'',
+      id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo||'', tipo:f.Tipo_Doc||'',
       version:f.Version||'', fechaCambio:(f.Fecha_Cambio||''), url:f.Documento_URL||'', wordUrl:f.Documento_Word_URL||'',
       accesos:f.Accesos||'', accesoTodos:f.Acceso_Todos||'', estatus:f.Estatus||'Vigente'
     };}).sort(function(a,b){ return (a.codigo||'').localeCompare(b.codigo||''); });
@@ -306,7 +306,7 @@ async function cdGuardar(){
   var word=(document.getElementById('cd-word').files||[])[0];
 
   var fields={
-    Title:nombre, Codigo:codigo, Tipo:tipo, Version:version,
+    Title:nombre, Codigo:codigo, Tipo_Doc:tipo, Version:version,
     Fecha_Cambio: fecha ? (fecha+'T00:00:00Z') : '',
     Acceso_Todos: todos ? 'Sí' : 'No',
     Accesos: todos ? '' : accesos,

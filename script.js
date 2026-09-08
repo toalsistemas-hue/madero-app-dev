@@ -171,21 +171,35 @@ function sgdPuedeAtender() {
 // Administrador General y Coordinador de Calidad (o esAdmin).
 function sgdPuedeControlDocumental() {
   var u = window.SGD.getUsuario() || {};
-  if (u.esAdmin) return true;
+  if (u.esAdmin === true || u.esAdmin === 'true') return true;
   var norm = function (s) { return (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); };
+  var tiene = function (s, a, b) { return s.indexOf(a) >= 0 && s.indexOf(b) >= 0; };
   var p = norm(u.puesto), pid = norm(u.puestoID);
-  if (p === 'administrador general' || p === 'coordinador de calidad') return true;
-  if (pid === 'admingeneral' || pid === 'coordcalidad' || pid === 'coordinadorcalidad') return true;
-  try { var q = norm(new URLSearchParams(location.search).get('puesto')); if (q === 'administrador general' || q === 'coordinador de calidad') return true; } catch (e) {}
+  // Administrador General  (Administrador General, AdminGeneral, Administración General…)
+  if (tiene(p, 'administrador', 'general') || tiene(pid, 'admin', 'general')) return true;
+  // Coordinador de Calidad (Coordinador de Calidad, CoordCalidad, Coordinador Calidad…)
+  if (tiene(p, 'coordinador', 'calidad') || tiene(pid, 'coord', 'calidad')) return true;
+  try { var q = norm(new URLSearchParams(location.search).get('puesto')); if (tiene(q, 'administrador', 'general') || tiene(q, 'coordinador', 'calidad')) return true; } catch (e) {}
   return false;
 }
+// Diagnóstico: en consola muestra por qué se ve u oculta el botón de Control Documental
+window.SGD.debugControlDocumental = function () {
+  var u = window.SGD.getUsuario() || {};
+  var r = { puesto: u.puesto, puestoID: u.puestoID, esAdmin: u.esAdmin, puedeVer: sgdPuedeControlDocumental() };
+  try { console.info('[SGD] Control Documental →', JSON.stringify(r)); } catch (e) {}
+  return r;
+};
 
 function sgdAplicarPermisos() {
   var btn = document.getElementById('btn-atencion-solicitudes');
   if (btn) btn.style.display = sgdPuedeAtender() ? '' : 'none';
   // El botón "CONTROL DOCUMENTAL" solo para Administrador General / Coordinador de Calidad
   var btnCd = document.getElementById('btn-control-documental');
-  if (btnCd) btnCd.style.display = sgdPuedeControlDocumental() ? '' : 'none';
+  if (btnCd) {
+    var puede = sgdPuedeControlDocumental();
+    btnCd.style.display = puede ? '' : 'none';
+    try { console.info('[SGD] Control Documental visible?', puede, '· puesto:', (window.SGD.getUsuario()||{}).puesto, '· esAdmin:', (window.SGD.getUsuario()||{}).esAdmin); } catch (e) {}
+  }
 }
 
 /* ============================================================================

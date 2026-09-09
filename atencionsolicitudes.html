@@ -662,7 +662,7 @@ function atcVerDocFinal(idx){
    MODAL: DETALLE DE LA SOLICITUD (información que capturó el solicitante)
    ============================================================ */
 function atcCampo(k, v){ return '<div class="campo"><span class="k">'+k+'</span><span class="v">'+(v?atcEsc(v):'—')+'</span></div>'; }
-function atcBloque(k, v){ return '<div class="det-block"><div class="k">'+k+'</div><div class="v">'+(v?atcEsc(v):'—')+'</div></div>'; }
+function atcBloque(k, v){ if(!v) return ''; return '<div class="det-block"><div class="k">'+k+'</div><div class="v">'+atcEsc(v)+'</div></div>'; }
 function atcVerDetalle(idx){
   var s=ATC_VISIBLE[idx]; if(!s) return;
   var citaTxt = (s.fechaCita?atcEsc(s.fechaCita):'—') + (s.horaCita?(' · '+atcEsc(s.horaCita)):'');

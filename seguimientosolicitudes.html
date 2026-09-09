@@ -244,7 +244,7 @@ function segRender(){
 
 /* ===== Detalle de la solicitud (lo que capturó el solicitante) ===== */
 function segCampo(k,v){ return '<div class="campo"><span class="k">'+k+'</span><span class="v">'+(v?segEsc(v):'—')+'</span></div>'; }
-function segBloque(k,v){ return '<div class="det-block"><div class="k">'+k+'</div><div class="v">'+(v?segEsc(v):'—')+'</div></div>'; }
+function segBloque(k,v){ if(!v) return ''; return '<div class="det-block"><div class="k">'+k+'</div><div class="v">'+segEsc(v)+'</div></div>'; }
 function segVerDetalle(idx){
   var s=SEG_VISIBLE[idx]; if(!s) return;
   var citaTxt=(s.fechaCita?segEsc(s.fechaCita):'—')+(s.horaCita?(' · '+segEsc(s.horaCita)):'');

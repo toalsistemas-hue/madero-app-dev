@@ -537,6 +537,10 @@ async function sgdRegistrarSolicitud(ev) {
     Estatus: estatusInicial,
     Fecha_Solicitud: new Date().toISOString()
   };
+  // Fecha_Revision es columna Fecha y hora: si va vacía hay que OMITIRLA (una cadena vacía da 400)
+  if (!fields.Fecha_Revision) delete fields.Fecha_Revision;
+  if (!fields.Hora_Revision) delete fields.Hora_Revision;
+
   // Trazabilidad: quién y cuándo registró la solicitud
   window.SGD.stampAuditoria(fields);
 

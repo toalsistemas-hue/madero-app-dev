@@ -222,6 +222,10 @@ async function actRegistrar(){
         Estatus: estatusInicial,
         Fecha_Solicitud: new Date().toISOString()
     };
+    // Fecha_Revision es columna Fecha y hora: si va vacía hay que OMITIRLA (cadena vacía = 400)
+    if(!fields.Fecha_Revision) delete fields.Fecha_Revision;
+    if(!fields.Hora_Revision) delete fields.Hora_Revision;
+
     if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
 
     var btn=document.getElementById('act-registrar');

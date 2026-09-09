@@ -471,6 +471,10 @@ td:last-child{
 
 
 
+/* Tooltips de la columna de Acciones: abren hacia la izquierda para no cortarse en el borde derecho */
+.tabla1 td:last-child .tooltiptext{ left:auto; right:0; transform:none; }
+.tabla1 td:last-child .tooltiptext::after{ left:auto; right:16px; transform:none; }
+
 .tooltiptext{
 
 
@@ -480,7 +484,7 @@ td:last-child{
     opacity:0;
 
 
-    width:170px;
+    width:190px;
 
 
     background:#222;

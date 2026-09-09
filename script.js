@@ -235,6 +235,30 @@ window.SGD.obtenerBlobUrl = async function (ref) {
     return null;
   } catch (e) { return { error: (e && e.message) || 'error' }; }
 };
+// Devuelve los bytes crudos (Uint8Array) del archivo controlado, para poder estamparlo/procesarlo
+window.SGD.obtenerBytes = async function (ref) {
+  if (!ref || /^https?:/i.test(ref)) return null;
+  try {
+    var r = await window.SGD.sp('getFileBase64', { driveId: ref });
+    if (r && r.base64) {
+      var bin = atob(r.base64), len = bin.length, b = new Uint8Array(len);
+      for (var i = 0; i < len; i++) b[i] = bin.charCodeAt(i);
+      return { bytes: b, mime: r.mime || 'application/pdf' };
+    }
+    return null;
+  } catch (e) { return { error: (e && e.message) || 'error' }; }
+};
+// Carga pdf-lib (una sola vez) desde CDN para poder estampar la leyenda en el PDF
+window.SGD.cargarPdfLib = function () {
+  return new Promise(function (res, rej) {
+    if (window.PDFLib) return res(window.PDFLib);
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+    s.onload = function () { res(window.PDFLib); };
+    s.onerror = function () { rej(new Error('no_pdf_lib')); };
+    document.head.appendChild(s);
+  });
+};
 
 var _sgdVisorBlobUrl = null;
 // Abre el visor de PDF (solo lectura; se ocultan las barras de descarga/impresión del visor)
@@ -281,20 +305,57 @@ function sgdCerrarVisor() {
   if (_sgdVisorBlobUrl) { try { URL.revokeObjectURL(_sgdVisorBlobUrl); } catch (e) {} _sgdVisorBlobUrl = null; }
 }
 
-// Descarga la "Copia NO controlada" del documento
+// Fecha y hora legible: dd/mm/aaaa hh:mm
+function sgdFechaHoraLeyenda() {
+  var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+  return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+// Dispara la descarga de un Blob con un nombre de archivo
+function sgdDispararDescarga(blob, nombreArchivo) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = nombreArchivo; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 4000);
+}
+
+// Descarga la "Copia NO controlada": estampa en cada hoja, abajo a la derecha,
+// la leyenda "Copia NO controlada, Fecha de reimpresión: dd/mm/aaaa hh:mm".
 async function sgdDescargarCopia(ref, nombre) {
   if (!ref) { alert('El documento aún no está disponible para descargar.'); return; }
-  var res = await window.SGD.obtenerBlobUrl(ref);
-  if (!res || !res.url) { alert('No se pudo preparar la descarga.'); return; }
-  var a = document.createElement('a');
-  a.href = res.url;
-  a.download = ((nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_')) + ' (COPIA NO CONTROLADA).pdf';
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  if (res.revocar) setTimeout(function () { try { URL.revokeObjectURL(res.url); } catch (e) {} }, 4000);
-  if (window.SGD.bitacora) window.SGD.bitacora('Descargar copia NO controlada', 'Documento', nombre || '', {});
+  var nombreArchivo = ((nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_')) + ' (COPIA NO CONTROLADA).pdf';
+  var got = await window.SGD.obtenerBytes(ref);
+
+  // Si no se pudieron obtener los bytes (URL antigua o sin permiso), intentar descarga directa
+  if (!got || !got.bytes) {
+    if (got && got.error && /403|forbidden/i.test(got.error)) { alert('No tienes permiso para descargar este documento.'); return; }
+    var resB = await window.SGD.obtenerBlobUrl(ref);
+    if (resB && resB.url) { sgdDispararDescarga(await (await fetch(resB.url)).blob(), nombreArchivo); }
+    else { alert('No se pudo preparar la descarga.'); }
+    return;
+  }
+
+  try {
+    var PDFLib = await window.SGD.cargarPdfLib();
+    var pdfDoc = await PDFLib.PDFDocument.load(got.bytes);
+    var font = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+    var texto = 'Copia NO controlada, Fecha de reimpresión: ' + sgdFechaHoraLeyenda();
+    var size = 8, margen = 22;
+    var pages = pdfDoc.getPages();
+    for (var i = 0; i < pages.length; i++) {
+      var pg = pages[i], w = pg.getWidth();
+      var tw = font.widthOfTextAtSize(texto, size);
+      pg.drawText(texto, { x: Math.max(8, w - tw - margen), y: 16, size: size, font: font, color: PDFLib.rgb(0.65, 0.10, 0.10) });
+    }
+    var out = await pdfDoc.save();
+    sgdDispararDescarga(new Blob([out], { type: 'application/pdf' }), nombreArchivo);
+    if (window.SGD.bitacora) window.SGD.bitacora('Descargar copia NO controlada', 'Documento', nombre || '', {});
+  } catch (e) {
+    // Si falla el estampado, descargar el PDF sin la leyenda para no bloquear al usuario
+    try { sgdDispararDescarga(new Blob([got.bytes], { type: 'application/pdf' }), nombreArchivo); } catch (_) {}
+    console.warn('[SGD] No se pudo estampar la leyenda:', e && e.message);
+  }
 }
 
 /* ============================================================================

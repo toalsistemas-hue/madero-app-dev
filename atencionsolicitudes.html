@@ -584,6 +584,10 @@ async function atencionCargarSolicitudes(){
         descripcion:f.Descripcion||'',
         requiereRev:f.Requiere_Revision||'',
         analista:   f.Analista_Asignado||'',
+        propuesta:  f.Propuesta_Cita||'',
+        citaConfirmada:f.Cita_Confirmada||'',
+        respuestaSol:f.Respuesta_Solicitante||'',
+        comentarioSol:f.Comentario_Solicitante||'',
         fecha:      atcFmtFecha(f.Fecha_Solicitud),
         fechaISO:   f.Fecha_Solicitud||'',
         fechaCitaISO:(f.Fecha_Revision||'').split('T')[0],
@@ -681,6 +685,9 @@ function atcVerDetalle(idx){
     + atcCampo('Requiere revisión presencial', revision)
     + atcCampo('Fecha/hora de cita', citaTxt)
     + '</div>'
+    + atcBloque('Propuesta de cita enviada al solicitante', s.propuesta)
+    + atcBloque('Respuesta del solicitante', s.respuestaSol)
+    + atcBloque('Comentario del solicitante', s.comentarioSol)
     + atcBloque('Objetivo del documento', s.objetivo)
     + atcBloque('Alcance del documento', s.alcance)
     + atcBloque('Responsables del documento', s.responsables)
@@ -720,9 +727,18 @@ function citaAbrir(idx){
   CITA_IDX = idx;
   var s = ATC_VISIBLE[idx]; if(!s) return;
   var u = atcUsuarioActual();
-  document.getElementById('cita-info').innerHTML =
+  var citaTxt = (s.fechaCita?atcEsc(s.fechaCita):'—')+(s.horaCita?(' · '+atcEsc(s.horaCita)):'');
+  var infoHtml =
     '<b>'+atcEsc(s.documento)+'</b><br>Solicitante: '+atcEsc(s.solicitante||'—')+
-    '<br>Fecha y hora solicitada: <b>'+(s.fechaCita?atcEsc(s.fechaCita):'—')+(s.horaCita?(' · '+atcEsc(s.horaCita)):'')+'</b>';
+    '<br>Fecha y hora solicitada: <b>'+citaTxt+'</b>';
+  // Si el solicitante rechazó una propuesta previa, mostrar el contexto del ciclo
+  if(String(s.respuestaSol||'').toLowerCase()==='rechazada'){
+    infoHtml += '<br><br><span style="color:#c77700;font-weight:700;">El solicitante rechazó tu propuesta anterior.</span>'
+      + (s.propuesta? '<br><span style="color:#7b8794;">Tu propuesta anterior:</span> '+atcEsc(s.propuesta) : '')
+      + '<br><span style="color:#7b8794;">Nueva fecha/hora que propone el solicitante:</span> <b>'+citaTxt+'</b>'
+      + (s.comentarioSol? '<br><span style="color:#7b8794;">Comentario:</span> '+atcEsc(s.comentarioSol) : '');
+  }
+  document.getElementById('cita-info').innerHTML = infoHtml;
   document.getElementById('cita-analista').textContent = u.nombre || 'el analista de calidad';
   // reset opciones
   document.querySelector('#cita-modal input[value="aceptar"]').checked = true;
@@ -767,6 +783,8 @@ async function citaConfirmar(){
       Analista_Correo: u.correo || '',
       Cita_Confirmada:'No',
       Propuesta_Cita: prop + (desde||hasta ? ('\n(Rango: '+(desde||'—')+' a '+(hasta||'—')+')') : ''),
+      Respuesta_Solicitante:'',   // se reinicia para que el solicitante pueda validar la nueva propuesta
+      Comentario_Solicitante:'',
       Evento_Notificacion:'CITA_PROPUESTA'
     };
     accion='Confirmar cita (propuesta)';

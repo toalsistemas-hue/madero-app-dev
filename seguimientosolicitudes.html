@@ -66,6 +66,31 @@
         .det-block .k{ font-size:11px;font-weight:700;color:#8a94a2;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px; }
         .det-block .v{ font-size:14px;color:#33455a;line-height:20px;white-space:pre-wrap;background:#f7f9fc;border:1px solid #edf1f6;border-radius:8px;padding:10px 12px; }
         @media(max-width:560px){ .det-grid{ grid-template-columns:1fr; } }
+
+        /* Columna "Confirmación de cita" */
+        .cita-sub{ display:inline-block; color:#7b8794; font-size:12px; }
+        .cita-btn{ border:none; border-radius:8px; padding:9px 14px; font-size:13px; font-weight:700; display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+        .cita-btn[disabled]{ cursor:default; }
+        .cita-sincita{ background:#eef2f6; color:#8a94a2; }
+        .cita-porconfirmar{ background:#fff3e0; color:#c77700; border:1px solid #ffd8a8; }
+        .cita-confirmada{ background:#e7f6ee; color:#1e8449; border:1px solid #b6e3c8; }
+        .cita-validar{ background:linear-gradient(135deg,#f0932b,#e67e22); color:#fff; cursor:pointer; }
+        .cita-validar:hover{ filter:brightness(.96); }
+
+        /* Modal responder propuesta */
+        .seg-info{ background:#f4f7fb; border:1px solid #e2e9f2; border-radius:10px; padding:12px 14px; font-size:14px; color:#33455a; margin-bottom:16px; line-height:20px; white-space:pre-wrap; }
+        .seg-info b{ color:#1f4e79; }
+        .seg-opt{ display:block; box-sizing:border-box; width:100%; border:1.5px solid #e2e9f2; border-radius:12px; padding:14px 16px; margin-bottom:12px; cursor:pointer; }
+        .seg-opt.sel{ border-color:#2f75a8; background:#f0f7ff; }
+        .seg-opt .cab{ display:flex; align-items:center; gap:10px; font-weight:700; color:#243244; font-size:15px; }
+        .seg-opt .cab input{ width:18px; height:18px; accent-color:#2f75a8; flex:0 0 auto; }
+        .seg-opt .det{ margin:12px 0 0 28px; display:none; }
+        .seg-opt.sel .det{ display:block; }
+        .seg-opt .det label{ display:block; font-size:12px; font-weight:600; color:#555; margin:8px 0 4px; }
+        .seg-opt .det input, .seg-opt .det textarea{ width:100%; box-sizing:border-box; padding:9px 11px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; }
+        .seg-opt .det .row2{ display:flex; gap:10px; } .seg-opt .det .row2>div{ flex:1; }
+        .seg-error{ color:#c0392b; font-size:13px; font-weight:600; min-height:18px; margin:4px 0; }
+        .seg-foot .cancel{ background:#eef1f6; color:#33455a; margin-right:10px; }
     </style>
 
 </head>
@@ -138,6 +163,7 @@
                     <th>Fecha de Solicitud</th>
                     <th>Fecha de Cita</th>
                     <th>Hora de Cita</th>
+                    <th>Confirmación de cita</th>
                 </tr>
             </thead>
 
@@ -161,6 +187,51 @@
     <div class="seg-body" id="seg-det-body"></div>
     <div class="seg-foot">
       <button class="seg-btn" onclick="segCerrarDetalle()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================
+     MODAL: RESPONDER PROPUESTA DE CITA
+========================== -->
+<div class="seg-modal" id="seg-resp-modal">
+  <div class="seg-box">
+    <div class="seg-head" style="background:linear-gradient(135deg,#e67e22,#f0932b);">
+      <div class="t"><i class="fa-solid fa-calendar-check"></i> Validar cita</div>
+      <button class="cerrar" onclick="segResponderCerrar()">&times;</button>
+    </div>
+    <div class="seg-body">
+      <div class="seg-info" id="seg-resp-info"></div>
+
+      <label class="seg-opt sel" id="seg-opt-aceptar">
+        <div class="cab"><input type="radio" name="seg-resp" value="aceptar" checked onchange="segRespSel()"> Confirmar cita (aceptar la propuesta)</div>
+        <div class="det">
+          <p style="margin:0 0 4px;color:#33455a;font-size:14px;">Elige la fecha y hora específica dentro de lo que propuso el analista. Al confirmar, tu solicitud pasa a <b>Abierta</b> y recibirás el correo de confirmación.</p>
+          <div class="row2">
+            <div><label>Fecha elegida</label><input type="date" id="seg-resp-fecha"></div>
+            <div><label>Hora elegida</label><input type="time" id="seg-resp-hora" min="09:00" max="18:00"></div>
+          </div>
+        </div>
+      </label>
+
+      <label class="seg-opt" id="seg-opt-rechazar">
+        <div class="cab"><input type="radio" name="seg-resp" value="rechazar" onchange="segRespSel()"> Rechazar cita (proponer otra fecha)</div>
+        <div class="det">
+          <p style="margin:0 0 4px;color:#33455a;font-size:14px;">Si las fechas propuestas no te funcionan, propón tú una nueva fecha y hora. Volverá al analista para revisarla.</p>
+          <div class="row2">
+            <div><label>Nueva fecha</label><input type="date" id="seg-resp-nfecha"></div>
+            <div><label>Nueva hora</label><input type="time" id="seg-resp-nhora" min="09:00" max="18:00"></div>
+          </div>
+          <label>Comentario para el analista (opcional)</label>
+          <textarea id="seg-resp-coment" rows="2" placeholder="Explica tu disponibilidad o lo que necesitas…"></textarea>
+        </div>
+      </label>
+
+      <div class="seg-error" id="seg-resp-error"></div>
+    </div>
+    <div class="seg-foot">
+      <button class="seg-btn cancel" onclick="segResponderCerrar()">Cancelar</button>
+      <button class="seg-btn" id="seg-resp-ok" onclick="segResponderConfirmar()">Enviar respuesta</button>
     </div>
   </div>
 </div>
@@ -223,7 +294,7 @@ function segRender(){
   if(filtroTipo) SEG_VISIBLE=SEG_VISIBLE.filter(function(s){ return (s.tipo||'')===filtroTipo; });
 
   if(!SEG_VISIBLE.length){
-    tbody.innerHTML='<tr><td colspan="8" class="sin-datos">No tienes solicitudes en proceso.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="9" class="sin-datos">No tienes solicitudes en proceso.</td></tr>';
     return;
   }
   var html='';
@@ -237,9 +308,35 @@ function segRender(){
     html+='<td>'+(s.fecha||'')+'</td>';
     html+='<td>'+(s.fechaCita||'—')+'</td>';
     html+='<td>'+(s.horaCita||'—')+'</td>';
+    html+='<td>'+segCeldaCita(s,i)+'</td>';
     html+='</tr>';
   });
   tbody.innerHTML=html;
+}
+
+// Botón de estado de la cita en la columna "Confirmación de cita"
+function segCeldaCita(s, idx){
+  var conf = String(s.citaConfirmada||'').toLowerCase();
+  var req  = String(s.requiereRev||'').toLowerCase();
+  var presencial = (req==='sí'||req==='si');
+  var hayPropuesta = !!(s.propuesta && s.propuesta.trim());
+  var resp = String(s.respuestaSol||'').toLowerCase();
+
+  // Solicitud sin revisión presencial: no hay cita que confirmar
+  if(!presencial){
+    return '<button class="cita-btn cita-sincita" disabled>Sin cita</button>';
+  }
+  // Cita ya confirmada
+  if(conf==='sí'||conf==='si'){
+    return '<button class="cita-btn cita-confirmada" disabled><i class="fa-solid fa-circle-check"></i> Confirmada</button>'
+      + (s.analista? '<br><span class="cita-sub">Atiende: '+segEsc(s.analista)+'</span>' : '');
+  }
+  // El analista propuso una fecha nueva y espera mi respuesta → puedo validar
+  if(hayPropuesta && resp!=='rechazada' && resp!=='aceptada'){
+    return '<button class="cita-btn cita-validar" onclick="segResponderAbrir('+idx+')"><i class="fa-solid fa-calendar-check"></i> Validar cita</button>';
+  }
+  // Inicial (esperando al analista) o ya respondí y espera al analista
+  return '<button class="cita-btn cita-porconfirmar" disabled>Por confirmar</button>';
 }
 
 /* ===== Detalle de la solicitud (lo que capturó el solicitante) ===== */
@@ -262,6 +359,9 @@ function segVerDetalle(idx){
     + segCampo('Requiere revisión presencial', rev)
     + segCampo('Fecha/hora de cita', citaTxt)
     + '</div>'
+    + segBloque('Propuesta de cita del analista', s.propuesta)
+    + segBloque('Tu respuesta a la propuesta', s.respuestaSol)
+    + segBloque('Tu comentario', s.comentarioSol)
     + segBloque('Objetivo del documento', s.objetivo)
     + segBloque('Alcance del documento', s.alcance)
     + segBloque('Responsables del documento', s.responsables)
@@ -270,6 +370,81 @@ function segVerDetalle(idx){
   document.getElementById('seg-det-modal').classList.add('activo');
 }
 function segCerrarDetalle(){ document.getElementById('seg-det-modal').classList.remove('activo'); }
+
+/* ===== Responder propuesta de cita (Aceptar / Rechazar) ===== */
+var SEG_RESP_IDX=-1;
+function segResponderAbrir(idx){
+  SEG_RESP_IDX=idx;
+  var s=SEG_VISIBLE[idx]; if(!s) return;
+  var citaAnterior=(s.fechaCita?segEsc(s.fechaCita):'—')+(s.horaCita?(' · '+segEsc(s.horaCita)):'');
+  document.getElementById('seg-resp-info').innerHTML =
+    '<b>'+segEsc(s.documento)+'</b>'
+    + '<br><span style="color:#7b8794;">Fecha/hora que solicitaste:</span> '+citaAnterior
+    + '<br><br><b>Propuesta del analista '+(s.analista?('('+segEsc(s.analista)+')'):'')+':</b><br>'+segEsc(s.propuesta||'—');
+  document.querySelector('#seg-resp-modal input[value="aceptar"]').checked=true;
+  document.getElementById('seg-resp-fecha').value = s.fechaCitaISO||'';
+  document.getElementById('seg-resp-hora').value = s.horaCita||'';
+  document.getElementById('seg-resp-nfecha').value = '';
+  document.getElementById('seg-resp-nhora').value = '';
+  document.getElementById('seg-resp-coment').value='';
+  document.getElementById('seg-resp-error').textContent='';
+  segRespSel();
+  document.getElementById('seg-resp-modal').classList.add('activo');
+}
+function segResponderCerrar(){ document.getElementById('seg-resp-modal').classList.remove('activo'); }
+function segRespSel(){
+  var v=(document.querySelector('#seg-resp-modal input[name="seg-resp"]:checked')||{}).value;
+  document.getElementById('seg-opt-aceptar').classList.toggle('sel', v==='aceptar');
+  document.getElementById('seg-opt-rechazar').classList.toggle('sel', v==='rechazar');
+}
+async function segResponderConfirmar(){
+  var s=SEG_VISIBLE[SEG_RESP_IDX]; if(!s) return;
+  var v=(document.querySelector('#seg-resp-modal input[name="seg-resp"]:checked')||{}).value;
+  var err=document.getElementById('seg-resp-error'); err.textContent='';
+  var btn=document.getElementById('seg-resp-ok');
+  var fields;
+
+  if(v==='aceptar'){
+    var fecha=document.getElementById('seg-resp-fecha').value;
+    var hora=document.getElementById('seg-resp-hora').value;
+    if(!fecha || !hora){ err.textContent='Elige la fecha y la hora que aceptas.'; return; }
+    fields = {
+      Estatus:'Abierta',
+      Cita_Confirmada:'Sí',
+      Respuesta_Solicitante:'Aceptada',
+      Fecha_Revision: fecha+'T00:00:00Z',
+      Hora_Revision: hora,
+      Evento_Notificacion:'CITA_ACEPTADA_SOLICITANTE'
+    };
+  } else {
+    var nfecha=document.getElementById('seg-resp-nfecha').value;
+    var nhora=document.getElementById('seg-resp-nhora').value;
+    var coment=document.getElementById('seg-resp-coment').value.trim();
+    if(!nfecha || !nhora){ err.textContent='Elige la nueva fecha y hora que propones.'; return; }
+    fields = {
+      Estatus:'Pendiente',
+      Cita_Confirmada:'No',
+      Respuesta_Solicitante:'Rechazada',
+      Fecha_Revision: nfecha+'T00:00:00Z',
+      Hora_Revision: nhora,
+      Comentario_Solicitante: coment,
+      Evento_Notificacion:'CITA_RECHAZADA_SOLICITANTE'
+    };
+  }
+  if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
+  if(!fields.Fecha_Revision) delete fields.Fecha_Revision;
+  if(!fields.Hora_Revision) delete fields.Hora_Revision;
+
+  btn.disabled=true; btn.textContent='Enviando…';
+  try{
+    await window.SGD.sp('update', { lista:(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes'), itemId:s.id, fields:fields });
+    if(window.SGD.bitacora) window.SGD.bitacora(v==='aceptar'?'Acepta propuesta de cita':'Rechaza propuesta de cita', 'SGD_Solicitudes', s.documento||'', { id:s.id, pantalla:'Seguimiento de solicitudes' });
+    segResponderCerrar();
+    await segCargar();
+  }catch(e){
+    err.textContent='No se pudo enviar la respuesta. Intenta de nuevo.';
+  }finally{ btn.disabled=false; btn.textContent='Enviar respuesta'; }
+}
 
 // Carga las solicitudes del usuario desde SharePoint (o demo en standalone)
 async function segCargar(){
@@ -288,11 +463,11 @@ async function segCargar(){
 
   // Embebido pero aún sin usuario: esperar (el handshake llamará de nuevo)
   if(!correo){
-    if(tbody) tbody.innerHTML='<tr><td colspan="8" class="sin-datos">Cargando tus solicitudes…</td></tr>';
+    if(tbody) tbody.innerHTML='<tr><td colspan="9" class="sin-datos">Cargando tus solicitudes…</td></tr>';
     return;
   }
 
-  if(tbody) tbody.innerHTML='<tr><td colspan="8" class="sin-datos">Cargando tus solicitudes…</td></tr>';
+  if(tbody) tbody.innerHTML='<tr><td colspan="9" class="sin-datos">Cargando tus solicitudes…</td></tr>';
   try{
     var lista=(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes');
     var r=await window.SGD.sp('list',{ lista:lista, queryParams:'$expand=fields&$top=1000' });
@@ -300,6 +475,7 @@ async function segCargar(){
     SEG_ITEMS=items.map(function(it){
       var f=it.fields||it;
       return {
+        id:           (it.id!==undefined?it.id:''),
         estatus:      f.Estatus||'Pendiente',
         documento:    f.Title||'',
         tipoDoc:      f.Tipo_Documento||'',
@@ -312,8 +488,14 @@ async function segCargar(){
         descripcion:  f.Descripcion||'',
         requiereRev:  f.Requiere_Revision||'',
         analista:     f.Analista_Asignado||'',
+        analistaCorreo:f.Analista_Correo||'',
+        propuesta:    f.Propuesta_Cita||'',
+        citaConfirmada:f.Cita_Confirmada||'',
+        respuestaSol: f.Respuesta_Solicitante||'',
+        comentarioSol:f.Comentario_Solicitante||'',
         fecha:        segFmtFecha(f.Fecha_Solicitud),
         fechaCita:    segFmtFecha(f.Fecha_Revision),
+        fechaCitaISO: (f.Fecha_Revision||'').split('T')[0],
         horaCita:     f.Hora_Revision||'',
         correo:       f.Correo||''
       };
@@ -323,7 +505,7 @@ async function segCargar(){
     .sort(function(a,b){ return (b.fecha||'').localeCompare(a.fecha||''); });
     segRender();
   }catch(e){
-    if(tbody) tbody.innerHTML='<tr><td colspan="8" class="sin-datos">No se pudieron cargar tus solicitudes. Presiona Actualizar para reintentar.</td></tr>';
+    if(tbody) tbody.innerHTML='<tr><td colspan="9" class="sin-datos">No se pudieron cargar tus solicitudes. Presiona Actualizar para reintentar.</td></tr>';
   }
 }
 
@@ -333,8 +515,9 @@ window.SGD._onAuth = segCargar;
 
 document.addEventListener('DOMContentLoaded', function(){ segCargar(); });
 
-// Cerrar el detalle al hacer clic fuera de la caja
+// Cerrar los modales al hacer clic fuera de la caja
 (function(){ var el=document.getElementById('seg-det-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segCerrarDetalle(); }); })();
+(function(){ var el=document.getElementById('seg-resp-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segResponderCerrar(); }); })();
 </script>
 
 </body>

@@ -705,6 +705,33 @@ function atcFileB64(file){
   return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){ res(String(r.result).split(',')[1]||''); }; r.onerror=rej; r.readAsDataURL(file); });
 }
 
+// Verifica que la solicitud siga en un estatus esperado antes de actuar (evita pisar cambios de otro usuario).
+// Si cambió (p. ej. el solicitante ya confirmó), avisa, recarga la lista y regresa false.
+// Si sigue vigente, refresca el objeto local con lo más reciente y regresa true.
+async function atcVigente(s, estatusesPermitidos){
+  if(!atcEmbebido()) return true;
+  try{
+    var actual = await window.SGD.sp('get', { lista:(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes'), itemId:s.id, queryParams:'$expand=fields' });
+    var f = (actual && actual.fields) ? actual.fields : {};
+    var est = String(f.Estatus||'').toLowerCase();
+    if(estatusesPermitidos.indexOf(est) < 0){
+      alert('Esta solicitud fue actualizada por otra persona (estatus actual: '+(f.Estatus||'—')+'). Se recargará la lista.');
+      await atencionCargarSolicitudes();
+      return false;
+    }
+    // Sigue vigente: refrescar los datos locales por si cambió la cita/propuesta
+    s.estatus       = f.Estatus || s.estatus;
+    s.fechaCita     = atcFmtFecha(f.Fecha_Revision);
+    s.fechaCitaISO  = (f.Fecha_Revision||'').split('T')[0];
+    s.horaCita      = f.Hora_Revision || '';
+    s.propuesta     = f.Propuesta_Cita || '';
+    s.citaConfirmada= f.Cita_Confirmada || '';
+    s.respuestaSol  = f.Respuesta_Solicitante || '';
+    s.comentarioSol = f.Comentario_Solicitante || '';
+    return true;
+  }catch(e){ return true; }  // si no se puede verificar (sin conexión), permitir continuar
+}
+
 // Aplica un cambio a una solicitud: estampa auditoría, escribe en SP, deja bitácora y recarga.
 async function atcAplicarCambio(s, fields, accion, detalle){
   if(!atcEmbebido()){
@@ -762,6 +789,12 @@ async function citaConfirmar(){
   var u = atcUsuarioActual();
   var btn = document.getElementById('cita-ok');
   var fields, accion, detalle;
+
+  // Protección: si el solicitante ya respondió/confirmó, no actuar sobre datos viejos
+  btn.disabled=true; btn.textContent='Verificando…';
+  var vig = await atcVigente(s, ['pendiente']);
+  btn.disabled=false; btn.textContent='Confirmar';
+  if(!vig){ citaCerrar(); return; }
 
   if(v==='aceptar'){
     fields = {
@@ -830,6 +863,12 @@ async function estConfirmar(){
   var u = atcUsuarioActual();
   var btn = document.getElementById('est-ok');
   var fields, accion, detalle;
+
+  // Protección: no actuar si el estatus ya cambió (otra persona lo movió)
+  btn.disabled=true; btn.textContent='Verificando…';
+  var vig = await atcVigente(s, ['abierta','en proceso','en revisión','en revision']);
+  btn.disabled=false; btn.textContent='Guardar cambio';
+  if(!vig){ estCerrar(); return; }
 
   if(v==='En proceso'){
     fields = { Estatus:'En proceso', Analista_Asignado:u.nombre||'', Analista_Correo:u.correo||'', Evento_Notificacion:'EN_PROCESO' };

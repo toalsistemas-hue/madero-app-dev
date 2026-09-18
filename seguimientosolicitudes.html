@@ -240,7 +240,7 @@
 <!-- ==========================
      MODAL: VISOR DE ARCHIVO (borrador / final) — solo lectura
 ========================== -->
-<div class="seg-modal" id="seg-visor-modal">
+<div class="seg-modal" id="seg-visor-modal" style="z-index:10002;">
   <div class="seg-box" style="width:min(1100px,98vw); height:94vh; max-height:94vh;">
     <div class="seg-head">
       <div class="t"><i class="fa-solid fa-file-pdf"></i> <span id="seg-visor-titulo">Documento</span></div>
@@ -422,7 +422,18 @@ async function segVerArchivo(ref, titulo){
   if(frame) frame.src='about:blank';
   modal.classList.add('activo');
   var res = await (window.SGD.obtenerBlobUrl ? window.SGD.obtenerBlobUrl(ref) : null);
-  if(!res || !res.url){ alert('No se pudo abrir el documento.'); segCerrarVisor(); return; }
+  if(!res || !res.url){
+    segCerrarVisor();
+    if(res && res.error && /403|forbidden/i.test(res.error)) alert('No tienes permiso para ver este borrador. Solicita acceso de lectura a la biblioteca de documentos.');
+    else alert('No se pudo abrir el borrador.');
+    return;
+  }
+  // Borrador guardado con formato anterior (URL de SharePoint) no se puede incrustar:
+  if(!res.revocar && /sharepoint\.com|login\.microsoftonline\.com/i.test(res.url)){
+    segCerrarVisor();
+    alert('Este borrador se cargó con una versión anterior y no puede mostrarse en el visor.\n\nPide al analista que vuelva a enviarlo (Atención a Solicitudes → Cambiar estatus → En revisión, adjuntando de nuevo el PDF).');
+    return;
+  }
   if(_segVisorBlob){ try{URL.revokeObjectURL(_segVisorBlob);}catch(e){} }
   _segVisorBlob = res.revocar ? res.url : null;
   var sep = res.url.indexOf('#')>=0?'&':'#';

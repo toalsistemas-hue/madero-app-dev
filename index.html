@@ -6410,6 +6410,18 @@ window.addEventListener('message', async function(e) {
       }
       reply(null, { ok: true });
 
+    } else if (op === 'reauth') {
+      // Re-autenticación interactiva (pantalla de Microsoft) para autorizar/firmar una acción.
+      // Devuelve el correo (username) de la cuenta con la que se autenticó, para verificar identidad.
+      try {
+        if (!state.msalInstance) { reply('no_msal', null); return; }
+        var rr = await state.msalInstance.acquireTokenPopup({ scopes: CONFIG.scopes, prompt: 'login' });
+        var acc = (rr && rr.account) ? rr.account : null;
+        reply(null, { username: acc ? (acc.username || '') : '', name: acc ? (acc.name || '') : '' });
+      } catch (e) {
+        reply('reauth_' + (e && e.errorCode ? e.errorCode : 'cancelado'), null);
+      }
+
     } else if (op === 'getFileBase64') {
       // Devuelve el contenido de un archivo del drive (por su driveItem id) en base64.
       // Se usa para mostrar documentos controlados en un visor (blob) sin exponer enlaces.

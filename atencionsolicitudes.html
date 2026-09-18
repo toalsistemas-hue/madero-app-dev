@@ -588,6 +588,10 @@ async function atencionCargarSolicitudes(){
         citaConfirmada:f.Cita_Confirmada||'',
         respuestaSol:f.Respuesta_Solicitante||'',
         comentarioSol:f.Comentario_Solicitante||'',
+        comentariosAnalista:f.Comentarios_Analista||'',
+        docBorradorURL:f.Documento_Borrador_URL||'',
+        respuestaDoc:f.Respuesta_Documento||'',
+        comentariosDoc:f.Comentarios_Doc||'',
         fecha:      atcFmtFecha(f.Fecha_Solicitud),
         fechaISO:   f.Fecha_Solicitud||'',
         fechaCitaISO:(f.Fecha_Revision||'').split('T')[0],
@@ -688,6 +692,9 @@ function atcVerDetalle(idx){
     + atcBloque('Propuesta de cita enviada al solicitante', s.propuesta)
     + atcBloque('Respuesta del solicitante', s.respuestaSol)
     + atcBloque('Comentario del solicitante', s.comentarioSol)
+    + atcBloque('Comentarios que enviaste (revisión)', s.comentariosAnalista)
+    + atcBloque('Estatus del borrador', s.respuestaDoc)
+    + atcBloque('Cambios solicitados por el solicitante', s.comentariosDoc)
     + atcBloque('Objetivo del documento', s.objetivo)
     + atcBloque('Alcance del documento', s.alcance)
     + atcBloque('Responsables del documento', s.responsables)
@@ -881,16 +888,25 @@ async function estConfirmar(){
   } else { // En revisión
     var coment = document.getElementById('est-comentarios').value.trim();
     var file = (document.getElementById('est-borrador').files||[])[0];
-    fields = { Estatus:'En revisión', Analista_Asignado:u.nombre||'', Analista_Correo:u.correo||'', Comentarios_Analista:coment, Evento_Notificacion:'EN_REVISION' };
+    // Debe haber un borrador: el nuevo adjunto, o uno previo si solo actualiza comentarios
+    if(!file && !s.docBorradorURL){ err.textContent='Adjunta el borrador en PDF para enviarlo a revisión.'; return; }
+    fields = {
+      Estatus:'En revisión', Analista_Asignado:u.nombre||'', Analista_Correo:u.correo||'',
+      Comentarios_Analista:coment,
+      Respuesta_Documento:'',     // se reinicia para que el solicitante pueda revisar el nuevo borrador
+      Comentarios_Doc:'',
+      Evento_Notificacion:'EN_REVISION'
+    };
     accion='Cambio de estatus: En revisión'; detalle=coment||'';
-    btn.disabled=true; btn.textContent='Subiendo…';
-    try{
-      if(file && atcEmbebido()){
+    if(file && atcEmbebido()){
+      btn.disabled=true; btn.textContent='Subiendo borrador…';
+      try{
         var b64 = await atcFileB64(file);
-        var up = await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Borradores', itemId:s.id, fileName:file.name, contentBase64:b64 });
-        if(up && up.webUrl) fields.Documento_Borrador_URL = up.webUrl;
-      }
-    }catch(e){ err.textContent='No se pudo subir el borrador. Se guardará el estatus sin el archivo.'; }
+        // Nombre FIJO por solicitud: al re-subir, SharePoint sobrescribe el mismo archivo (reemplaza el borrador anterior)
+        var up = await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Borradores', itemId:s.id, fileName:'Borrador_'+s.id+'.pdf', contentBase64:b64 });
+        if(up && up.id) fields.Documento_Borrador_URL = up.id;
+      }catch(e){ err.textContent='No se pudo subir el borrador. Intenta de nuevo.'; btn.disabled=false; btn.textContent='Guardar cambio'; return; }
+    }
   }
 
   btn.disabled=true; btn.textContent='Guardando…';

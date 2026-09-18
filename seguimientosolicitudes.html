@@ -164,6 +164,7 @@
                     <th>Fecha de Cita</th>
                     <th>Hora de Cita</th>
                     <th>Confirmación de cita</th>
+                    <th>Revisión de documento</th>
                 </tr>
             </thead>
 
@@ -236,6 +237,60 @@
   </div>
 </div>
 
+<!-- ==========================
+     MODAL: VISOR DE ARCHIVO (borrador / final) — solo lectura
+========================== -->
+<div class="seg-modal" id="seg-visor-modal">
+  <div class="seg-box" style="width:min(1100px,98vw); height:94vh; max-height:94vh;">
+    <div class="seg-head">
+      <div class="t"><i class="fa-solid fa-file-pdf"></i> <span id="seg-visor-titulo">Documento</span></div>
+      <button class="cerrar" onclick="segCerrarVisor()">&times;</button>
+    </div>
+    <iframe id="seg-visor-frame" src="about:blank" style="flex:1;width:100%;border:none;background:#525659;"></iframe>
+    <div style="background:#12263b;color:#9fb6cf;font-size:12px;text-align:center;padding:8px;">Vista solo lectura · Borrador controlado</div>
+  </div>
+</div>
+
+<!-- ==========================
+     MODAL: REVISAR BORRADOR (Autorizar / Rechazar)
+========================== -->
+<div class="seg-modal" id="seg-doc-modal">
+  <div class="seg-box">
+    <div class="seg-head" style="background:linear-gradient(135deg,#6b34b3,#8e44ad);">
+      <div class="t"><i class="fa-regular fa-file-lines"></i> Revisar borrador</div>
+      <button class="cerrar" onclick="segDocCerrar()">&times;</button>
+    </div>
+    <div class="seg-body">
+      <div class="seg-info" id="seg-doc-info"></div>
+
+      <button class="seg-btn" style="background:#6b34b3;margin-bottom:16px;" onclick="segVerBorradorActual()">
+        <i class="fa-regular fa-file-lines"></i> Ver borrador
+      </button>
+
+      <label class="seg-opt sel" id="seg-doc-opt-aut">
+        <div class="cab"><input type="radio" name="seg-doc" value="autorizar" checked onchange="segDocSel()"> Autorizar el documento</div>
+        <div class="det">
+          <p style="margin:0;color:#33455a;font-size:14px;">Se abrirá la <b>ventana de Microsoft</b> para confirmar tu identidad. Debes autorizar con <b>tu propia cuenta</b> (la del solicitante). Al autorizar, el documento pasa a finalizado.</p>
+        </div>
+      </label>
+
+      <label class="seg-opt" id="seg-doc-opt-rec">
+        <div class="cab"><input type="radio" name="seg-doc" value="rechazar" onchange="segDocSel()"> Rechazar y solicitar cambios</div>
+        <div class="det">
+          <label>Cambios necesarios</label>
+          <textarea id="seg-doc-cambios" rows="3" placeholder="Describe los cambios que el analista debe realizar en el borrador…"></textarea>
+        </div>
+      </label>
+
+      <div class="seg-error" id="seg-doc-error"></div>
+    </div>
+    <div class="seg-foot">
+      <button class="seg-btn cancel" onclick="segDocCerrar()">Cancelar</button>
+      <button class="seg-btn" id="seg-doc-ok" onclick="segDocConfirmar()">Autorizar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Puente SP + usuario en sesión (inyectado por index.html) -->
 <script src="script.js"></script>
 <script>
@@ -294,7 +349,7 @@ function segRender(){
   if(filtroTipo) SEG_VISIBLE=SEG_VISIBLE.filter(function(s){ return (s.tipo||'')===filtroTipo; });
 
   if(!SEG_VISIBLE.length){
-    tbody.innerHTML='<tr><td colspan="9" class="sin-datos">No tienes solicitudes en proceso.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="10" class="sin-datos">No tienes solicitudes en proceso.</td></tr>';
     return;
   }
   var html='';
@@ -309,6 +364,7 @@ function segRender(){
     html+='<td>'+(s.fechaCita||'—')+'</td>';
     html+='<td>'+(s.horaCita||'—')+'</td>';
     html+='<td>'+segCeldaCita(s,i)+'</td>';
+    html+='<td>'+segCeldaDoc(s,i)+'</td>';
     html+='</tr>';
   });
   tbody.innerHTML=html;
@@ -324,7 +380,8 @@ function segCeldaCita(s, idx){
 
   // Solicitud sin revisión presencial: no hay cita que confirmar
   if(!presencial){
-    return '<button class="cita-btn cita-sincita" disabled>Sin cita</button>';
+    return '<button class="cita-btn cita-sincita" disabled>Sin cita</button>'
+      + (s.analista? '<br><span class="cita-sub">Atiende: '+segEsc(s.analista)+'</span>' : '');
   }
   // Cita ya confirmada
   if(conf==='sí'||conf==='si'){
@@ -337,6 +394,118 @@ function segCeldaCita(s, idx){
   }
   // Inicial (esperando al analista) o ya respondí y espera al analista
   return '<button class="cita-btn cita-porconfirmar" disabled>Por confirmar</button>';
+}
+
+// Botón de la columna "Revisión de documento"
+function segCeldaDoc(s, idx){
+  var est=String(s.estatus||'').toLowerCase();
+  var rdoc=String(s.respuestaDoc||'').toLowerCase();
+  if(s.docFinalURL){
+    return '<button class="cita-btn cita-confirmada" onclick="segVerArchivo(\''+segEsc(s.docFinalURL)+'\',\''+segEsc((s.documento||'').replace(/\x27/g,""))+'\')"><i class="fa-solid fa-file-circle-check"></i> Autorizado</button>';
+  }
+  if((est==='en revisión'||est==='en revision') && s.docBorradorURL && rdoc!=='autorizado'){
+    return '<button class="cita-btn cita-validar" onclick="segDocAbrir('+idx+')"><i class="fa-regular fa-file-lines"></i> Revisar borrador</button>';
+  }
+  if(rdoc==='rechazado'){
+    return '<span class="cita-sub">Cambios enviados; espera nuevo borrador</span>';
+  }
+  return '—';
+}
+
+/* ===== Visor de archivos (borrador / final) sin descargar ni imprimir ===== */
+var _segVisorBlob=null;
+async function segVerArchivo(ref, titulo){
+  if(!ref){ alert('El documento aún no está disponible.'); return; }
+  var modal=document.getElementById('seg-visor-modal');
+  var frame=document.getElementById('seg-visor-frame');
+  document.getElementById('seg-visor-titulo').textContent = titulo || 'Documento';
+  if(frame) frame.src='about:blank';
+  modal.classList.add('activo');
+  var res = await (window.SGD.obtenerBlobUrl ? window.SGD.obtenerBlobUrl(ref) : null);
+  if(!res || !res.url){ alert('No se pudo abrir el documento.'); segCerrarVisor(); return; }
+  if(_segVisorBlob){ try{URL.revokeObjectURL(_segVisorBlob);}catch(e){} }
+  _segVisorBlob = res.revocar ? res.url : null;
+  var sep = res.url.indexOf('#')>=0?'&':'#';
+  if(frame) frame.src = res.url + sep + 'toolbar=0&navpanes=0&statusbar=0&view=FitH';
+}
+function segCerrarVisor(){
+  var modal=document.getElementById('seg-visor-modal'); var frame=document.getElementById('seg-visor-frame');
+  if(frame) frame.src='about:blank'; if(modal) modal.classList.remove('activo');
+  if(_segVisorBlob){ try{URL.revokeObjectURL(_segVisorBlob);}catch(e){} _segVisorBlob=null; }
+}
+
+/* ===== Revisar borrador: Autorizar (con re-login Microsoft) o Rechazar ===== */
+var SEG_DOC_IDX=-1;
+function segDocAbrir(idx){
+  SEG_DOC_IDX=idx;
+  var s=SEG_VISIBLE[idx]; if(!s) return;
+  document.getElementById('seg-doc-info').innerHTML =
+    '<b>'+segEsc(s.documento)+'</b>'
+    + (s.comentariosAnalista? '<br><br><b>Comentarios del analista:</b><br>'+segEsc(s.comentariosAnalista) : '')
+    + '<br><br>Revisa el borrador y autorízalo o solicita cambios.';
+  document.querySelector('#seg-doc-modal input[value="autorizar"]').checked=true;
+  document.getElementById('seg-doc-cambios').value='';
+  document.getElementById('seg-doc-error').textContent='';
+  segDocSel();
+  document.getElementById('seg-doc-modal').classList.add('activo');
+}
+function segDocCerrar(){ document.getElementById('seg-doc-modal').classList.remove('activo'); }
+function segDocSel(){
+  var v=(document.querySelector('#seg-doc-modal input[name="seg-doc"]:checked')||{}).value;
+  document.getElementById('seg-doc-opt-aut').classList.toggle('sel', v==='autorizar');
+  document.getElementById('seg-doc-opt-rec').classList.toggle('sel', v==='rechazar');
+}
+function segVerBorradorActual(){
+  var s=SEG_VISIBLE[SEG_DOC_IDX]; if(!s) return;
+  segVerArchivo(s.docBorradorURL, 'Borrador · '+(s.documento||''));
+}
+async function segDocConfirmar(){
+  var s=SEG_VISIBLE[SEG_DOC_IDX]; if(!s) return;
+  var v=(document.querySelector('#seg-doc-modal input[name="seg-doc"]:checked')||{}).value;
+  var err=document.getElementById('seg-doc-error'); err.textContent='';
+  var btn=document.getElementById('seg-doc-ok');
+  var fields;
+
+  if(v==='autorizar'){
+    // Re-autenticación con la pantalla de Microsoft, verificando que sea el mismo solicitante
+    btn.disabled=true; btn.textContent='Abriendo Microsoft…';
+    var r;
+    try{ r = await window.SGD.sp('reauth', {}); }
+    catch(e){ btn.disabled=false; btn.textContent='Autorizar'; err.textContent='No se completó la verificación con Microsoft.'; return; }
+    var cuentaUsada=((r&&r.username)||'').toLowerCase();
+    var solicitante=String(s.correo||'').toLowerCase();
+    if(!cuentaUsada){ btn.disabled=false; btn.textContent='Autorizar'; err.textContent='No se pudo verificar la cuenta.'; return; }
+    if(cuentaUsada!==solicitante){
+      btn.disabled=false; btn.textContent='Autorizar';
+      err.textContent='La cuenta ('+cuentaUsada+') no coincide con la del solicitante. Debes autorizar con tu propia cuenta.';
+      return;
+    }
+    fields = {
+      Documento_Final_URL: s.docBorradorURL,
+      Respuesta_Documento:'Autorizado',
+      Estatus:'En liberación',
+      Evento_Notificacion:'DOC_AUTORIZADO'
+    };
+  } else {
+    var cambios=document.getElementById('seg-doc-cambios').value.trim();
+    if(!cambios){ err.textContent='Escribe los cambios necesarios para el analista.'; return; }
+    fields = {
+      Respuesta_Documento:'Rechazado',
+      Comentarios_Doc: cambios,
+      Estatus:'En proceso',
+      Evento_Notificacion:'DOC_RECHAZADO'
+    };
+  }
+
+  if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
+  btn.disabled=true; btn.textContent='Enviando…';
+  try{
+    await window.SGD.sp('update', { lista:(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes'), itemId:s.id, fields:fields });
+    if(window.SGD.bitacora) window.SGD.bitacora(v==='autorizar'?'Autoriza documento (borrador)':'Rechaza documento (solicita cambios)', 'SGD_Solicitudes', s.documento||'', { id:s.id, pantalla:'Seguimiento de solicitudes' });
+    segDocCerrar();
+    await segCargar();
+  }catch(e){ err.textContent='No se pudo enviar. Intenta de nuevo.'; }
+  finally{ btn.disabled=false; btn.textContent=(v==='autorizar'?'Autorizar':'Enviar cambios'); }
 }
 
 /* ===== Detalle de la solicitud (lo que capturó el solicitante) ===== */
@@ -362,6 +531,9 @@ function segVerDetalle(idx){
     + segBloque('Propuesta de cita del analista', s.propuesta)
     + segBloque('Tu respuesta a la propuesta', s.respuestaSol)
     + segBloque('Tu comentario', s.comentarioSol)
+    + segBloque('Comentarios del analista (revisión)', s.comentariosAnalista)
+    + segBloque('Estatus del borrador', s.respuestaDoc)
+    + segBloque('Cambios que solicitaste al borrador', s.comentariosDoc)
     + segBloque('Objetivo del documento', s.objetivo)
     + segBloque('Alcance del documento', s.alcance)
     + segBloque('Responsables del documento', s.responsables)
@@ -463,11 +635,11 @@ async function segCargar(){
 
   // Embebido pero aún sin usuario: esperar (el handshake llamará de nuevo)
   if(!correo){
-    if(tbody) tbody.innerHTML='<tr><td colspan="9" class="sin-datos">Cargando tus solicitudes…</td></tr>';
+    if(tbody) tbody.innerHTML='<tr><td colspan="10" class="sin-datos">Cargando tus solicitudes…</td></tr>';
     return;
   }
 
-  if(tbody) tbody.innerHTML='<tr><td colspan="9" class="sin-datos">Cargando tus solicitudes…</td></tr>';
+  if(tbody) tbody.innerHTML='<tr><td colspan="10" class="sin-datos">Cargando tus solicitudes…</td></tr>';
   try{
     var lista=(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes');
     var r=await window.SGD.sp('list',{ lista:lista, queryParams:'$expand=fields&$top=1000' });
@@ -493,6 +665,11 @@ async function segCargar(){
         citaConfirmada:f.Cita_Confirmada||'',
         respuestaSol: f.Respuesta_Solicitante||'',
         comentarioSol:f.Comentario_Solicitante||'',
+        comentariosAnalista:f.Comentarios_Analista||'',
+        docBorradorURL:f.Documento_Borrador_URL||'',
+        docFinalURL:  f.Documento_Final_URL||'',
+        respuestaDoc: f.Respuesta_Documento||'',
+        comentariosDoc:f.Comentarios_Doc||'',
         fecha:        segFmtFecha(f.Fecha_Solicitud),
         fechaCita:    segFmtFecha(f.Fecha_Revision),
         fechaCitaISO: (f.Fecha_Revision||'').split('T')[0],
@@ -505,7 +682,7 @@ async function segCargar(){
     .sort(function(a,b){ return (b.fecha||'').localeCompare(a.fecha||''); });
     segRender();
   }catch(e){
-    if(tbody) tbody.innerHTML='<tr><td colspan="9" class="sin-datos">No se pudieron cargar tus solicitudes. Presiona Actualizar para reintentar.</td></tr>';
+    if(tbody) tbody.innerHTML='<tr><td colspan="10" class="sin-datos">No se pudieron cargar tus solicitudes. Presiona Actualizar para reintentar.</td></tr>';
   }
 }
 
@@ -518,6 +695,8 @@ document.addEventListener('DOMContentLoaded', function(){ segCargar(); });
 // Cerrar los modales al hacer clic fuera de la caja
 (function(){ var el=document.getElementById('seg-det-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segCerrarDetalle(); }); })();
 (function(){ var el=document.getElementById('seg-resp-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segResponderCerrar(); }); })();
+(function(){ var el=document.getElementById('seg-doc-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segDocCerrar(); }); })();
+(function(){ var el=document.getElementById('seg-visor-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segCerrarVisor(); }); })();
 </script>
 
 </body>

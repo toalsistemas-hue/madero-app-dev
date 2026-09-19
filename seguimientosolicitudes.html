@@ -270,7 +270,7 @@
       <label class="seg-opt sel" id="seg-doc-opt-aut">
         <div class="cab"><input type="radio" name="seg-doc" value="autorizar" checked onchange="segDocSel()"> Autorizar el documento</div>
         <div class="det">
-          <p style="margin:0;color:#33455a;font-size:14px;">Se abrirá la <b>ventana de Microsoft</b> para confirmar tu identidad. Debes autorizar con <b>tu propia cuenta</b> (la del solicitante). Al autorizar, el documento pasa a finalizado.</p>
+          <p style="margin:0;color:#33455a;font-size:14px;">Se verificará tu identidad con <b>Microsoft</b> (tu sesión actual) para confirmar que eres el <b>solicitante</b>. Al autorizar, el documento pasa a finalizado.</p>
         </div>
       </label>
 
@@ -478,11 +478,11 @@ async function segDocConfirmar(){
   var fields;
 
   if(v==='autorizar'){
-    // Re-autenticación con la pantalla de Microsoft, verificando que sea el mismo solicitante
-    btn.disabled=true; btn.textContent='Abriendo Microsoft…';
+    // Verificación de identidad con Microsoft (sesión actual), confirmando que sea el mismo solicitante
+    btn.disabled=true; btn.textContent='Verificando identidad…';
     var r;
     try{ r = await window.SGD.sp('reauth', {}); }
-    catch(e){ btn.disabled=false; btn.textContent='Autorizar'; err.textContent='No se completó la verificación con Microsoft.'; return; }
+    catch(e){ btn.disabled=false; btn.textContent='Autorizar'; err.textContent='No se pudo verificar tu identidad con Microsoft. Intenta de nuevo.'; return; }
     var cuentaUsada=((r&&r.username)||'').toLowerCase();
     var solicitante=String(s.correo||'').toLowerCase();
     if(!cuentaUsada){ btn.disabled=false; btn.textContent='Autorizar'; err.textContent='No se pudo verificar la cuenta.'; return; }

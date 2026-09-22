@@ -19,6 +19,26 @@
         .nom-tabs{ display:flex; gap:6px; border-bottom:2px solid #e6eaf0; margin-bottom:16px; flex-wrap:wrap; }
         .nom-tab{ background:none; border:none; padding:10px 16px; font-size:14px; font-weight:600; color:#6b7684; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; }
         .nom-tab.activo{ color:#5b34d6; border-bottom-color:#5b34d6; }
+        /* Formulario y lista de nomenclaturas */
+        .cal-form{ display:grid; grid-template-columns:1.6fr 1fr auto; gap:12px; align-items:end; margin-bottom:16px; }
+        .cal-form .campo{ display:flex; flex-direction:column; gap:5px; min-width:0; }
+        .cal-form label{ font-size:12px; font-weight:600; color:#556; }
+        .cal-form input{ width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; outline:none; }
+        .cal-form input:focus{ border-color:#5b34d6; box-shadow:0 0 0 3px rgba(91,52,214,.15); }
+        .cal-form .btn-add{ background:#5b34d6; color:#fff; border:none; border-radius:8px; padding:11px 18px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center; gap:7px; }
+        .cal-form .btn-add:hover{ background:#4626ad; }
+        .cal-lista{ border:1px solid #e6eaf0; border-radius:12px; overflow:hidden; }
+        .cal-item{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; border-bottom:1px solid #eef1f6; }
+        .cal-item:last-child{ border-bottom:none; }
+        .cal-item .info{ display:flex; align-items:baseline; gap:12px; min-width:0; }
+        .cal-item .nom{ font-weight:700; color:#5b34d6; font-size:15px; min-width:60px; }
+        .cal-item .cor{ color:#33455a; font-size:14px; word-break:break-word; }
+        .cal-item .acc{ display:flex; gap:8px; flex:0 0 auto; }
+        .cal-item .acc button{ border:none; cursor:pointer; width:36px; height:36px; border-radius:8px; font-size:15px; transition:.2s; }
+        .cal-item .b-edit{ background:#eaf2fb; color:#1f6feb; } .cal-item .b-edit:hover{ background:#d6e6fb; }
+        .cal-item .b-del{ background:#fdeaea; color:#c0392b; } .cal-item .b-del:hover{ background:#f8d7d7; }
+        .cal-vacio{ text-align:center; color:#8a94a2; padding:22px 10px; font-size:14px; }
+        @media(max-width:560px){ .cal-form{ grid-template-columns:1fr; } }
         .cd-btn:hover{ transform:translateY(-2px); }
         .cd-filtro{ display:flex; align-items:center; gap:8px; font-size:14px; color:#4b5563; }
         .cd-filtro select{ padding:9px 12px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; }

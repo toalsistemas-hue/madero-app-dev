@@ -15,6 +15,10 @@
         .cd-btn{ border:none; border-radius:8px; padding:12px 18px; font-size:15px; font-weight:600; cursor:pointer; color:#fff; display:inline-flex; align-items:center; gap:9px; transition:.25s; text-decoration:none; }
         .cd-btn.volver{ background:linear-gradient(135deg,#2f75a8,#1f4e79); }
         .cd-btn.nuevo{ background:linear-gradient(135deg,#0f9d58,#0b7a43); }
+        .cd-btn.nomen{ background:linear-gradient(135deg,#7a5cf0,#5b34d6); }
+        .nom-tabs{ display:flex; gap:6px; border-bottom:2px solid #e6eaf0; margin-bottom:16px; flex-wrap:wrap; }
+        .nom-tab{ background:none; border:none; padding:10px 16px; font-size:14px; font-weight:600; color:#6b7684; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; }
+        .nom-tab.activo{ color:#5b34d6; border-bottom-color:#5b34d6; }
         .cd-btn:hover{ transform:translateY(-2px); }
         .cd-filtro{ display:flex; align-items:center; gap:8px; font-size:14px; color:#4b5563; }
         .cd-filtro select{ padding:9px 12px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; }
@@ -78,6 +82,7 @@
         <div class="cd-btns">
             <a href="Sistema_Gestion_Documental.html" class="cd-btn volver"><i class="fa-solid fa-arrow-left"></i> Regresar</a>
             <button class="cd-btn nuevo" id="cd-btn-nuevo" onclick="cdAbrirModal()"><i class="fa-solid fa-plus"></i> Agregar documento</button>
+            <button class="cd-btn nomen" id="cd-btn-nomen" onclick="nomAbrir()"><i class="fa-solid fa-tags"></i> Nomenclaturas</button>
         </div>
         <div class="cd-filtro">
             <span>Estatus:</span>
@@ -159,6 +164,27 @@
       <button class="cancel" onclick="cdCerrarModal()">Cancelar</button>
       <button class="ok" id="cd-ok" onclick="cdGuardar()">Guardar</button>
     </div>
+  </div>
+</div>
+
+<!-- ===== Modal NOMENCLATURAS (3 pestañas) ===== -->
+<div class="cd-modal" id="nom-modal">
+  <div class="cd-box">
+    <div class="cd-head" style="background:linear-gradient(135deg,#5b34d6,#7a5cf0);">
+      <div class="t"><i class="fa-solid fa-tags"></i> Nomenclaturas del código</div>
+      <button class="cerrar" onclick="nomCerrar()">&times;</button>
+    </div>
+    <div class="cd-body">
+      <p style="margin:0 0 14px;color:#667;font-size:13px;">El código se arma así: <b>Empresa - Departamento - Tipo - Consecutivo</b> (ej. <b>MEO-CAL-PRS-001</b>). Da de alta aquí las abreviaturas.</p>
+      <div class="nom-tabs">
+        <button class="nom-tab activo" data-tab="empresa" onclick="nomTab('empresa')">Empresa</button>
+        <button class="nom-tab" data-tab="depto" onclick="nomTab('depto')">Departamentos</button>
+        <button class="nom-tab" data-tab="tipo" onclick="nomTab('tipo')">Tipos de documento</button>
+      </div>
+      <div id="nom-pane"></div>
+      <div class="cd-error" id="nom-error"></div>
+    </div>
+    <div class="cd-foot"><button class="cancel" onclick="nomCerrar()">Cerrar</button></div>
   </div>
 </div>
 
@@ -441,8 +467,92 @@ async function cdDarBaja(idx){
   }catch(e){ alert('No se pudo dar de baja. Intenta de nuevo.'); }
 }
 
-// Cerrar modal al hacer clic fuera
+/* ============================================================
+   NOMENCLATURAS (Empresa / Departamentos / Tipos de documento)
+   ============================================================ */
+function nomCfg(){
+  return {
+    empresa:{ lista:(window.SGD.LISTA_EMPRESA||'SGD_Empresa'), ln:'Nombre de la empresa', la:'Abreviatura (ej. MEO)' },
+    depto:{   lista:(window.SGD.LISTA_DEPARTAMENTOS||'SGD_Departamentos'), ln:'Departamento', la:'Abreviatura (ej. CAL)' },
+    tipo:{    lista:(window.SGD.LISTA_TIPOS||'SGD_TiposDocumento'), ln:'Tipo de documento', la:'Abreviatura (ej. PRS)' }
+  };
+}
+var NOM_TAB='empresa', NOM_ITEMS=[], NOM_EDIT='';
+function nomAbrir(){ document.getElementById('nom-modal').classList.add('activo'); nomTab('empresa'); }
+function nomCerrar(){ document.getElementById('nom-modal').classList.remove('activo'); }
+function nomTab(t){
+  NOM_TAB=t;
+  document.querySelectorAll('.nom-tab').forEach(function(b){ b.classList.toggle('activo', b.getAttribute('data-tab')===t); });
+  var c=nomCfg()[t];
+  document.getElementById('nom-error').textContent='';
+  document.getElementById('nom-pane').innerHTML =
+    '<div class="cal-form">'
+    + '<div class="campo"><label>'+c.ln+'</label><input type="text" id="nom-nombre"></div>'
+    + '<div class="campo"><label>'+c.la+'</label><input type="text" id="nom-abrev" maxlength="8" style="text-transform:uppercase;"></div>'
+    + '<button class="btn-add" id="nom-btn" onclick="nomGuardar()"><i class="fa-solid fa-plus"></i> Agregar</button>'
+    + '</div>'
+    + '<div class="cal-lista" id="nom-lista"><div class="cal-vacio">Cargando…</div></div>';
+  NOM_EDIT='';
+  nomCargar();
+}
+async function nomCargar(){
+  var c=nomCfg()[NOM_TAB], cont=document.getElementById('nom-lista');
+  if(!cdEmbebido()){ NOM_ITEMS=[]; nomRenderLista(); return; }
+  try{
+    var r=await window.SGD.sp('list',{ lista:c.lista, queryParams:'$expand=fields&$top=500' });
+    var items=(r&&r.value)?r.value:[];
+    NOM_ITEMS=items.map(function(it){ var f=it.fields||it; return { id:(it.id!==undefined?it.id:''), nombre:f.Title||'', abrev:f.Abreviatura||'' }; })
+      .sort(function(a,b){ return (a.nombre||'').localeCompare(b.nombre||''); });
+    nomRenderLista();
+  }catch(e){ if(cont) cont.innerHTML='<div class="cal-vacio">No se pudo cargar.</div>'; }
+}
+function nomRenderLista(){
+  var cont=document.getElementById('nom-lista'); if(!cont) return;
+  if(!NOM_ITEMS.length){ cont.innerHTML='<div class="cal-vacio">Aún no hay registros.</div>'; return; }
+  cont.innerHTML=NOM_ITEMS.map(function(p,i){
+    return '<div class="cal-item"><div class="info"><span class="nom">'+cdEsc(p.abrev)+'</span><span class="cor">'+cdEsc(p.nombre)+'</span></div>'
+      +'<div class="acc"><button class="b-edit" onclick="nomEditar('+i+')"><i class="fa-solid fa-pen"></i></button>'
+      +'<button class="b-del" onclick="nomEliminar('+i+')"><i class="fa-solid fa-trash"></i></button></div></div>';
+  }).join('');
+}
+async function nomGuardar(){
+  var c=nomCfg()[NOM_TAB];
+  var nombre=(document.getElementById('nom-nombre').value||'').trim();
+  var abrev=(document.getElementById('nom-abrev').value||'').trim().toUpperCase();
+  var err=document.getElementById('nom-error'); err.textContent='';
+  if(!nombre){ err.textContent='Escribe el nombre.'; return; }
+  if(!abrev){ err.textContent='Escribe la abreviatura.'; return; }
+  if(!cdEmbebido()){ err.textContent='Sin conexión (modo prueba).'; return; }
+  var btn=document.getElementById('nom-btn'); btn.disabled=true;
+  try{
+    var f={ Title:nombre, Abreviatura:abrev };
+    if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(f);
+    if(NOM_EDIT){ await window.SGD.sp('update',{ lista:c.lista, itemId:NOM_EDIT, fields:f }); }
+    else { await window.SGD.sp('create',{ lista:c.lista, fields:f }); }
+    NOM_EDIT=''; document.getElementById('nom-nombre').value=''; document.getElementById('nom-abrev').value='';
+    document.getElementById('nom-btn').innerHTML='<i class="fa-solid fa-plus"></i> Agregar';
+    await nomCargar();
+  }catch(e){ err.textContent='No se pudo guardar.'; }
+  finally{ btn.disabled=false; }
+}
+function nomEditar(i){
+  var p=NOM_ITEMS[i]; if(!p) return;
+  NOM_EDIT=p.id;
+  document.getElementById('nom-nombre').value=p.nombre||'';
+  document.getElementById('nom-abrev').value=p.abrev||'';
+  document.getElementById('nom-btn').innerHTML='<i class="fa-solid fa-check"></i> Guardar';
+}
+async function nomEliminar(i){
+  var p=NOM_ITEMS[i]; if(!p) return;
+  if(!confirm('¿Eliminar "'+p.abrev+' · '+p.nombre+'"?')) return;
+  var c=nomCfg()[NOM_TAB];
+  try{ await window.SGD.sp('delete',{ lista:c.lista, itemId:p.id }); await nomCargar(); }
+  catch(e){ alert('No se pudo eliminar.'); }
+}
+
+// Cerrar modales al hacer clic fuera
 document.getElementById('cd-modal').addEventListener('click', function(ev){ if(ev.target===this) cdCerrarModal(); });
+document.getElementById('nom-modal').addEventListener('click', function(ev){ if(ev.target===this) nomCerrar(); });
 
 // Arranque + recarga cuando el padre confirma el usuario/nivel
 window.SGD = window.SGD || {};

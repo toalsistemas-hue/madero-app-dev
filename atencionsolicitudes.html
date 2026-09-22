@@ -497,6 +497,78 @@
   </div>
 </div>
 
+<!-- ==========================
+     MODAL: LIBERACIÓN (Liberado por solicitante)
+========================== -->
+<div class="sgd2-modal" id="lib-modal">
+  <div class="sgd2-box">
+    <div class="sgd2-head estatus">
+      <div class="t"><i class="fa-solid fa-unlock-keyhole"></i> Liberación del documento</div>
+      <button class="cerrar" onclick="libCerrar()">&times;</button>
+    </div>
+    <div class="sgd2-body">
+      <div class="sgd2-info" id="lib-info"></div>
+
+      <label class="sgd2-opt sel" id="lib-opt-final">
+        <div class="cab"><input type="radio" name="lib-op" value="final" checked onchange="libSel()"> Documento final — generar código</div>
+        <div class="det">
+          <p style="margin:0 0 6px;color:#33455a;font-size:14px;">El documento ya es el final. Arma el código seleccionando empresa, departamento y tipo; el sistema asigna el consecutivo.</p>
+          <div class="row2">
+            <div><label>Empresa</label><select id="lib-empresa" onchange="libCalcular()"><option value="">…</option></select></div>
+            <div><label>Departamento</label><select id="lib-depto" onchange="libCalcular()"><option value="">…</option></select></div>
+          </div>
+          <div class="row2">
+            <div><label>Tipo de documento</label><select id="lib-tipo" onchange="libCalcular()"><option value="">…</option></select></div>
+            <div><label>Consecutivo</label><input type="text" id="lib-consec" readonly placeholder="—"></div>
+          </div>
+          <label>Código generado</label>
+          <input type="text" id="lib-codigo" readonly placeholder="MEO-CAL-PRS-001" style="font-weight:700;color:#1f4e79;">
+        </div>
+      </label>
+
+      <label class="sgd2-opt" id="lib-opt-revision">
+        <div class="cab"><input type="radio" name="lib-op" value="revision" onchange="libSel()"> Enviar una nueva actualización/revisión</div>
+        <div class="det">
+          <p style="margin:0;color:#33455a;font-size:14px;">Si aún requiere cambios, la solicitud vuelve a <b>En proceso</b> para que subas un nuevo borrador (Cambiar estatus → En revisión).</p>
+        </div>
+      </label>
+
+      <div class="sgd2-error" id="lib-error"></div>
+    </div>
+    <div class="sgd2-foot">
+      <button class="sgd2-btn cancel" onclick="libCerrar()">Cancelar</button>
+      <button class="sgd2-btn ok" id="lib-ok" onclick="libConfirmar()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================
+     MODAL: CARGAR DOCUMENTO FINAL (firmado, con código)
+========================== -->
+<div class="sgd2-modal" id="final-modal">
+  <div class="sgd2-box">
+    <div class="sgd2-head estatus">
+      <div class="t"><i class="fa-solid fa-file-arrow-up"></i> Cargar documento final</div>
+      <button class="cerrar" onclick="finalCerrar()">&times;</button>
+    </div>
+    <div class="sgd2-body">
+      <div class="sgd2-info" id="final-info"></div>
+      <div class="sgd2-opt sel">
+        <div class="det" style="display:block;margin:0;">
+          <label>Documento final firmado (PDF, con el código y las firmas de autorización)</label>
+          <input type="file" id="final-file" accept=".pdf">
+          <p class="file-hint">Al cargarlo, se solicitará a dmartinez@maderoequipos.com agregar el documento liberado a Control Documental y la solicitud pasará a <b>Atendida</b>.</p>
+        </div>
+      </div>
+      <div class="sgd2-error" id="final-error"></div>
+    </div>
+    <div class="sgd2-foot">
+      <button class="sgd2-btn cancel" onclick="finalCerrar()">Cancelar</button>
+      <button class="sgd2-btn ok" id="final-ok" onclick="finalGuardar()">Cargar y solicitar liberación</button>
+    </div>
+  </div>
+</div>
+
 <!-- Puente SP + usuario en sesión (inyectado por index.html) -->
 <script src="script.js"></script>
 
@@ -592,6 +664,7 @@ async function atencionCargarSolicitudes(){
         docBorradorURL:f.Documento_Borrador_URL||'',
         respuestaDoc:f.Respuesta_Documento||'',
         comentariosDoc:f.Comentarios_Doc||'',
+        codigoDoc:  f.Codigo_Documento||'',
         fecha:      atcFmtFecha(f.Fecha_Solicitud),
         fechaISO:   f.Fecha_Solicitud||'',
         fechaCitaISO:(f.Fecha_Revision||'').split('T')[0],
@@ -616,7 +689,7 @@ function atcBotonResolucion(s, idx){
     return '<button class="btn-resol estatus" onclick="estAbrir('+idx+')"><i class="fa-solid fa-arrows-rotate"></i> Cambiar estatus</button>';
   }
   if(est==='en liberación' || est==='en liberacion'){
-    return '<span class="btn-resol-nota">En liberación…</span>';
+    return '<button class="btn-resol estatus" onclick="libAbrir('+idx+')"><i class="fa-solid fa-unlock-keyhole"></i> Liberado por solicitante</button>';
   }
   if(est==='cancelado'){ return '<span class="btn-resol-nota">Cancelada</span>'; }
   if(est==='atendida'){ return '<span class="btn-resol-nota">Atendida</span>'; }
@@ -639,9 +712,15 @@ function atencionRender(){
   }
   var html='';
   ATC_VISIBLE.forEach(function(s,i){
-    var docFin = s.docFinalURL
-      ? '<button class="icono" title="Ver documento finalizado" onclick="atcVerDocFinal('+i+')"><i class="fa-regular fa-file-lines"></i></button>'
-      : '<span class="btn-resol-nota">—</span>';
+    var estL = (s.estatus||'').toLowerCase();
+    var docFin;
+    if(estL==='en liberación' || estL==='en liberacion'){
+      docFin = '<button class="btn-resol estatus" onclick="atcFinalUploadOpen('+i+')"><i class="fa-solid fa-upload"></i> Cargar documento final</button>';
+    } else if(s.docFinalURL){
+      docFin = '<button class="icono" title="Ver documento finalizado" onclick="atcVerDocFinal('+i+')"><i class="fa-regular fa-file-lines"></i></button>';
+    } else {
+      docFin = '<span class="btn-resol-nota">—</span>';
+    }
     html+='<tr>'
        +  '<td>'+(i+1)+'</td>'
        +  '<td><span class="estado '+atcEstadoClase(s.estatus)+'">'+atcEsc(s.estatus)+'</span></td>'
@@ -692,6 +771,7 @@ function atcVerDetalle(idx){
     + atcBloque('Propuesta de cita enviada al solicitante', s.propuesta)
     + atcBloque('Respuesta del solicitante', s.respuestaSol)
     + atcBloque('Comentario del solicitante', s.comentarioSol)
+    + atcBloque('Código del documento', s.codigoDoc)
     + atcBloque('Comentarios que enviaste (revisión)', s.comentariosAnalista)
     + atcBloque('Estatus del borrador', s.respuestaDoc)
     + atcBloque('Cambios solicitados por el solicitante', s.comentariosDoc)
@@ -917,8 +997,113 @@ async function estConfirmar(){
   finally{ btn.disabled=false; btn.textContent='Guardar cambio'; }
 }
 
+/* ============================================================
+   LIBERACIÓN: generar código o reabrir revisión + cargar documento final
+   ============================================================ */
+var LIB_IDX=-1, FINAL_IDX=-1;
+
+async function libLlenarSelect(selId, lista){
+  var sel=document.getElementById(selId); if(!sel) return;
+  sel.innerHTML='<option value="">…</option>';
+  try{
+    var r=await window.SGD.sp('list',{ lista:lista, queryParams:'$expand=fields&$top=500' });
+    var items=(r&&r.value)?r.value:[];
+    items.map(function(it){ var f=it.fields||it; return { ab:(f.Abreviatura||'').toString().trim(), nom:(f.Title||'').toString().trim() }; })
+      .filter(function(x){ return x.ab; })
+      .sort(function(a,b){ return a.ab.localeCompare(b.ab); })
+      .forEach(function(x){ var o=document.createElement('option'); o.value=x.ab; o.textContent=x.ab+' — '+x.nom; sel.appendChild(o); });
+  }catch(e){}
+}
+
+function libAbrir(idx){
+  LIB_IDX=idx; var s=ATC_VISIBLE[idx]; if(!s) return;
+  document.getElementById('lib-info').innerHTML =
+    '<b>'+atcEsc(s.documento)+'</b><br>Estatus: <b>En liberación</b> (liberado por el solicitante).'
+    + (s.codigoDoc? '<br>Código ya generado: <b>'+atcEsc(s.codigoDoc)+'</b>' : '');
+  document.querySelector('#lib-modal input[value="final"]').checked=true;
+  document.getElementById('lib-consec').value=''; document.getElementById('lib-codigo').value='';
+  document.getElementById('lib-error').textContent='';
+  libSel();
+  document.getElementById('lib-modal').classList.add('activo');
+  if(atcEmbebido()){
+    libLlenarSelect('lib-empresa', (window.SGD.LISTA_EMPRESA||'SGD_Empresa'));
+    libLlenarSelect('lib-depto', (window.SGD.LISTA_DEPARTAMENTOS||'SGD_Departamentos'));
+    libLlenarSelect('lib-tipo', (window.SGD.LISTA_TIPOS||'SGD_TiposDocumento'));
+  }
+}
+function libCerrar(){ document.getElementById('lib-modal').classList.remove('activo'); }
+function libSel(){
+  var v=(document.querySelector('#lib-modal input[name="lib-op"]:checked')||{}).value;
+  document.getElementById('lib-opt-final').classList.toggle('sel', v==='final');
+  document.getElementById('lib-opt-revision').classList.toggle('sel', v==='revision');
+}
+async function libCalcular(){
+  var emp=document.getElementById('lib-empresa').value, dep=document.getElementById('lib-depto').value, tip=document.getElementById('lib-tipo').value;
+  var cod=document.getElementById('lib-codigo'), con=document.getElementById('lib-consec');
+  if(!emp||!dep||!tip){ con.value=''; cod.value=''; return; }
+  var prefijo=emp+'-'+dep+'-'+tip+'-';
+  con.value='…';
+  var n = (window.SGD.siguienteConsecutivo) ? await window.SGD.siguienteConsecutivo(prefijo) : '001';
+  con.value=n; cod.value=prefijo+n;
+}
+async function libConfirmar(){
+  var s=ATC_VISIBLE[LIB_IDX]; if(!s) return;
+  var v=(document.querySelector('#lib-modal input[name="lib-op"]:checked')||{}).value;
+  var err=document.getElementById('lib-error'); err.textContent='';
+  var btn=document.getElementById('lib-ok'); var fields, accion, detalle;
+
+  if(v==='revision'){
+    fields={ Estatus:'En proceso', Documento_Final_URL:'', Respuesta_Documento:'', Evento_Notificacion:'EN_PROCESO' };
+    accion='Reabrir revisión desde liberación'; detalle='';
+  } else {
+    var codigo=(document.getElementById('lib-codigo').value||'').trim();
+    if(!codigo){ err.textContent='Selecciona empresa, departamento y tipo para generar el código.'; return; }
+    fields={ Codigo_Documento:codigo, Estatus:'En liberación', Evento_Notificacion:'CODIGO_GENERADO' };
+    accion='Generar código de documento'; detalle=codigo;
+  }
+  btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    await atcAplicarCambio(s, fields, accion, detalle);
+    libCerrar();
+    if(v==='final') alert('Código generado: '+ (document.getElementById('lib-codigo').value||'') +'.\nAhora usa "Cargar documento final" en la columna Documento Finalizado.');
+  }catch(e){ err.textContent='No se pudo guardar. Intenta de nuevo.'; }
+  finally{ btn.disabled=false; btn.textContent='Guardar'; }
+}
+
+function atcFinalUploadOpen(idx){
+  FINAL_IDX=idx; var s=ATC_VISIBLE[idx]; if(!s) return;
+  if(!s.codigoDoc){
+    alert('Primero genera el código del documento: botón "Liberado por solicitante" → "Documento final — generar código".');
+    return;
+  }
+  document.getElementById('final-info').innerHTML='<b>'+atcEsc(s.documento)+'</b><br>Código: <b>'+atcEsc(s.codigoDoc)+'</b>';
+  document.getElementById('final-file').value='';
+  document.getElementById('final-error').textContent='';
+  document.getElementById('final-modal').classList.add('activo');
+}
+function finalCerrar(){ document.getElementById('final-modal').classList.remove('activo'); }
+async function finalGuardar(){
+  var s=ATC_VISIBLE[FINAL_IDX]; if(!s) return;
+  var err=document.getElementById('final-error'); err.textContent='';
+  var file=(document.getElementById('final-file').files||[])[0];
+  if(!file){ err.textContent='Adjunta el documento final firmado en PDF.'; return; }
+  var btn=document.getElementById('final-ok'); btn.disabled=true; btn.textContent='Subiendo…';
+  try{
+    var fields={ Estatus:'Atendida', Evento_Notificacion:'SOLICITAR_LIBERACION' };
+    if(atcEmbebido()){
+      var b64=await atcFileB64(file);
+      var up=await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Documentos_Finales', itemId:s.id, fileName:'Final_'+s.id+'.pdf', contentBase64:b64 });
+      if(up && up.id) fields.Documento_Final_URL=up.id;
+    }
+    await atcAplicarCambio(s, fields, 'Solicitar liberación (documento final)', (s.codigoDoc||'')+' · '+(s.documento||''));
+    finalCerrar();
+    alert('Documento final cargado. Se solicitó a dmartinez@maderoequipos.com agregarlo a Control Documental. La solicitud quedó como Atendida.');
+  }catch(e){ err.textContent='No se pudo cargar. Intenta de nuevo.'; }
+  finally{ btn.disabled=false; btn.textContent='Cargar y solicitar liberación'; }
+}
+
 // Cerrar modales al hacer clic fuera de la caja
-['cita-modal','est-modal','det-modal'].forEach(function(id){
+['cita-modal','est-modal','det-modal','lib-modal','final-modal'].forEach(function(id){
   var el=document.getElementById(id);
   if(el) el.addEventListener('click', function(ev){ if(ev.target===this) this.classList.remove('activo'); });
 });

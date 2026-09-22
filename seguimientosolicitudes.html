@@ -24,6 +24,9 @@
         .btn-actualizar-seg:hover{transform:translateY(-3px);}
         .sub-encabezado{ padding:14px 35px 0 35px;color:#4b5563;font-size:14px; }
         .sin-datos{ text-align:center;padding:40px;color:#7b8794;font-size:15px; }
+        /* Scroll horizontal de la tabla en pantallas chicas */
+        .tabla-scroll{ width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+        .tabla-scroll table{ min-width:1250px; }
 
         /* Píldoras de estatus */
         .estado-pill{ display:inline-block;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600;white-space:nowrap; }
@@ -151,6 +154,7 @@
         </div>
 
         <!-- Tabla (solo lectura) -->
+        <div class="tabla-scroll">
         <table>
 
             <thead>
@@ -173,6 +177,7 @@
             </tbody>
 
         </table>
+        </div>
 
     </div>
 

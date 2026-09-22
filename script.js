@@ -97,6 +97,29 @@ window.SGD.LISTA_BITACORA = 'SGD_Bitacora';
 //    Acceso_Todos (texto Sí/No), Accesos (varias líneas: correos separados por ; , o salto),
 //    Estatus (texto: Vigente | Obsoleto), Usuario_Modifica, Ultima_Modificacion
 window.SGD.LISTA_DOCUMENTOS = 'SGD_Documentos';
+//  Catálogos de nomenclatura para armar el código (ej. MEO-CAL-PRS-001):
+//    SGD_Empresa        : Title = nombre de la empresa, Abreviatura (ej. MEO)
+//    SGD_Departamentos  : Title = departamento, Abreviatura (ej. CAL)
+//    SGD_TiposDocumento : Title = tipo, Abreviatura (ej. PRS)
+window.SGD.LISTA_EMPRESA = 'SGD_Empresa';
+window.SGD.LISTA_DEPARTAMENTOS = 'SGD_Departamentos';
+
+// Devuelve el siguiente consecutivo disponible (3 dígitos) para un prefijo de código (ej. "MEO-CAL-PRS-")
+window.SGD.siguienteConsecutivo = async function (prefijo) {
+  var next = 1;
+  try {
+    var r = await window.SGD.sp('list', { lista: window.SGD.LISTA_DOCUMENTOS, queryParams: '$expand=fields&$top=2000' });
+    var items = (r && r.value) ? r.value : [];
+    items.forEach(function (it) {
+      var f = it.fields || it; var cod = (f.Codigo || '').toString().trim();
+      if (cod.indexOf(prefijo) === 0) {
+        var m = cod.slice(prefijo.length).match(/^(\d+)/);
+        if (m) { var n = parseInt(m[1], 10); if (n >= next) next = n + 1; }
+      }
+    });
+  } catch (e) {}
+  return String(next).padStart(3, '0');
+};
 
 /* ---------- Bitácora / trazabilidad global ----------
    Escribe un renglón de auditoría en SGD_Bitacora. Es "a prueba de fallos":

@@ -525,8 +525,8 @@ async function nomGuardar(){
   if(!cdEmbebido()){ err.textContent='Sin conexión (modo prueba).'; return; }
   var btn=document.getElementById('nom-btn'); btn.disabled=true;
   try{
+    // Catálogos simples (sin columnas de auditoría): NO estampar Usuario_Modifica/Ultima_Modificacion
     var f={ Title:nombre, Abreviatura:abrev };
-    if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(f);
     if(NOM_EDIT){ await window.SGD.sp('update',{ lista:c.lista, itemId:NOM_EDIT, fields:f }); }
     else { await window.SGD.sp('create',{ lista:c.lista, fields:f }); }
     NOM_EDIT=''; document.getElementById('nom-nombre').value=''; document.getElementById('nom-abrev').value='';

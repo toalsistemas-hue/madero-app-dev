@@ -104,21 +104,23 @@ window.SGD.LISTA_DOCUMENTOS = 'SGD_Documentos';
 window.SGD.LISTA_EMPRESA = 'SGD_Empresa';
 window.SGD.LISTA_DEPARTAMENTOS = 'SGD_Departamentos';
 
-// Devuelve el siguiente consecutivo disponible (3 dígitos) para un prefijo de código (ej. "MEO-CAL-PRS-")
+// Devuelve el siguiente consecutivo disponible (3 dígitos) para un prefijo de código (ej. "MEO-CAL-PRS-").
+// Considera TANTO los documentos ya publicados en Control Documental (SGD_Documentos.Codigo)
+// como los códigos ya "apartados" en solicitudes (SGD_Solicitudes.Codigo_Documento), para no repetir.
 window.SGD.siguienteConsecutivo = async function (prefijo) {
-  var next = 1;
-  try {
-    var r = await window.SGD.sp('list', { lista: window.SGD.LISTA_DOCUMENTOS, queryParams: '$expand=fields&$top=2000' });
-    var items = (r && r.value) ? r.value : [];
-    items.forEach(function (it) {
-      var f = it.fields || it; var cod = (f.Codigo || '').toString().trim();
+  var max = 0;
+  function escanear(items, campo) {
+    (items || []).forEach(function (it) {
+      var f = it.fields || it; var cod = (f[campo] || '').toString().trim();
       if (cod.indexOf(prefijo) === 0) {
         var m = cod.slice(prefijo.length).match(/^(\d+)/);
-        if (m) { var n = parseInt(m[1], 10); if (n >= next) next = n + 1; }
+        if (m) { var n = parseInt(m[1], 10); if (n > max) max = n; }
       }
     });
-  } catch (e) {}
-  return String(next).padStart(3, '0');
+  }
+  try { var r1 = await window.SGD.sp('list', { lista: window.SGD.LISTA_DOCUMENTOS, queryParams: '$expand=fields&$top=2000' }); escanear(r1 && r1.value, 'Codigo'); } catch (e) {}
+  try { var r2 = await window.SGD.sp('list', { lista: window.SGD.LISTA_SOLICITUDES, queryParams: '$expand=fields&$top=2000' }); escanear(r2 && r2.value, 'Codigo_Documento'); } catch (e) {}
+  return String(max + 1).padStart(3, '0');
 };
 
 /* ---------- Bitácora / trazabilidad global ----------

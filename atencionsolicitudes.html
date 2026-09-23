@@ -529,7 +529,14 @@
       <label class="sgd2-opt" id="lib-opt-revision">
         <div class="cab"><input type="radio" name="lib-op" value="revision" onchange="libSel()"> Enviar una nueva actualización/revisión</div>
         <div class="det">
-          <p style="margin:0;color:#33455a;font-size:14px;">Si aún requiere cambios, la solicitud vuelve a <b>En proceso</b> para que subas un nuevo borrador (Cambiar estatus → En revisión).</p>
+          <p style="margin:0;color:#33455a;font-size:14px;">Si aún requiere cambios, la solicitud vuelve a <b>En proceso</b> para que subas un nuevo borrador (Cambiar estatus → En revisión). Si ya había un código apartado, se liberará.</p>
+        </div>
+      </label>
+
+      <label class="sgd2-opt" id="lib-opt-liberar" style="display:none;">
+        <div class="cab"><input type="radio" name="lib-op" value="liberar" onchange="libSel()"> Liberar el código apartado (cancelar el alta)</div>
+        <div class="det">
+          <p style="margin:0;color:#33455a;font-size:14px;">Si esta alta se va a cancelar, libera el código para que quede disponible para otro documento. Se quitará el código de esta solicitud.</p>
         </div>
       </label>
 
@@ -1017,25 +1024,44 @@ async function libLlenarSelect(selId, lista){
 
 function libAbrir(idx){
   LIB_IDX=idx; var s=ATC_VISIBLE[idx]; if(!s) return;
+  var tieneCodigo = !!(s.codigoDoc && s.codigoDoc.trim());
   document.getElementById('lib-info').innerHTML =
     '<b>'+atcEsc(s.documento)+'</b><br>Estatus: <b>En liberación</b> (liberado por el solicitante).'
-    + (s.codigoDoc? '<br>Código ya generado: <b>'+atcEsc(s.codigoDoc)+'</b>' : '');
+    + (tieneCodigo? '<br>Este documento ya tiene un código <b>apartado</b>: <b style="color:#1f4e79;">'+atcEsc(s.codigoDoc)+'</b>' : '');
   document.querySelector('#lib-modal input[value="final"]').checked=true;
   document.getElementById('lib-consec').value=''; document.getElementById('lib-codigo').value='';
   document.getElementById('lib-error').textContent='';
+
+  // Opción "Liberar código" solo aparece si ya hay un código apartado
+  document.getElementById('lib-opt-liberar').style.display = tieneCodigo ? '' : 'none';
+
+  var selEmp=document.getElementById('lib-empresa'), selDep=document.getElementById('lib-depto'), selTip=document.getElementById('lib-tipo');
+  var labelFinal = document.querySelector('#lib-opt-final .cab');
+
+  if(tieneCodigo){
+    // Ya tiene código: se muestra (bloqueado) y no se vuelve a generar
+    if(labelFinal) labelFinal.innerHTML = '<input type="radio" name="lib-op" value="final" checked onchange="libSel()"> Continuar con el código apartado';
+    document.getElementById('lib-codigo').value = s.codigoDoc;
+    [selEmp,selDep,selTip].forEach(function(sl){ if(sl){ sl.disabled=true; sl.innerHTML='<option>—</option>'; } });
+    document.getElementById('lib-consec').value = (s.codigoDoc.split('-').pop()||'');
+  } else {
+    if(labelFinal) labelFinal.innerHTML = '<input type="radio" name="lib-op" value="final" checked onchange="libSel()"> Documento final — generar código';
+    [selEmp,selDep,selTip].forEach(function(sl){ if(sl) sl.disabled=false; });
+    if(atcEmbebido()){
+      libLlenarSelect('lib-empresa', (window.SGD.LISTA_EMPRESA||'SGD_Empresa'));
+      libLlenarSelect('lib-depto', (window.SGD.LISTA_DEPARTAMENTOS||'SGD_Departamentos'));
+      libLlenarSelect('lib-tipo', (window.SGD.LISTA_TIPOS||'SGD_TiposDocumento'));
+    }
+  }
   libSel();
   document.getElementById('lib-modal').classList.add('activo');
-  if(atcEmbebido()){
-    libLlenarSelect('lib-empresa', (window.SGD.LISTA_EMPRESA||'SGD_Empresa'));
-    libLlenarSelect('lib-depto', (window.SGD.LISTA_DEPARTAMENTOS||'SGD_Departamentos'));
-    libLlenarSelect('lib-tipo', (window.SGD.LISTA_TIPOS||'SGD_TiposDocumento'));
-  }
 }
 function libCerrar(){ document.getElementById('lib-modal').classList.remove('activo'); }
 function libSel(){
   var v=(document.querySelector('#lib-modal input[name="lib-op"]:checked')||{}).value;
   document.getElementById('lib-opt-final').classList.toggle('sel', v==='final');
   document.getElementById('lib-opt-revision').classList.toggle('sel', v==='revision');
+  document.getElementById('lib-opt-liberar').classList.toggle('sel', v==='liberar');
 }
 async function libCalcular(){
   var emp=document.getElementById('lib-empresa').value, dep=document.getElementById('lib-depto').value, tip=document.getElementById('lib-tipo').value;
@@ -1052,20 +1078,43 @@ async function libConfirmar(){
   var err=document.getElementById('lib-error'); err.textContent='';
   var btn=document.getElementById('lib-ok'); var fields, accion, detalle;
 
+  var yaTieneCodigo = !!(s.codigoDoc && s.codigoDoc.trim());
+
   if(v==='revision'){
-    fields={ Estatus:'En proceso', Documento_Final_URL:'', Respuesta_Documento:'', Evento_Notificacion:'EN_PROCESO' };
+    // Reabrir revisión y liberar el código apartado (si lo había), porque el documento cambiará
+    fields={ Estatus:'En proceso', Documento_Final_URL:'', Respuesta_Documento:'', Codigo_Documento:'', Evento_Notificacion:'EN_PROCESO' };
     accion='Reabrir revisión desde liberación'; detalle='';
-  } else {
+  } else if(v==='liberar'){
+    fields={ Codigo_Documento:'', Evento_Notificacion:'CODIGO_LIBERADO' };
+    accion='Liberar código apartado'; detalle=(s.codigoDoc||'');
+  } else { // final
+    if(yaTieneCodigo){
+      // Ya tiene código apartado: no se regenera, solo continuar
+      libCerrar();
+      alert('Este documento ya tiene el código '+s.codigoDoc+' apartado.\nUsa "Cargar documento final" en la columna Documento Finalizado.');
+      return;
+    }
     var codigo=(document.getElementById('lib-codigo').value||'').trim();
     if(!codigo){ err.textContent='Selecciona empresa, departamento y tipo para generar el código.'; return; }
+    // Revalidar el consecutivo justo antes de guardar (evita apartar un código que otro analista ya tomó)
+    btn.disabled=true; btn.textContent='Verificando código…';
+    var partes=codigo.split('-'); var pref=partes.slice(0,3).join('-')+'-';
+    var consecOk = (window.SGD.siguienteConsecutivo) ? await window.SGD.siguienteConsecutivo(pref) : (partes.pop());
+    var codigoFinal = pref + consecOk;
+    if(codigoFinal!==codigo){
+      document.getElementById('lib-consec').value=consecOk;
+      document.getElementById('lib-codigo').value=codigoFinal;
+      codigo=codigoFinal;
+    }
     fields={ Codigo_Documento:codigo, Estatus:'En liberación', Evento_Notificacion:'CODIGO_GENERADO' };
-    accion='Generar código de documento'; detalle=codigo;
+    accion='Apartar código de documento'; detalle=codigo;
   }
   btn.disabled=true; btn.textContent='Guardando…';
   try{
     await atcAplicarCambio(s, fields, accion, detalle);
     libCerrar();
-    if(v==='final') alert('Código generado: '+ (document.getElementById('lib-codigo').value||'') +'.\nAhora usa "Cargar documento final" en la columna Documento Finalizado.');
+    if(v==='final') alert('Código apartado: '+ (document.getElementById('lib-codigo').value||'') +'.\nAhora usa "Cargar documento final" en la columna Documento Finalizado.');
+    else if(v==='liberar') alert('Código liberado. Queda disponible para otro documento.');
   }catch(e){ err.textContent='No se pudo guardar. Intenta de nuevo.'; }
   finally{ btn.disabled=false; btn.textContent='Guardar'; }
 }

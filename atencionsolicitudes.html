@@ -472,11 +472,14 @@
       <label class="sgd2-opt" id="est-opt-revision">
         <div class="cab"><input type="radio" name="est-op" value="En revisión" onchange="estSelOpcion()"> En revisión</div>
         <div class="det">
+          <div id="est-borrador-actual" style="display:none;margin-bottom:10px;">
+            <button type="button" class="sgd2-btn" style="background:#6b34b3;padding:9px 14px;font-size:13px;" onclick="estVerBorrador()"><i class="fa-regular fa-file-lines"></i> Ver borrador enviado</button>
+          </div>
           <label>Comentarios para el solicitante</label>
           <textarea id="est-comentarios" rows="3" placeholder="Indica al solicitante lo que debe revisar del borrador…"></textarea>
-          <label>Adjuntar borrador en PDF</label>
+          <label id="est-borrador-label">Adjuntar borrador en PDF</label>
           <input type="file" id="est-borrador" accept=".pdf">
-          <p class="file-hint">El solicitante podrá visualizar el borrador en su pantalla de Seguimiento y dar su visto bueno.</p>
+          <p class="file-hint" id="est-borrador-hint">El solicitante podrá visualizar el borrador en su pantalla de Seguimiento y dar su visto bueno.</p>
         </div>
       </label>
 
@@ -564,7 +567,9 @@
         <div class="det" style="display:block;margin:0;">
           <label>Documento final firmado (PDF, con el código y las firmas de autorización)</label>
           <input type="file" id="final-file" accept=".pdf">
-          <p class="file-hint">Al cargarlo, se solicitará a dmartinez@maderoequipos.com agregar el documento liberado a Control Documental y la solicitud pasará a <b>Atendida</b>.</p>
+          <label style="margin-top:12px;">Documento editable / fuente (Word, Excel o Visio)</label>
+          <input type="file" id="final-file-fuente" accept=".doc,.docx,.xls,.xlsx,.vsd,.vsdx">
+          <p class="file-hint">Debes cargar <b>ambos</b> documentos. Al hacerlo, se solicitará a dmartinez@maderoequipos.com agregar el documento a Control Documental y la solicitud pasará a <b>Atendida</b>.</p>
         </div>
       </div>
       <div class="sgd2-error" id="final-error"></div>
@@ -573,6 +578,17 @@
       <button class="sgd2-btn cancel" onclick="finalCerrar()">Cancelar</button>
       <button class="sgd2-btn ok" id="final-ok" onclick="finalGuardar()">Cargar y solicitar liberación</button>
     </div>
+  </div>
+</div>
+
+<!-- ===== Visor de PDF (solo lectura) — usado por sgdVerDocumento ===== -->
+<div class="sgd2-modal" id="sgd-visor-modal" style="z-index:10005;">
+  <div class="sgd2-box" style="width:min(1100px,98vw); height:94vh; max-height:94vh;">
+    <div class="sgd2-head estatus">
+      <div class="t"><i class="fa-solid fa-file-pdf"></i> <span id="sgd-visor-titulo">Documento</span></div>
+      <button class="cerrar" onclick="sgdCerrarVisor()">&times;</button>
+    </div>
+    <iframe id="sgd-visor-frame" src="about:blank" style="flex:1;width:100%;border:none;background:#525659;"></iframe>
   </div>
 </div>
 
@@ -935,15 +951,29 @@ function estAbrir(idx){
   var s = ATC_VISIBLE[idx]; if(!s) return;
   document.getElementById('est-info').innerHTML =
     '<b>'+atcEsc(s.documento)+'</b><br>Estatus actual: <b>'+atcEsc(s.estatus)+'</b> · Solicitante: '+atcEsc(s.solicitante||'—');
-  document.querySelector('#est-modal input[value="En proceso"]').checked = true;
-  document.getElementById('est-comentarios').value='';
+  // Pre-seleccionar la opción según el estatus actual (En proceso / En revisión); si no aplica, En proceso
+  var estL=(s.estatus||'').toLowerCase();
+  var opción = (estL==='en revisión'||estL==='en revision') ? 'En revisión' : 'En proceso';
+  var rad=document.querySelector('#est-modal input[value="'+opción+'"]'); if(rad) rad.checked=true;
+  document.getElementById('est-comentarios').value = (opción==='En revisión') ? (s.comentariosAnalista||'') : '';
   document.getElementById('est-motivo').value='';
   var fb=document.getElementById('est-borrador'); if(fb) fb.value='';
+  // Si ya hay un borrador enviado: mostrar el botón de verlo y cambiar el texto a "reemplazar"
+  var tieneBorrador = !!(s.docBorradorURL && s.docBorradorURL.trim());
+  document.getElementById('est-borrador-actual').style.display = tieneBorrador ? 'block' : 'none';
+  document.getElementById('est-borrador-label').textContent = tieneBorrador ? 'Reemplazar el borrador (opcional, sube uno más actualizado)' : 'Adjuntar borrador en PDF';
+  document.getElementById('est-borrador-hint').textContent = tieneBorrador
+    ? 'Si subes un PDF nuevo, reemplaza el que ya envió el solicitante. Si lo dejas vacío, se conserva el actual.'
+    : 'El solicitante podrá visualizar el borrador en su pantalla de Seguimiento y dar su visto bueno.';
   document.getElementById('est-error').textContent='';
   estSelOpcion();
   document.getElementById('est-modal').classList.add('activo');
 }
 function estCerrar(){ document.getElementById('est-modal').classList.remove('activo'); }
+function estVerBorrador(){
+  var s=ATC_VISIBLE[EST_IDX]; if(!s||!s.docBorradorURL) return;
+  if(typeof sgdVerDocumento==='function') sgdVerDocumento(s.docBorradorURL, 'Borrador · '+(s.documento||''));
+}
 function estSelOpcion(){
   var v = (document.querySelector('#est-modal input[name="est-op"]:checked')||{}).value;
   document.getElementById('est-opt-proceso').classList.toggle('sel', v==='En proceso');
@@ -1127,6 +1157,7 @@ function atcFinalUploadOpen(idx){
   }
   document.getElementById('final-info').innerHTML='<b>'+atcEsc(s.documento)+'</b><br>Código: <b>'+atcEsc(s.codigoDoc)+'</b>';
   document.getElementById('final-file').value='';
+  document.getElementById('final-file-fuente').value='';
   document.getElementById('final-error').textContent='';
   document.getElementById('final-modal').classList.add('activo');
 }
@@ -1135,7 +1166,9 @@ async function finalGuardar(){
   var s=ATC_VISIBLE[FINAL_IDX]; if(!s) return;
   var err=document.getElementById('final-error'); err.textContent='';
   var file=(document.getElementById('final-file').files||[])[0];
+  var fuente=(document.getElementById('final-file-fuente').files||[])[0];
   if(!file){ err.textContent='Adjunta el documento final firmado en PDF.'; return; }
+  if(!fuente){ err.textContent='Adjunta también el documento editable (Word, Excel o Visio).'; return; }
   var btn=document.getElementById('final-ok'); btn.disabled=true; btn.textContent='Subiendo…';
   try{
     var fields={ Estatus:'Atendida', Evento_Notificacion:'SOLICITAR_LIBERACION' };
@@ -1143,6 +1176,11 @@ async function finalGuardar(){
       var b64=await atcFileB64(file);
       var up=await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Documentos_Finales', itemId:s.id, fileName:'Final_'+s.id+'.pdf', contentBase64:b64 });
       if(up && up.id) fields.Documento_Final_URL=up.id;
+      // Documento fuente editable (conserva su extensión)
+      var extF=(fuente.name.split('.').pop()||'docx').toLowerCase();
+      var b64f=await atcFileB64(fuente);
+      var upf=await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Documentos_Finales', itemId:s.id, fileName:'Fuente_'+s.id+'.'+extF, contentBase64:b64f });
+      if(upf && upf.id) fields.Documento_Fuente_URL=upf.id;
     }
     await atcAplicarCambio(s, fields, 'Solicitar liberación (documento final)', (s.codigoDoc||'')+' · '+(s.documento||''));
     finalCerrar();

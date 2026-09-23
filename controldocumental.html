@@ -108,6 +108,7 @@
             <span>Estatus:</span>
             <select id="cd-f-estatus" onchange="cdRender()">
                 <option>Vigentes</option>
+                <option>Pendientes</option>
                 <option>Obsoletos</option>
                 <option>Todos</option>
             </select>
@@ -226,6 +227,7 @@
    ============================================================ */
 var CD_ITEMS = [];
 var CD_EDIT_ID = null;     // itemId en edición (null = alta)
+var CD_PREFILL = null;     // { pdf, fuente, solicitudId } cuando se agrega desde un pendiente
 var CD_BUSY = false;
 
 function cdEmbebido(){ return !!(window.SGD && window.SGD.embebido && window.SGD.embebido()); }
@@ -256,10 +258,12 @@ function cdInit(){
   cdCargar();
 }
 
+var CD_PENDIENTES=[];  // documentos finalizados por analistas, pendientes de publicar
+
 async function cdCargar(){
   var tbody=document.getElementById('cd-tbody');
   if(tbody) tbody.innerHTML='<tr><td colspan="8" class="cd-vacio">Cargando…</td></tr>';
-  if(!cdEmbebido()){ CD_ITEMS=CD_DEMO.slice(); cdRender(); return; }
+  if(!cdEmbebido()){ CD_ITEMS=CD_DEMO.slice(); CD_PENDIENTES=[]; cdRender(); return; }
   try{
     var r=await window.SGD.sp('list',{ lista:cdLista(), queryParams:'$expand=fields&$top=1000' });
     var items=(r&&r.value)?r.value:[];
@@ -268,15 +272,54 @@ async function cdCargar(){
       version:f.Version||'', fechaCambio:(f.Fecha_Cambio||''), url:f.Documento_URL||'', wordUrl:f.Documento_Word_URL||'',
       accesos:f.Accesos||'', accesoTodos:f.Acceso_Todos||'', estatus:f.Estatus||'Vigente'
     };}).sort(function(a,b){ return (a.codigo||'').localeCompare(b.codigo||''); });
+    await cdCargarPendientes();
     cdRender();
   }catch(e){
     if(tbody) tbody.innerHTML='<tr><td colspan="8" class="cd-vacio" style="color:#c0392b;">No se pudieron cargar los documentos.</td></tr>';
   }
 }
 
+// Solicitudes Atendidas con documento final y código, aún NO publicadas en Control Documental
+async function cdCargarPendientes(){
+  CD_PENDIENTES=[];
+  try{
+    var r=await window.SGD.sp('list',{ lista:(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes'), queryParams:'$expand=fields&$top=1000' });
+    var items=(r&&r.value)?r.value:[];
+    var publicados={}; CD_ITEMS.forEach(function(d){ if(d.codigo) publicados[d.codigo.toUpperCase()]=true; });
+    CD_PENDIENTES=items.map(function(it){ var f=it.fields||it; return {
+      id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo_Documento||'', tipoDoc:f.Tipo_Documento||'',
+      pdfRef:f.Documento_Final_URL||'', fuenteRef:f.Documento_Fuente_URL||'', fecha:(f.Ultima_Modificacion||f.Fecha_Solicitud||''), estatus:f.Estatus||''
+    };})
+    .filter(function(p){ return String(p.estatus).toLowerCase()==='atendida' && p.codigo && p.pdfRef; })
+    .filter(function(p){ return !publicados[(p.codigo||'').toUpperCase()]; })   // aún no publicado
+    .sort(function(a,b){ return (a.codigo||'').localeCompare(b.codigo||''); });
+  }catch(e){}
+}
+
 function cdRender(){
   var tbody=document.getElementById('cd-tbody'); if(!tbody) return;
   var f=(document.getElementById('cd-f-estatus')||{}).value||'Vigentes';
+
+  if(f==='Pendientes'){
+    if(!CD_PENDIENTES.length){ tbody.innerHTML='<tr><td colspan="8" class="cd-vacio">No hay documentos pendientes de publicar.</td></tr>'; return; }
+    tbody.innerHTML=CD_PENDIENTES.map(function(p,i){
+      var ver = p.pdfRef ? '<button class="b-ver" title="Ver documento (PDF)" onclick="cdVerPendiente('+i+')"><i class="fa-regular fa-file-lines"></i></button>' : '';
+      return '<tr>'
+        +'<td>—</td>'
+        +'<td>'+cdEsc(cdFmtFecha(p.fecha))+'</td>'
+        +'<td class="codigo">'+cdEsc(p.codigo)+'</td>'
+        +'<td>'+cdEsc(p.nombre)+'</td>'
+        +'<td class="tipo"><span>'+cdEsc(p.tipoDoc)+'</span></td>'
+        +'<td>—</td>'
+        +'<td><span class="estatus-pill" style="background:#fff3e0;color:#c77700;border:1px solid #ffd8a8;">Pendiente</span></td>'
+        +'<td class="cd-acc">'+ver
+          +'<button class="b-edit" title="Agregar a Control Documental" style="background:#e7f6ee;color:#1e8449;" onclick="cdAgregarDesdePendiente('+i+')"><i class="fa-solid fa-plus"></i></button>'
+        +'</td>'
+        +'</tr>';
+    }).join('');
+    return;
+  }
+
   var datos=CD_ITEMS.filter(function(d){
     var e=String(d.estatus).toLowerCase();
     if(f==='Vigentes') return e!=='obsoleto' && e!=='baja';
@@ -309,6 +352,23 @@ function cdRender(){
 function cdVer(idx){
   var d=CD_ITEMS[idx]; if(!d||!d.url) return;
   if(typeof sgdVerDocumento==='function') sgdVerDocumento(d.url, d.nombre||'Documento');
+}
+function cdVerPendiente(i){
+  var p=CD_PENDIENTES[i]; if(!p||!p.pdfRef) return;
+  if(typeof sgdVerDocumento==='function') sgdVerDocumento(p.pdfRef, p.nombre||'Documento');
+}
+// Abre el modal "Agregar documento" precargando datos y archivos del pendiente
+function cdAgregarDesdePendiente(i){
+  var p=CD_PENDIENTES[i]; if(!p) return;
+  cdAbrirModal();  // resetea a modo alta
+  CD_PREFILL={ pdf:p.pdfRef||'', fuente:p.fuenteRef||'', solicitudId:p.id };
+  document.getElementById('cd-modal-titulo').textContent='Agregar documento (desde pendiente)';
+  document.getElementById('cd-nombre').value=p.nombre||'';
+  document.getElementById('cd-codigo').value=p.codigo||'';
+  document.getElementById('cd-version').value='1';
+  setTimeout(function(){ var sel=document.getElementById('cd-tipo'); if(sel && p.tipoDoc) sel.value=p.tipoDoc; }, 350);
+  document.getElementById('cd-pdf-actual').textContent  = p.pdfRef ? 'Documento final ya preparado (deja vacío para usarlo, o selecciona otro para reemplazar).' : '';
+  document.getElementById('cd-word-actual').textContent = p.fuenteRef ? 'Documento fuente ya preparado (deja vacío para usarlo, o selecciona otro).' : '';
 }
 
 /* ---- Lista de usuarios (checkbox) para asignar accesos ---- */
@@ -379,6 +439,7 @@ function cdToggleAccesos(){
 }
 
 function cdAbrirModal(idx){
+  CD_PREFILL=null;
   document.getElementById('cd-error').textContent='';
   document.getElementById('cd-pdf').value=''; document.getElementById('cd-word').value='';
   document.getElementById('cd-pdf-actual').textContent=''; document.getElementById('cd-word-actual').textContent='';
@@ -460,7 +521,9 @@ async function cdGuardar(){
     // Subir archivos (si se seleccionaron) y guardar sus URLs
     var urls={};
     if(itemId && pdf){ btn.textContent='Subiendo PDF…'; var b1=await cdFileB64(pdf); var up1=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:pdf.name, contentBase64:b1 }); if(up1&&up1.id) urls.Documento_URL=up1.id; }
+    else if(itemId && CD_PREFILL && CD_PREFILL.pdf){ urls.Documento_URL=CD_PREFILL.pdf; }   // reutiliza el PDF final del pendiente
     if(itemId && word){ btn.textContent='Subiendo WORD…'; var b2=await cdFileB64(word); var up2=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:word.name, contentBase64:b2 }); if(up2&&up2.id) urls.Documento_Word_URL=up2.id; }
+    else if(itemId && CD_PREFILL && CD_PREFILL.fuente){ urls.Documento_Word_URL=CD_PREFILL.fuente; }   // reutiliza el editable del pendiente
     if(itemId && (urls.Documento_URL || urls.Documento_Word_URL)){
       if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(urls);
       await window.SGD.sp('update',{ lista:cdLista(), itemId:itemId, fields:urls });

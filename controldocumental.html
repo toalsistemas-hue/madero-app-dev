@@ -16,6 +16,7 @@
         .cd-btn.volver{ background:linear-gradient(135deg,#2f75a8,#1f4e79); }
         .cd-btn.nuevo{ background:linear-gradient(135deg,#0f9d58,#0b7a43); }
         .cd-btn.nomen{ background:linear-gradient(135deg,#7a5cf0,#5b34d6); }
+        .cd-btn.notif{ background:linear-gradient(135deg,#e8862b,#c96a12); }
         .nom-tabs{ display:flex; gap:6px; border-bottom:2px solid #e6eaf0; margin-bottom:16px; flex-wrap:wrap; }
         .nom-tab{ background:none; border:none; padding:10px 16px; font-size:14px; font-weight:600; color:#6b7684; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; }
         .nom-tab.activo{ color:#5b34d6; border-bottom-color:#5b34d6; }
@@ -39,6 +40,18 @@
         .cal-item .b-del{ background:#fdeaea; color:#c0392b; } .cal-item .b-del:hover{ background:#f8d7d7; }
         .cal-vacio{ text-align:center; color:#8a94a2; padding:22px 10px; font-size:14px; }
         @media(max-width:560px){ .cal-form{ grid-template-columns:1fr; } }
+        /* ===== Modal Notificaciones Calidad ===== */
+        .cal-modal{ display:none; position:fixed; inset:0; z-index:10050; background:rgba(15,30,50,.65); align-items:center; justify-content:center; padding:24px; }
+        .cal-modal.activo{ display:flex; }
+        .cal-box{ background:#fff; width:min(640px,96vw); max-height:92vh; border-radius:16px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.35); }
+        .cal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 22px; background:linear-gradient(135deg,#5b34d6,#7a5cf0); color:#fff; }
+        .cal-head .t{ font-size:19px; font-weight:700; display:flex; align-items:center; gap:10px; }
+        .cal-head .cerrar{ background:rgba(255,255,255,.18); border:none; color:#fff; font-size:22px; cursor:pointer; border-radius:8px; width:40px; height:40px; line-height:1; }
+        .cal-body{ padding:20px 22px; overflow:auto; }
+        .cal-nota{ background:#f3efff; border:1px solid #ddd0fb; color:#4a3aa0; border-radius:10px; padding:12px 14px; font-size:13px; line-height:19px; margin-bottom:18px; }
+        .cal-nota strong{ color:#3a2a86; }
+        .cal-error{ color:#c0392b; font-size:13px; font-weight:600; min-height:18px; margin:-6px 0 12px; }
+        .cal-vacio{ text-align:center; color:#8a94a2; padding:26px 10px; font-size:14px; }
         .cd-btn:hover{ transform:translateY(-2px); }
         .cd-filtro{ display:flex; align-items:center; gap:8px; font-size:14px; color:#4b5563; }
         .cd-filtro select{ padding:9px 12px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; }
@@ -103,6 +116,7 @@
             <a href="Sistema_Gestion_Documental.html" class="cd-btn volver"><i class="fa-solid fa-arrow-left"></i> Regresar</a>
             <button class="cd-btn nuevo" id="cd-btn-nuevo" onclick="cdAbrirModal()"><i class="fa-solid fa-plus"></i> Agregar documento</button>
             <button class="cd-btn nomen" id="cd-btn-nomen" onclick="nomAbrir()"><i class="fa-solid fa-tags"></i> Nomenclaturas</button>
+            <button class="cd-btn notif" id="cd-btn-notif" onclick="calidadNotifAbrir()"><i class="fa-solid fa-bell"></i> Notificaciones Calidad</button>
         </div>
         <div class="cd-filtro">
             <span>Estatus:</span>
@@ -220,6 +234,49 @@
   </div>
 </div>
 
+<!-- ==========================
+     MODAL: NOTIFICACIONES CALIDAD
+========================== -->
+<div class="cal-modal" id="cal-modal">
+    <div class="cal-box">
+
+        <div class="cal-head">
+            <div class="t"><i class="fa-solid fa-bell"></i> Notificaciones de Calidad</div>
+            <button class="cerrar" onclick="calidadNotifCerrar()" title="Cerrar">&times;</button>
+        </div>
+
+        <div class="cal-body">
+
+            <div class="cal-nota">
+                Estas personas reciben por correo las nuevas solicitudes (Nuevo Ingreso, Actualización y Baja)
+                que le corresponden al departamento de <strong>Calidad</strong>.
+                Las notificaciones se envían desde <strong>automatizaciones.madero@maderoequipos.com</strong>.
+            </div>
+
+            <!-- Alta / edición -->
+            <div class="cal-form">
+                <div class="campo">
+                    <label>Nombre del analista</label>
+                    <input type="text" id="cal-nombre" placeholder="Ej. Ana López">
+                </div>
+                <div class="campo">
+                    <label>Correo electrónico</label>
+                    <input type="email" id="cal-correo" placeholder="analista@maderoequipos.com">
+                </div>
+                <button class="btn-add" id="cal-btn-add" onclick="calidadNotifGuardarItem()">
+                    <i class="fa-solid fa-plus"></i> Agregar
+                </button>
+            </div>
+            <div class="cal-error" id="cal-error"></div>
+
+            <!-- Lista -->
+            <div class="cal-lista" id="cal-lista"></div>
+
+        </div>
+
+    </div>
+</div>
+
 <script src="script.js"></script>
 <script>
 /* ============================================================
@@ -288,7 +345,7 @@ async function cdCargarPendientes(){
     var publicados={}; CD_ITEMS.forEach(function(d){ if(d.codigo) publicados[d.codigo.toUpperCase()]=true; });
     CD_PENDIENTES=items.map(function(it){ var f=it.fields||it; return {
       id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo_Documento||'', tipoDoc:f.Tipo_Documento||'',
-      pdfRef:f.Documento_Final_URL||'', fuenteRef:f.Documento_Fuente_URL||'', fecha:(f.Ultima_Modificacion||f.Fecha_Solicitud||''), estatus:f.Estatus||''
+      pdfRef:f.Documento_Final_URL||'', copiaRef:f.Documento_Copia_URL||'', fuenteRef:f.Documento_Fuente_URL||'', fecha:(f.Ultima_Modificacion||f.Fecha_Solicitud||''), estatus:f.Estatus||''
     };})
     .filter(function(p){ return String(p.estatus).toLowerCase()==='atendida' && p.codigo && p.pdfRef; })
     .filter(function(p){ return !publicados[(p.codigo||'').toUpperCase()]; })   // aún no publicado
@@ -361,7 +418,7 @@ function cdVerPendiente(i){
 function cdAgregarDesdePendiente(i){
   var p=CD_PENDIENTES[i]; if(!p) return;
   cdAbrirModal();  // resetea a modo alta
-  CD_PREFILL={ pdf:p.pdfRef||'', fuente:p.fuenteRef||'', solicitudId:p.id };
+  CD_PREFILL={ pdf:p.pdfRef||'', copia:p.copiaRef||'', fuente:p.fuenteRef||'', solicitudId:p.id };
   document.getElementById('cd-modal-titulo').textContent='Agregar documento (desde pendiente)';
   document.getElementById('cd-nombre').value=p.nombre||'';
   document.getElementById('cd-codigo').value=p.codigo||'';
@@ -521,9 +578,11 @@ async function cdGuardar(){
     // Subir archivos (si se seleccionaron) y guardar sus URLs
     var urls={};
     if(itemId && pdf){ btn.textContent='Subiendo PDF…'; var b1=await cdFileB64(pdf); var up1=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:pdf.name, contentBase64:b1 }); if(up1&&up1.id) urls.Documento_URL=up1.id; }
-    else if(itemId && CD_PREFILL && CD_PREFILL.pdf){ urls.Documento_URL=CD_PREFILL.pdf; }   // reutiliza el PDF final del pendiente
+    else if(itemId && CD_PREFILL && CD_PREFILL.pdf){ urls.Documento_URL=CD_PREFILL.pdf; }   // PDF autorizado (visor) del pendiente
     if(itemId && word){ btn.textContent='Subiendo WORD…'; var b2=await cdFileB64(word); var up2=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:word.name, contentBase64:b2 }); if(up2&&up2.id) urls.Documento_Word_URL=up2.id; }
-    else if(itemId && CD_PREFILL && CD_PREFILL.fuente){ urls.Documento_Word_URL=CD_PREFILL.fuente; }   // reutiliza el editable del pendiente
+    else if(itemId && CD_PREFILL && CD_PREFILL.fuente){ urls.Documento_Word_URL=CD_PREFILL.fuente; }   // editable del pendiente
+    // Copia controlada (la que se descarga) reutilizada del pendiente
+    if(itemId && CD_PREFILL && CD_PREFILL.copia){ urls.Documento_Copia_URL=CD_PREFILL.copia; }
     if(itemId && (urls.Documento_URL || urls.Documento_Word_URL)){
       if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(urls);
       await window.SGD.sp('update',{ lista:cdLista(), itemId:itemId, fields:urls });
@@ -634,6 +693,168 @@ async function nomEliminar(i){
 }
 
 // Cerrar modales al hacer clic fuera
+/* ============================================================
+   NOTIFICACIONES DE CALIDAD (lista de SharePoint, editable)
+   ------------------------------------------------------------
+   Lista SP: SGD_NotificacionesCalidad
+     · Title  = nombre del analista
+     · Correo = correo electrónico
+   Se administra por el puente SP del padre (index.html). En modo
+   standalone (pruebas suelto) se usa localStorage como respaldo.
+   Son los analistas que reciben por correo las nuevas solicitudes.
+   ============================================================ */
+var CAL_KEY   = 'sgd_calidad_notificaciones';   // respaldo standalone
+var CAL_LISTA = [];      // [{id, nombre, correo}]  (id = itemId de SP; '' en standalone)
+var CAL_EDIT  = -1;      // índice en edición (-1 = alta nueva)
+var CAL_BUSY  = false;
+
+function calLista(){ return (window.SGD && window.SGD.LISTA_NOTIF_CALIDAD) || 'SGD_NotificacionesCalidad'; }
+function calEmbebido(){ return !!(window.SGD && window.SGD.embebido && window.SGD.embebido()); }
+
+// Carga desde SP (o localStorage en standalone)
+async function calidadNotifCargar(){
+    if(!calEmbebido()){
+        try{ CAL_LISTA = JSON.parse(localStorage.getItem(CAL_KEY) || '[]'); }catch(_){ CAL_LISTA=[]; }
+        if(!Array.isArray(CAL_LISTA)) CAL_LISTA=[];
+        return;
+    }
+    var r = await window.SGD.sp('list', { lista: calLista(), queryParams:'$expand=fields&$top=500' });
+    var items = (r && r.value) ? r.value : [];
+    CAL_LISTA = items.map(function(it){
+        var f = it.fields || it;
+        return { id: (it.id!==undefined?it.id:(f.id||'')), nombre: f.Title||'', correo: f.Correo||'' };
+    }).sort(function(a,b){ return (a.nombre||'').localeCompare(b.nombre||''); });
+}
+function calidadNotifPersistirLocal(){
+    try{ localStorage.setItem(CAL_KEY, JSON.stringify(CAL_LISTA)); }catch(_){}
+}
+
+async function calidadNotifAbrir(){
+    document.getElementById('cal-modal').classList.add('activo');
+    calidadNotifReset();
+    var cont=document.getElementById('cal-lista');
+    if(cont) cont.innerHTML='<div class="cal-vacio">Cargando…</div>';
+    try{ await calidadNotifCargar(); calidadNotifRender(); }
+    catch(e){ if(cont) cont.innerHTML='<div class="cal-vacio">No se pudo cargar la lista. Cierra y vuelve a intentar.</div>'; }
+}
+function calidadNotifCerrar(){
+    document.getElementById('cal-modal').classList.remove('activo');
+}
+
+function calidadNotifRender(){
+    var cont = document.getElementById('cal-lista');
+    if(!cont) return;
+    if(!CAL_LISTA.length){
+        cont.innerHTML = '<div class="cal-vacio">Aún no hay analistas de calidad registrados. Agrega al menos uno para recibir las notificaciones.</div>';
+        return;
+    }
+    var html = '';
+    CAL_LISTA.forEach(function(p, i){
+        html += '<div class="cal-item">'
+             +    '<div class="info">'
+             +      '<span class="nom">'+ calEsc(p.nombre) +'</span>'
+             +      '<span class="cor">'+ calEsc(p.correo) +'</span>'
+             +    '</div>'
+             +    '<div class="acc">'
+             +      '<button class="b-edit" title="Editar" onclick="calidadNotifEditar('+i+')"><i class="fa-solid fa-pen"></i></button>'
+             +      '<button class="b-del" title="Dar de baja" onclick="calidadNotifEliminar('+i+')"><i class="fa-solid fa-trash"></i></button>'
+             +    '</div>'
+             +  '</div>';
+    });
+    cont.innerHTML = html;
+}
+
+function calEsc(s){
+    return String(s==null?'':s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function calEmailValido(c){
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c);
+}
+
+function calidadNotifReset(){
+    CAL_EDIT = -1;
+    var n=document.getElementById('cal-nombre'), c=document.getElementById('cal-correo');
+    if(n) n.value=''; if(c) c.value='';
+    var b=document.getElementById('cal-btn-add');
+    if(b){ b.classList.remove('editando'); b.disabled=false; b.innerHTML='<i class="fa-solid fa-plus"></i> Agregar'; }
+    var e=document.getElementById('cal-error'); if(e) e.textContent='';
+}
+
+async function calidadNotifGuardarItem(){
+    if(CAL_BUSY) return;
+    var n=document.getElementById('cal-nombre').value.trim();
+    var c=document.getElementById('cal-correo').value.trim();
+    var e=document.getElementById('cal-error');
+    if(e) e.textContent='';
+    if(!n){ if(e) e.textContent='Escribe el nombre del analista.'; return; }
+    if(!calEmailValido(c)){ if(e) e.textContent='Escribe un correo electrónico válido.'; return; }
+    var dup = CAL_LISTA.findIndex(function(p, i){ return (p.correo||'').toLowerCase()===c.toLowerCase() && i!==CAL_EDIT; });
+    if(dup>=0){ if(e) e.textContent='Ese correo ya está registrado.'; return; }
+
+    var b=document.getElementById('cal-btn-add');
+    CAL_BUSY=true; if(b){ b.disabled=true; b.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Guardando…'; }
+    try{
+        if(calEmbebido()){
+            var f = { Title:n, Correo:c };
+            if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(f);  // quién y cuándo
+            if(CAL_EDIT>=0){
+                var idEd = CAL_LISTA[CAL_EDIT].id;
+                await window.SGD.sp('update', { lista:calLista(), itemId:idEd, fields:f });
+                if(window.SGD.bitacora) window.SGD.bitacora('Editar analista de calidad', 'SGD_NotificacionesCalidad', n+' · '+c, { id:idEd, pantalla:'Notificaciones Calidad' });
+            } else {
+                var crN = await window.SGD.sp('create', { lista:calLista(), fields:f });
+                if(window.SGD.bitacora) window.SGD.bitacora('Alta analista de calidad', 'SGD_NotificacionesCalidad', n+' · '+c, { id:(crN&&crN.id!==undefined?crN.id:''), pantalla:'Notificaciones Calidad' });
+            }
+            await calidadNotifCargar();
+        } else {
+            if(CAL_EDIT>=0){ CAL_LISTA[CAL_EDIT] = {id:'', nombre:n, correo:c}; }
+            else { CAL_LISTA.push({id:'', nombre:n, correo:c}); }
+            calidadNotifPersistirLocal();
+        }
+        calidadNotifReset();
+        calidadNotifRender();
+    }catch(err){
+        if(e) e.textContent='No se pudo guardar. Intenta de nuevo.';
+        if(b){ b.disabled=false; b.innerHTML = (CAL_EDIT>=0?'<i class="fa-solid fa-check"></i> Guardar':'<i class="fa-solid fa-plus"></i> Agregar'); }
+    }finally{ CAL_BUSY=false; }
+}
+
+function calidadNotifEditar(i){
+    var p = CAL_LISTA[i]; if(!p) return;
+    CAL_EDIT = i;
+    document.getElementById('cal-nombre').value = p.nombre || '';
+    document.getElementById('cal-correo').value = p.correo || '';
+    var b=document.getElementById('cal-btn-add');
+    if(b){ b.classList.add('editando'); b.innerHTML='<i class="fa-solid fa-check"></i> Guardar'; }
+    document.getElementById('cal-nombre').focus();
+}
+
+async function calidadNotifEliminar(i){
+    if(CAL_BUSY) return;
+    var p = CAL_LISTA[i]; if(!p) return;
+    if(!confirm('¿Dar de baja a "'+p.nombre+'" de las notificaciones de calidad?')) return;
+    CAL_BUSY=true;
+    try{
+        if(calEmbebido()){
+            await window.SGD.sp('delete', { lista:calLista(), itemId:p.id });
+            if(window.SGD.bitacora) window.SGD.bitacora('Baja analista de calidad', 'SGD_NotificacionesCalidad', (p.nombre||'')+' · '+(p.correo||''), { id:p.id, pantalla:'Notificaciones Calidad' });
+            await calidadNotifCargar();
+        } else {
+            CAL_LISTA.splice(i,1); calidadNotifPersistirLocal();
+        }
+        if(CAL_EDIT===i) calidadNotifReset();
+        calidadNotifRender();
+    }catch(err){
+        alert('No se pudo dar de baja. Intenta de nuevo.');
+    }finally{ CAL_BUSY=false; }
+}
+
+// Cierra el modal al hacer clic fuera de la caja
+document.getElementById('cal-modal').addEventListener('click', function(ev){
+    if(ev.target===this) calidadNotifCerrar();
+});
+
 document.getElementById('cd-modal').addEventListener('click', function(ev){ if(ev.target===this) cdCerrarModal(); });
 document.getElementById('nom-modal').addEventListener('click', function(ev){ if(ev.target===this) nomCerrar(); });
 

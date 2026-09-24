@@ -383,6 +383,37 @@ async function sgdDescargarCopia(ref, nombre) {
   }
 }
 
+// Deduce la extensión de archivo a partir del tipo MIME devuelto por SharePoint
+function sgdExtDeMime(m){
+  m = (m||'').toLowerCase();
+  if (m.indexOf('wordprocessingml')>=0) return '.docx';
+  if (m.indexOf('msword')>=0) return '.doc';
+  if (m.indexOf('spreadsheetml')>=0) return '.xlsx';
+  if (m.indexOf('ms-excel')>=0) return '.xls';
+  if (m.indexOf('visio')>=0) return '.vsdx';
+  if (m.indexOf('presentationml')>=0) return '.pptx';
+  if (m.indexOf('pdf')>=0) return '.pdf';
+  return '';
+}
+
+// Descarga el documento en su FORMATO DE ORIGEN (editable: Word / Excel / Visio) tal cual,
+// sin estampar ninguna leyenda (es el archivo fuente para poder modificarlo).
+async function sgdDescargarOrigen(ref, nombre){
+  if (!ref){ alert('El documento en formato de origen aún no está disponible.'); return; }
+  var got = await window.SGD.obtenerBytes(ref);
+  if (!got || !got.bytes){
+    if (got && got.error && /403|forbidden/i.test(got.error)){ alert('No tienes permiso para descargar este documento.'); return; }
+    var resB = await window.SGD.obtenerBlobUrl(ref);
+    if (resB && resB.url){ sgdDispararDescarga(await (await fetch(resB.url)).blob(), (nombre||'documento')+' (ORIGEN)'); }
+    else { alert('No se pudo preparar la descarga del documento de origen.'); }
+    return;
+  }
+  var ext = sgdExtDeMime(got.mime);
+  var nombreArchivo = ((nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_')) + ' (ORIGEN)' + ext;
+  sgdDispararDescarga(new Blob([got.bytes], { type: got.mime || 'application/octet-stream' }), nombreArchivo);
+  if (window.SGD.bitacora) window.SGD.bitacora('Descargar documento origen', 'Documento', nombre || '', {});
+}
+
 /* ============================================================================
    PANTALLA PRINCIPAL — documentos liberados (leídos de la lista maestra)
    ============================================================================ */
@@ -426,6 +457,7 @@ async function sgdCargarDocumentos(){
       return {
         id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo||'', tipo:f.Tipo_Doc||'',
         version:f.Version||'', fechaCambio:(f.Fecha_Cambio||''), url:f.Documento_URL||'', wordUrl:f.Documento_Word_URL||'',
+        copiaUrl:f.Documento_Copia_URL||'',
         accesos:f.Accesos||'', accesoTodos:f.Acceso_Todos||'', estatus:f.Estatus||'Vigente'
       };
     })
@@ -469,6 +501,7 @@ function sgdRenderDocumentos(docs){
   }
   tbody.innerHTML = docs.map(function(d){
     var nom = sgdDocEsc(d.nombre), nomA = sgdDocApos(d.nombre), urlA = sgdDocApos(d.url);
+    var copiaA = sgdDocApos(d.copiaUrl || d.url);   // la descarga usa la copia controlada; si no hay, el autorizado
     return '<tr>'
       + '<td>'+sgdDocEsc(d.version||'—')+'</td>'
       + '<td>'+sgdDocEsc(sgdDocFmtFecha(d.fechaCambio))+'</td>'
@@ -476,7 +509,7 @@ function sgdRenderDocumentos(docs){
       + '<td class="nombre"><a href="#" onclick="sgdVerDocumento(\''+urlA+'\',\''+nomA+'\');return false;">'+nom+'</a></td>'
       + '<td class="tipo"><span>'+sgdDocEsc(d.tipo)+'</span></td>'
       + '<td>'
-        + '<div class="tooltip"><button class="accion descargar" onclick="sgdDescargarCopia(\''+urlA+'\',\''+nomA+'\')"><i class="fa-solid fa-circle-down"></i></button><span class="tooltiptext">Descargar Copia NO controlada</span></div>'
+        + '<div class="tooltip"><button class="accion descargar" onclick="sgdDescargarCopia(\''+copiaA+'\',\''+nomA+'\')"><i class="fa-solid fa-circle-down"></i></button><span class="tooltiptext">Descargar Copia NO controlada</span></div>'
         + '<div class="tooltip"><button class="accion actualizar" onclick="sgdSolicitarActualizacion(\''+sgdDocApos(d.id)+'\',\''+nomA+'\',\''+sgdDocApos(d.codigo)+'\',\''+sgdDocApos(d.tipo)+'\',\''+sgdDocApos(d.url)+'\')"><i class="fa-solid fa-rotate"></i></button><span class="tooltiptext">Solicitar Actualización</span></div>'
         + '<div class="tooltip"><button class="accion eliminar" onclick="sgdSolicitarBaja(\''+sgdDocApos(d.id)+'\',\''+nomA+'\',\''+sgdDocApos(d.codigo)+'\',\''+sgdDocApos(d.tipo)+'\',\''+sgdDocApos(d.url)+'\')"><i class="fa-solid fa-xmark"></i></button><span class="tooltiptext">Solicitar Baja</span></div>'
       + '</td>'

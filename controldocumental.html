@@ -66,6 +66,8 @@
         .cd-acc .b-edit{ background:#eaf2fb; color:#1f6feb; }
         .cd-acc .b-baja{ background:#fdeaea; color:#c0392b; }
         .cd-acc .b-ver{ background:#eef7f0; color:#1e8449; }
+        .cd-acc .b-copia{ background:#eef3fb; color:#3a5bd0; }
+        .cd-acc .b-origen{ background:#f3eefb; color:#6a3fb5; }
         .cd-acc button:hover{ filter:brightness(.95); }
         .cd-vacio{ text-align:center; padding:34px; color:#8a94a2; }
         .cd-noauth{ margin:40px 35px; padding:30px; text-align:center; color:#8a5b00; background:#fff8e6; border:1px solid #ffe4a3; border-radius:12px; font-size:16px; }
@@ -189,8 +191,13 @@
       </div>
 
       <div class="cd-row2">
-        <div class="cd-fila"><label>Documento controlado (PDF)</label><input type="file" id="cd-pdf" accept=".pdf"><div class="cd-hint" id="cd-pdf-actual"></div></div>
-        <div class="cd-fila"><label>Documento fuente (WORD)</label><input type="file" id="cd-word" accept=".doc,.docx"><div class="cd-hint" id="cd-word-actual"></div></div>
+        <div class="cd-fila"><label>Documento autorizado (PDF, con firmas)</label><input type="file" id="cd-pdf" accept=".pdf"><div class="cd-hint" id="cd-pdf-actual"></div></div>
+        <div class="cd-fila"><label>Documento controlado — copia (PDF)</label><input type="file" id="cd-copia" accept=".pdf"><div class="cd-hint" id="cd-copia-actual"></div></div>
+      </div>
+
+      <div class="cd-row2">
+        <div class="cd-fila"><label>Documento fuente / origen (editable)</label><input type="file" id="cd-word" accept=".doc,.docx,.xls,.xlsx,.vsd,.vsdx"><div class="cd-hint" id="cd-word-actual"></div></div>
+        <div class="cd-fila"></div>
       </div>
 
       <div class="cd-error" id="cd-error"></div>
@@ -327,6 +334,7 @@ async function cdCargar(){
     CD_ITEMS=items.map(function(it){ var f=it.fields||it; return {
       id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo||'', tipo:f.Tipo_Doc||'',
       version:f.Version||'', fechaCambio:(f.Fecha_Cambio||''), url:f.Documento_URL||'', wordUrl:f.Documento_Word_URL||'',
+      copiaUrl:f.Documento_Copia_URL||'',
       accesos:f.Accesos||'', accesoTodos:f.Acceso_Todos||'', estatus:f.Estatus||'Vigente'
     };}).sort(function(a,b){ return (a.codigo||'').localeCompare(b.codigo||''); });
     await cdCargarPendientes();
@@ -360,7 +368,9 @@ function cdRender(){
   if(f==='Pendientes'){
     if(!CD_PENDIENTES.length){ tbody.innerHTML='<tr><td colspan="8" class="cd-vacio">No hay documentos pendientes de publicar.</td></tr>'; return; }
     tbody.innerHTML=CD_PENDIENTES.map(function(p,i){
-      var ver = p.pdfRef ? '<button class="b-ver" title="Ver documento (PDF)" onclick="cdVerPendiente('+i+')"><i class="fa-regular fa-file-lines"></i></button>' : '';
+      var ver    = p.pdfRef   ? '<button class="b-ver" title="Ver documento autorizado (PDF)" onclick="cdVerPendiente('+i+')"><i class="fa-regular fa-file-lines"></i></button>' : '';
+      var verCop = p.copiaRef ? '<button class="b-copia" title="Ver documento copia (PDF)" onclick="cdVerCopiaPendiente('+i+')"><i class="fa-regular fa-copy"></i></button>' : '';
+      var descOr = p.fuenteRef? '<button class="b-origen" title="Descargar documento origen (editable)" onclick="cdDescargarOrigenPendiente('+i+')"><i class="fa-solid fa-file-arrow-down"></i></button>' : '';
       return '<tr>'
         +'<td>—</td>'
         +'<td>'+cdEsc(cdFmtFecha(p.fecha))+'</td>'
@@ -369,7 +379,7 @@ function cdRender(){
         +'<td class="tipo"><span>'+cdEsc(p.tipoDoc)+'</span></td>'
         +'<td>—</td>'
         +'<td><span class="estatus-pill" style="background:#fff3e0;color:#c77700;border:1px solid #ffd8a8;">Pendiente</span></td>'
-        +'<td class="cd-acc">'+ver
+        +'<td class="cd-acc">'+ver+verCop+descOr
           +'<button class="b-edit" title="Agregar a Control Documental" style="background:#e7f6ee;color:#1e8449;" onclick="cdAgregarDesdePendiente('+i+')"><i class="fa-solid fa-plus"></i></button>'
         +'</td>'
         +'</tr>';
@@ -389,7 +399,9 @@ function cdRender(){
     var vig = String(d.estatus).toLowerCase()!=='obsoleto' && String(d.estatus).toLowerCase()!=='baja';
     var pill = vig ? '<span class="estatus-pill est-vigente">Vigente</span>' : '<span class="estatus-pill est-obsoleto">Obsoleto</span>';
     var idx = CD_ITEMS.indexOf(d);
-    var ver = d.url ? '<button class="b-ver" title="Ver documento" onclick="cdVer('+idx+')"><i class="fa-regular fa-file-lines"></i></button>' : '';
+    var ver    = d.url      ? '<button class="b-ver" title="Ver documento autorizado" onclick="cdVer('+idx+')"><i class="fa-regular fa-file-lines"></i></button>' : '';
+    var verCop = d.copiaUrl ? '<button class="b-copia" title="Ver documento copia (PDF)" onclick="cdVerCopia('+idx+')"><i class="fa-regular fa-copy"></i></button>' : '';
+    var descOr = d.wordUrl  ? '<button class="b-origen" title="Descargar documento origen (editable)" onclick="cdDescargarOrigen('+idx+')"><i class="fa-solid fa-file-arrow-down"></i></button>' : '';
     return '<tr>'
       +'<td>'+cdEsc(d.version||'—')+'</td>'
       +'<td>'+cdEsc(cdFmtFecha(d.fechaCambio))+'</td>'
@@ -398,7 +410,7 @@ function cdRender(){
       +'<td class="tipo"><span>'+cdEsc(d.tipo)+'</span></td>'
       +'<td>'+cdEsc(acceso)+'</td>'
       +'<td>'+pill+'</td>'
-      +'<td class="cd-acc">'+ver
+      +'<td class="cd-acc">'+ver+verCop+descOr
         +'<button class="b-edit" title="Editar" onclick="cdAbrirModal('+idx+')"><i class="fa-solid fa-pen"></i></button>'
         +(vig?'<button class="b-baja" title="Dar de baja (Obsoleto)" onclick="cdDarBaja('+idx+')"><i class="fa-solid fa-xmark"></i></button>':'')
       +'</td>'
@@ -410,9 +422,25 @@ function cdVer(idx){
   var d=CD_ITEMS[idx]; if(!d||!d.url) return;
   if(typeof sgdVerDocumento==='function') sgdVerDocumento(d.url, d.nombre||'Documento');
 }
+function cdVerCopia(idx){
+  var d=CD_ITEMS[idx]; if(!d||!d.copiaUrl) return;
+  if(typeof sgdVerDocumento==='function') sgdVerDocumento(d.copiaUrl, (d.nombre||'Documento')+' (copia controlada)');
+}
+function cdDescargarOrigen(idx){
+  var d=CD_ITEMS[idx]; if(!d||!d.wordUrl) return;
+  if(typeof sgdDescargarOrigen==='function') sgdDescargarOrigen(d.wordUrl, d.nombre||'Documento');
+}
 function cdVerPendiente(i){
   var p=CD_PENDIENTES[i]; if(!p||!p.pdfRef) return;
   if(typeof sgdVerDocumento==='function') sgdVerDocumento(p.pdfRef, p.nombre||'Documento');
+}
+function cdVerCopiaPendiente(i){
+  var p=CD_PENDIENTES[i]; if(!p||!p.copiaRef) return;
+  if(typeof sgdVerDocumento==='function') sgdVerDocumento(p.copiaRef, (p.nombre||'Documento')+' (copia controlada)');
+}
+function cdDescargarOrigenPendiente(i){
+  var p=CD_PENDIENTES[i]; if(!p||!p.fuenteRef) return;
+  if(typeof sgdDescargarOrigen==='function') sgdDescargarOrigen(p.fuenteRef, p.nombre||'Documento');
 }
 // Abre el modal "Agregar documento" precargando datos y archivos del pendiente
 function cdAgregarDesdePendiente(i){
@@ -424,8 +452,9 @@ function cdAgregarDesdePendiente(i){
   document.getElementById('cd-codigo').value=p.codigo||'';
   document.getElementById('cd-version').value='1';
   setTimeout(function(){ var sel=document.getElementById('cd-tipo'); if(sel && p.tipoDoc) sel.value=p.tipoDoc; }, 350);
-  document.getElementById('cd-pdf-actual').textContent  = p.pdfRef ? 'Documento final ya preparado (deja vacío para usarlo, o selecciona otro para reemplazar).' : '';
-  document.getElementById('cd-word-actual').textContent = p.fuenteRef ? 'Documento fuente ya preparado (deja vacío para usarlo, o selecciona otro).' : '';
+  document.getElementById('cd-pdf-actual').textContent   = p.pdfRef   ? 'Documento autorizado ya preparado (deja vacío para usarlo, o selecciona otro para reemplazar).' : '';
+  document.getElementById('cd-copia-actual').textContent = p.copiaRef ? 'Copia controlada ya preparada (deja vacío para usarla, o selecciona otra).' : '';
+  document.getElementById('cd-word-actual').textContent  = p.fuenteRef ? 'Documento de origen ya preparado (deja vacío para usarlo, o selecciona otro).' : '';
 }
 
 /* ---- Lista de usuarios (checkbox) para asignar accesos ---- */
@@ -498,8 +527,8 @@ function cdToggleAccesos(){
 function cdAbrirModal(idx){
   CD_PREFILL=null;
   document.getElementById('cd-error').textContent='';
-  document.getElementById('cd-pdf').value=''; document.getElementById('cd-word').value='';
-  document.getElementById('cd-pdf-actual').textContent=''; document.getElementById('cd-word-actual').textContent='';
+  document.getElementById('cd-pdf').value=''; document.getElementById('cd-copia').value=''; document.getElementById('cd-word').value='';
+  document.getElementById('cd-pdf-actual').textContent=''; document.getElementById('cd-copia-actual').textContent=''; document.getElementById('cd-word-actual').textContent='';
   if(window.SGD.cargarTiposEnSelect) window.SGD.cargarTiposEnSelect('cd-tipo','Seleccione…');
   // reinicia la lista de usuarios para que se vuelva a pintar con la preselección correcta
   CD_USERS_RENDERED=false;
@@ -523,8 +552,9 @@ function cdAbrirModal(idx){
     CD_SEL_PENDIENTE=(d.accesos||'').split(/[;,\n]+/).map(function(x){ return x.trim(); }).filter(Boolean);
     // set tipo tras cargar opciones
     setTimeout(function(){ var sel=document.getElementById('cd-tipo'); if(sel) sel.value=d.tipo||''; }, 300);
-    if(d.url) document.getElementById('cd-pdf-actual').textContent='Actual: PDF cargado (deja vacío para conservarlo)';
-    if(d.wordUrl) document.getElementById('cd-word-actual').textContent='Actual: WORD cargado (deja vacío para conservarlo)';
+    if(d.url) document.getElementById('cd-pdf-actual').textContent='Actual: PDF autorizado cargado (deja vacío para conservarlo)';
+    if(d.copiaUrl) document.getElementById('cd-copia-actual').textContent='Actual: copia controlada cargada (deja vacío para conservarla)';
+    if(d.wordUrl) document.getElementById('cd-word-actual').textContent='Actual: archivo de origen cargado (deja vacío para conservarlo)';
   }
   cdToggleAccesos();
   document.getElementById('cd-modal').classList.add('activo');
@@ -548,6 +578,7 @@ async function cdGuardar(){
   if(!todos && !accesosArr.length){ err.textContent='Selecciona al menos un usuario (o marca "Visible para todos").'; return; }
 
   var pdf=(document.getElementById('cd-pdf').files||[])[0];
+  var copia=(document.getElementById('cd-copia').files||[])[0];
   var word=(document.getElementById('cd-word').files||[])[0];
 
   var fields={
@@ -564,7 +595,7 @@ async function cdGuardar(){
     if(!cdEmbebido()){
       // standalone (pruebas): solo en memoria
       if(CD_EDIT_ID){ var it=CD_ITEMS.filter(function(x){return x.id===CD_EDIT_ID;})[0]; if(it){ it.nombre=nombre; it.codigo=codigo; it.tipo=tipo; it.version=version; it.fechaCambio=fecha; it.accesoTodos=todos?'Sí':'No'; it.accesos=accesos; } }
-      else { CD_ITEMS.push({ id:'tmp'+Date.now(), nombre:nombre, codigo:codigo, tipo:tipo, version:version, fechaCambio:fecha, accesoTodos:todos?'Sí':'No', accesos:accesos, estatus:'Vigente', url:'', wordUrl:'' }); }
+      else { CD_ITEMS.push({ id:'tmp'+Date.now(), nombre:nombre, codigo:codigo, tipo:tipo, version:version, fechaCambio:fecha, accesoTodos:todos?'Sí':'No', accesos:accesos, estatus:'Vigente', url:'', wordUrl:'', copiaUrl:'' }); }
       cdRender(); cdCerrarModal(); return;
     }
 
@@ -577,13 +608,14 @@ async function cdGuardar(){
     }
     // Subir archivos (si se seleccionaron) y guardar sus URLs
     var urls={};
-    if(itemId && pdf){ btn.textContent='Subiendo PDF…'; var b1=await cdFileB64(pdf); var up1=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:pdf.name, contentBase64:b1 }); if(up1&&up1.id) urls.Documento_URL=up1.id; }
+    if(itemId && pdf){ btn.textContent='Subiendo autorizado…'; var b1=await cdFileB64(pdf); var up1=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:pdf.name, contentBase64:b1 }); if(up1&&up1.id) urls.Documento_URL=up1.id; }
     else if(itemId && CD_PREFILL && CD_PREFILL.pdf){ urls.Documento_URL=CD_PREFILL.pdf; }   // PDF autorizado (visor) del pendiente
-    if(itemId && word){ btn.textContent='Subiendo WORD…'; var b2=await cdFileB64(word); var up2=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:word.name, contentBase64:b2 }); if(up2&&up2.id) urls.Documento_Word_URL=up2.id; }
+    // Copia controlada (la que se ve/descarga): archivo nuevo o reutilizada del pendiente
+    if(itemId && copia){ btn.textContent='Subiendo copia…'; var b3=await cdFileB64(copia); var up3=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:copia.name, contentBase64:b3 }); if(up3&&up3.id) urls.Documento_Copia_URL=up3.id; }
+    else if(itemId && CD_PREFILL && CD_PREFILL.copia){ urls.Documento_Copia_URL=CD_PREFILL.copia; }
+    if(itemId && word){ btn.textContent='Subiendo origen…'; var b2=await cdFileB64(word); var up2=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:word.name, contentBase64:b2 }); if(up2&&up2.id) urls.Documento_Word_URL=up2.id; }
     else if(itemId && CD_PREFILL && CD_PREFILL.fuente){ urls.Documento_Word_URL=CD_PREFILL.fuente; }   // editable del pendiente
-    // Copia controlada (la que se descarga) reutilizada del pendiente
-    if(itemId && CD_PREFILL && CD_PREFILL.copia){ urls.Documento_Copia_URL=CD_PREFILL.copia; }
-    if(itemId && (urls.Documento_URL || urls.Documento_Word_URL)){
+    if(itemId && (urls.Documento_URL || urls.Documento_Word_URL || urls.Documento_Copia_URL)){
       if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(urls);
       await window.SGD.sp('update',{ lista:cdLista(), itemId:itemId, fields:urls });
     }

@@ -475,6 +475,24 @@ td:last-child{
 .tabla1 td:last-child .tooltiptext{ left:auto; right:0; transform:none; }
 .tabla1 td:last-child .tooltiptext::after{ left:auto; right:16px; transform:none; }
 
+/* ===== Ancho de columnas =====
+   Un nombre de documento largo NO debe ensanchar la tabla ni empujar los
+   botones de acción: se limita el ancho de la columna Nombre y el texto
+   hace salto de línea. La columna de Acciones se mantiene con ancho fijo
+   (según sus botones) e igual en todas las filas. */
+.tabla1 td.nombre{
+    max-width:300px;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+}
+.tabla1 th.columna4,
+.tabla1 td:last-child{
+    white-space:nowrap;   /* los botones nunca se parten en dos líneas */
+    width:1px;            /* la columna se ajusta a los botones, misma en cada fila */
+    text-align:center;
+}
+
 .tooltiptext{
 
 

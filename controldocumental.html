@@ -88,6 +88,16 @@
         .cd-check{ display:flex; align-items:center; gap:10px; font-size:14px; font-weight:600; color:#1f4e79; cursor:pointer; }
         .cd-check input{ width:18px; height:18px; accent-color:#1f4e79; }
         .cd-hint{ font-size:12px; color:#7b8794; margin-top:4px; }
+        .cd-hint.ok{ color:#1e8449; font-weight:600; }
+        .cd-hint.warn{ color:#c77700; font-weight:600; }
+        /* Generador de código (Empresa · Depto · Tipo · Consecutivo) */
+        #cd-cod-generador{ background:#f5f8fc; border:1px solid #dce6f1; border-radius:10px; padding:12px; margin-bottom:10px; }
+        .cd-cod-grid{ display:grid; grid-template-columns:1fr 1fr 1fr .8fr; gap:10px; }
+        .cd-cod-grid .cd-mini{ display:block; font-size:11px; font-weight:700; color:#5a6b7d; margin-bottom:4px; text-transform:uppercase; letter-spacing:.3px; }
+        .cd-cod-grid select, .cd-cod-grid input{ width:100%; box-sizing:border-box; padding:9px 10px; border:1px solid #cfd8e3; border-radius:8px; font-size:13px; outline:none; background:#fff; }
+        .cd-cod-grid input[readonly]{ background:#eef3f8; text-align:center; font-weight:700; color:#1f4e79; }
+        #cd-codigo[readonly]{ background:#eef7f0; font-weight:700; color:#1f4e79; letter-spacing:.5px; }
+        @media(max-width:560px){ .cd-cod-grid{ grid-template-columns:1fr 1fr; } }
         /* Lista de usuarios con checkbox */
         .cd-users{ border:1px solid #e6eaf0; border-radius:8px; max-height:210px; overflow:auto; }
         .cd-users .u{ display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid #f0f3f7; cursor:pointer; }
@@ -169,9 +179,26 @@
         <input type="text" id="cd-nombre" placeholder="Ej. Procedimiento de compras">
       </div>
 
+      <div class="cd-fila">
+        <label>Código del documento</label>
+
+        <!-- Generador / validador de código (solo al AGREGAR directamente) -->
+        <div id="cd-cod-generador" style="display:none;">
+          <div class="cd-cod-grid">
+            <div><span class="cd-mini">Empresa</span><select id="cd-cod-empresa" onchange="cdCodCalcular()"><option value="">…</option></select></div>
+            <div><span class="cd-mini">Departamento</span><select id="cd-cod-depto" onchange="cdCodCalcular()"><option value="">…</option></select></div>
+            <div><span class="cd-mini">Tipo</span><select id="cd-cod-tipo" onchange="cdCodCalcular()"><option value="">…</option></select></div>
+            <div><span class="cd-mini">Consecutivo</span><input type="text" id="cd-cod-consec" readonly placeholder="—"></div>
+          </div>
+        </div>
+
+        <input type="text" id="cd-codigo" placeholder="Ej. MEO-CAL-PRS-001">
+        <div class="cd-hint" id="cd-cod-hint"></div>
+      </div>
+
       <div class="cd-row2">
-        <div class="cd-fila"><label>Código</label><input type="text" id="cd-codigo" placeholder="Ej. PR-COM-01"></div>
         <div class="cd-fila"><label>Versión</label><input type="text" id="cd-version" placeholder="Ej. 1"></div>
+        <div class="cd-fila"></div>
       </div>
 
       <div class="cd-row2">
@@ -449,7 +476,10 @@ function cdAgregarDesdePendiente(i){
   CD_PREFILL={ pdf:p.pdfRef||'', copia:p.copiaRef||'', fuente:p.fuenteRef||'', solicitudId:p.id };
   document.getElementById('cd-modal-titulo').textContent='Agregar documento (desde pendiente)';
   document.getElementById('cd-nombre').value=p.nombre||'';
-  document.getElementById('cd-codigo').value=p.codigo||'';
+  // El código ya viene APARTADO desde la liberación: se muestra fijo, sin generador
+  cdCodMostrar(false);
+  var codPend=document.getElementById('cd-codigo'); codPend.readOnly=true; codPend.value=p.codigo||'';
+  var hPend=document.getElementById('cd-cod-hint'); if(hPend){ hPend.className='cd-hint'; hPend.innerHTML = p.codigo ? 'Código ya apartado para esta solicitud: <b>'+p.codigo+'</b>' : ''; }
   document.getElementById('cd-version').value='1';
   setTimeout(function(){ var sel=document.getElementById('cd-tipo'); if(sel && p.tipoDoc) sel.value=p.tipoDoc; }, 350);
   document.getElementById('cd-pdf-actual').textContent   = p.pdfRef   ? 'Documento autorizado ya preparado (deja vacío para usarlo, o selecciona otro para reemplazar).' : '';
@@ -541,6 +571,7 @@ function cdAbrirModal(idx){
     document.getElementById('cd-version').value='1'; document.getElementById('cd-fecha').value=cdHoyISO();
     document.getElementById('cd-todos').checked=true;
     CD_SEL_PENDIENTE=[];
+    cdCodMostrar(true);   // alta directa: mostrar generador/validador de código
   } else {
     var d=CD_ITEMS[idx]; if(!d) return;
     CD_EDIT_ID=d.id;
@@ -555,11 +586,75 @@ function cdAbrirModal(idx){
     if(d.url) document.getElementById('cd-pdf-actual').textContent='Actual: PDF autorizado cargado (deja vacío para conservarlo)';
     if(d.copiaUrl) document.getElementById('cd-copia-actual').textContent='Actual: copia controlada cargada (deja vacío para conservarla)';
     if(d.wordUrl) document.getElementById('cd-word-actual').textContent='Actual: archivo de origen cargado (deja vacío para conservarlo)';
+    cdCodMostrar(false);   // edición: el código ya existe, no se regenera
   }
   cdToggleAccesos();
   document.getElementById('cd-modal').classList.add('activo');
 }
 function cdCerrarModal(){ document.getElementById('cd-modal').classList.remove('activo'); }
+
+/* ===== Generador / validador de código (Empresa · Depto · Tipo · Consecutivo) =====
+   Solo se usa al AGREGAR un documento directamente en Control Documental.
+   Arma el código con las abreviaturas de los catálogos de nomenclatura y muestra
+   el consecutivo DISPONIBLE (revisando SGD_Documentos y códigos ya apartados en
+   SGD_Solicitudes), igual que en la liberación del analista. */
+var CD_GEN_ACTIVO=false;      // true cuando el generador está visible (alta directa)
+var CD_COD_TIPOS=[];          // [{ab,nom}] para sincronizar el "Tipo de documento"
+
+function cdCodMostrar(show){
+  CD_GEN_ACTIVO=!!show;
+  var gen=document.getElementById('cd-cod-generador');
+  var cod=document.getElementById('cd-codigo');
+  var hint=document.getElementById('cd-cod-hint');
+  if(gen) gen.style.display = show ? 'block' : 'none';
+  ['cd-cod-empresa','cd-cod-depto','cd-cod-tipo'].forEach(function(id){ var s=document.getElementById(id); if(s) s.value=''; });
+  var con=document.getElementById('cd-cod-consec'); if(con) con.value='';
+  if(hint){ hint.className='cd-hint'; hint.textContent = show ? 'Selecciona empresa, departamento y tipo para ver el código disponible.' : ''; }
+  if(cod){ if(show){ cod.readOnly=true; cod.value=''; } else { cod.readOnly=false; } }
+  if(show && cdEmbebido()){
+    cdCodLlenarSelect('cd-cod-empresa', (window.SGD.LISTA_EMPRESA||'SGD_Empresa'));
+    cdCodLlenarSelect('cd-cod-depto',   (window.SGD.LISTA_DEPARTAMENTOS||'SGD_Departamentos'));
+    cdCodLlenarSelect('cd-cod-tipo',    (window.SGD.LISTA_TIPOS||'SGD_TiposDocumento'), true);
+  }
+}
+
+async function cdCodLlenarSelect(selId, lista, esTipo){
+  var sel=document.getElementById(selId); if(!sel) return;
+  sel.innerHTML='<option value="">…</option>';
+  try{
+    var r=await window.SGD.sp('list',{ lista:lista, queryParams:'$expand=fields&$top=500' });
+    var items=(r&&r.value)?r.value:[];
+    var pares=items.map(function(it){ var f=it.fields||it; return { ab:(f.Abreviatura||'').toString().trim(), nom:(f.Title||'').toString().trim() }; })
+      .filter(function(x){ return x.ab; })
+      .sort(function(a,b){ return a.ab.localeCompare(b.ab); });
+    pares.forEach(function(x){ var o=document.createElement('option'); o.value=x.ab; o.textContent=x.ab+' — '+x.nom; sel.appendChild(o); });
+    if(esTipo) CD_COD_TIPOS=pares;
+  }catch(e){}
+}
+
+async function cdCodCalcular(){
+  if(!CD_GEN_ACTIVO) return;
+  var emp=(document.getElementById('cd-cod-empresa')||{}).value||'';
+  var dep=(document.getElementById('cd-cod-depto')||{}).value||'';
+  var tip=(document.getElementById('cd-cod-tipo')||{}).value||'';
+  var con=document.getElementById('cd-cod-consec');
+  var cod=document.getElementById('cd-codigo');
+  var hint=document.getElementById('cd-cod-hint');
+  // Sincroniza el "Tipo de documento" (Tipo_Doc) con el tipo elegido para el código
+  if(tip){ var par=CD_COD_TIPOS.filter(function(x){return x.ab===tip;})[0]; if(par){ var t=document.getElementById('cd-tipo'); if(t) t.value=par.nom; } }
+  if(!emp||!dep||!tip){
+    if(con) con.value=''; if(cod) cod.value='';
+    if(hint){ hint.className='cd-hint'; hint.textContent='Selecciona empresa, departamento y tipo para ver el código disponible.'; }
+    return;
+  }
+  var prefijo=emp+'-'+dep+'-'+tip+'-';
+  if(con) con.value='…';
+  if(hint){ hint.className='cd-hint'; hint.textContent='Verificando disponibilidad…'; }
+  var n = (window.SGD.siguienteConsecutivo) ? await window.SGD.siguienteConsecutivo(prefijo) : '001';
+  if(con) con.value=n;
+  if(cod) cod.value=prefijo+n;
+  if(hint){ hint.className='cd-hint ok'; hint.innerHTML='<i class="fa-solid fa-circle-check"></i> Código disponible para asignar: <b>'+prefijo+n+'</b>'; }
+}
 
 async function cdGuardar(){
   if(CD_BUSY) return;
@@ -572,6 +667,18 @@ async function cdGuardar(){
   var todos=document.getElementById('cd-todos').checked;
   var accesosArr = todos ? [] : cdCorreosSeleccionados();
   var accesos = accesosArr.join('; ');
+  // Alta directa con generador: revalidar el consecutivo disponible al momento de guardar
+  if(CD_GEN_ACTIVO && cdEmbebido()){
+    var gEmp=(document.getElementById('cd-cod-empresa')||{}).value||'';
+    var gDep=(document.getElementById('cd-cod-depto')||{}).value||'';
+    var gTip=(document.getElementById('cd-cod-tipo')||{}).value||'';
+    if(!gEmp||!gDep||!gTip){ err.textContent='Selecciona empresa, departamento y tipo para asignar el código.'; return; }
+    var gPref=gEmp+'-'+gDep+'-'+gTip+'-';
+    var gN=(window.SGD.siguienteConsecutivo)?await window.SGD.siguienteConsecutivo(gPref):'001';
+    codigo=gPref+gN;
+    document.getElementById('cd-codigo').value=codigo;
+    document.getElementById('cd-cod-consec').value=gN;
+  }
   if(!nombre){ err.textContent='Escribe el nombre del documento.'; return; }
   if(!codigo){ err.textContent='Escribe el código del documento.'; return; }
   if(!tipo){ err.textContent='Selecciona el tipo de documento.'; return; }

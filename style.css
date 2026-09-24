@@ -486,12 +486,10 @@ td:last-child{
     overflow-wrap:anywhere;
     word-break:break-word;
 }
-.tabla1 th.columna4,
-.tabla1 td:last-child{
-    white-space:nowrap;   /* los botones nunca se parten en dos líneas */
-    width:1px;            /* la columna se ajusta a los botones, misma en cada fila */
-    text-align:center;
-}
+.tabla1 th.columna4{ white-space:nowrap; text-align:center; }
+/* Las filas de estado (Cargando… / No hay documentos), que usan colspan,
+   NO deben volverse flex: se mantienen como celda de tabla y centran su texto. */
+.tabla1 td[colspan]{ display:table-cell; text-align:center; white-space:normal; }
 
 .tooltiptext{
 

@@ -694,7 +694,7 @@ async function segCargar(){
       };
     })
     .filter(function(s){ return String(s.correo).toLowerCase()===correo; })          // solo mis solicitudes
-    .filter(function(s){ return (s.estatus||'').toLowerCase()!=='atendida'; })        // excluir atendidas
+    .filter(function(s){ var e=(s.estatus||'').toLowerCase(); return e!=='atendida' && e!=='publicada'; })  // excluir atendidas/publicadas
     .sort(function(a,b){ return (b.fecha||'').localeCompare(a.fecha||''); });
     segRender();
   }catch(e){

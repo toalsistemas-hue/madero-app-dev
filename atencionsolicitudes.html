@@ -97,6 +97,10 @@
         .det-block .k{ font-size:11px; font-weight:700; color:#8a94a2; text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px; }
         .det-block .v{ font-size:14px; color:#33455a; line-height:20px; white-space:pre-wrap; background:#f7f9fc; border:1px solid #edf1f6; border-radius:8px; padding:10px 12px; }
         @media(max-width:560px){ .det-grid{ grid-template-columns:1fr; } }
+        .atc-btn-origen{ background:linear-gradient(135deg,#6a3fb5,#4a2a86); color:#fff; border:none; border-radius:8px; padding:11px 16px; font-size:14px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:8px; transition:.2s; }
+        .atc-btn-origen:hover{ filter:brightness(1.08); transform:translateY(-1px); }
+        .atc-origen-hint{ font-size:12px; color:#7b8794; margin-top:6px; }
+        .atc-origen-hint.err{ color:#c0392b; font-weight:600; }
 
     </style>
 
@@ -508,6 +512,7 @@ archivo.addEventListener("change",()=>{
    ============================================================ */
 var ATC_ITEMS = [];    // solicitudes cargadas de SP
 var ATC_VISIBLE = [];  // subconjunto visible tras filtros (base para los índices de los modales)
+var ATC_DET_IDX = -1;  // índice del detalle abierto (para acciones dentro del modal de detalle)
 
 var ATC_DEMO = [
   { id:'d1', estatus:'Pendiente', documento:'Procedimiento de compras', tipoDoc:'Procedimiento', departamento:'Compras', tipo:'Nuevo Ingreso', fecha:'09/12/2025', fechaCita:'12/12/2025', horaCita:'17:30' },
@@ -657,8 +662,14 @@ function atcCampo(k, v){ return '<div class="campo"><span class="k">'+k+'</span>
 function atcBloque(k, v){ if(!v) return ''; return '<div class="det-block"><div class="k">'+k+'</div><div class="v">'+atcEsc(v)+'</div></div>'; }
 function atcVerDetalle(idx){
   var s=ATC_VISIBLE[idx]; if(!s) return;
+  ATC_DET_IDX = idx;
   var citaTxt = (s.fechaCita?atcEsc(s.fechaCita):'—') + (s.horaCita?(' · '+atcEsc(s.horaCita)):'');
   var revision = (String(s.requiereRev).toLowerCase()==='sí'||String(s.requiereRev).toLowerCase()==='si') ? 'Sí' : (s.requiereRev||'No');
+  var esActualiz = String(s.tipo||'').toLowerCase().indexOf('actualiz')>=0;
+  var bloqueOrigen = (esActualiz && s.codigoDoc) ?
+      '<div class="det-block"><div class="k">Documento vigente (para editar la nueva versión)</div>'
+      + '<button class="atc-btn-origen" onclick="atcDescargarOrigenVigente()"><i class="fa-solid fa-file-arrow-down"></i> Descargar formato de origen de la versión vigente</button>'
+      + '<div class="atc-origen-hint" id="atc-origen-hint"></div></div>' : '';
   var html =
     '<div class="det-grid">'
     + atcCampo('Estatus', s.estatus)
@@ -673,6 +684,7 @@ function atcVerDetalle(idx){
     + atcCampo('Requiere revisión presencial', revision)
     + atcCampo('Fecha/hora de cita', citaTxt)
     + '</div>'
+    + bloqueOrigen
     + atcBloque('Propuesta de cita enviada al solicitante', s.propuesta)
     + atcBloque('Respuesta del solicitante', s.respuestaSol)
     + atcBloque('Comentario del solicitante', s.comentarioSol)
@@ -688,6 +700,31 @@ function atcVerDetalle(idx){
   document.getElementById('det-modal').classList.add('activo');
 }
 function atcCerrarDetalle(){ document.getElementById('det-modal').classList.remove('activo'); }
+
+/* Actualización: el analista descarga el formato de ORIGEN (editable) de la versión
+   vigente publicada, para editarlo y generar la nueva versión. Busca el documento
+   por su código en Control Documental (SGD_Documentos) y baja Documento_Word_URL. */
+async function atcBuscarOrigenPorCodigo(codigo){
+  if(!atcEmbebido() || !codigo) return '';
+  var r = await window.SGD.sp('list', { lista:(window.SGD.LISTA_DOCUMENTOS||'SGD_Documentos'), queryParams:'$expand=fields&$top=1000' });
+  var items=(r&&r.value)?r.value:[];
+  var hit=items.map(function(it){ return it.fields||it; })
+    .filter(function(f){ return String(f.Codigo||'').toUpperCase()===String(codigo).toUpperCase(); })[0];
+  return hit ? (hit.Documento_Word_URL||'') : '';
+}
+async function atcDescargarOrigenVigente(){
+  var s=ATC_VISIBLE[ATC_DET_IDX]; if(!s) return;
+  var hint=document.getElementById('atc-origen-hint');
+  if(!s.codigoDoc){ if(hint) hint.textContent='Esta solicitud no tiene un documento vigente asociado.'; return; }
+  if(hint){ hint.className='atc-origen-hint'; hint.textContent='Buscando el documento vigente…'; }
+  try{
+    var ref = await atcBuscarOrigenPorCodigo(s.codigoDoc);
+    if(!ref){ if(hint){ hint.className='atc-origen-hint err'; hint.textContent='No se encontró el formato de origen de la versión vigente en Control Documental.'; } return; }
+    if(hint) hint.textContent='';
+    if(typeof sgdDescargarOrigen==='function') sgdDescargarOrigen(ref, s.documento||s.codigoDoc);
+    else alert('No está disponible la descarga en este contexto.');
+  }catch(e){ if(hint){ hint.className='atc-origen-hint err'; hint.textContent='No se pudo obtener el documento. Intenta de nuevo.'; } }
+}
 
 /* ============================================================
    HELPERS de escritura + utilidades para los modales

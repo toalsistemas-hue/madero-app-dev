@@ -103,6 +103,49 @@ window.SGD.LISTA_DOCUMENTOS = 'SGD_Documentos';
 //    SGD_TiposDocumento : Title = tipo, Abreviatura (ej. PRS)
 window.SGD.LISTA_EMPRESA = 'SGD_Empresa';
 window.SGD.LISTA_DEPARTAMENTOS = 'SGD_Departamentos';
+//  Histórico de versiones (trazabilidad): cada vez que se publica una ACTUALIZACIÓN,
+//  la versión saliente se archiva aquí con sus 3 archivos (autorizado, copia, origen).
+//    SGD_DocumentosHistorico columnas: Title(nombre), Codigo, Version, Documento_URL,
+//      Documento_Copia_URL, Documento_Word_URL, Fecha_Archivado, Usuario_Archiva, Solicitud_Id
+window.SGD.LISTA_HISTORICO = 'SGD_DocumentosHistorico';
+
+// Archiva en el histórico la versión ACTUAL (saliente) de un documento antes de reemplazarla.
+// datos: { nombre, codigo, version, autorizado, copia, origen, solicitudId }
+window.SGD.archivarVersion = async function (datos) {
+  datos = datos || {};
+  var fields = {
+    Title: datos.nombre || '',
+    Codigo: datos.codigo || '',
+    Version: (datos.version !== undefined && datos.version !== null) ? String(datos.version) : '',
+    Documento_URL: datos.autorizado || '',
+    Documento_Copia_URL: datos.copia || '',
+    Documento_Word_URL: datos.origen || '',
+    Fecha_Archivado: new Date().toISOString(),
+    Solicitud_Id: (datos.solicitudId !== undefined && datos.solicitudId !== null) ? String(datos.solicitudId) : ''
+  };
+  var u = (window.SGD.getUsuario && window.SGD.getUsuario()) || null;
+  fields.Usuario_Archiva = u ? (u.nombre || u.correo || '') : '';
+  return window.SGD.sp('create', { lista: window.SGD.LISTA_HISTORICO, fields: fields });
+};
+
+// Lee las versiones archivadas de un código (más recientes primero).
+window.SGD.versionesAnteriores = async function (codigo) {
+  if (!codigo) return [];
+  try {
+    var r = await window.SGD.sp('list', { lista: window.SGD.LISTA_HISTORICO, queryParams: '$expand=fields&$top=500' });
+    var items = (r && r.value) ? r.value : [];
+    return items.map(function (it) {
+      var f = it.fields || it;
+      return {
+        id: (it.id !== undefined ? it.id : ''),
+        nombre: f.Title || '', codigo: f.Codigo || '', version: f.Version || '',
+        autorizado: f.Documento_URL || '', copia: f.Documento_Copia_URL || '', origen: f.Documento_Word_URL || '',
+        fecha: f.Fecha_Archivado || '', usuario: f.Usuario_Archiva || ''
+      };
+    }).filter(function (x) { return (x.codigo || '').toUpperCase() === String(codigo).toUpperCase(); })
+      .sort(function (a, b) { return (b.fecha || '').localeCompare(a.fecha || ''); });
+  } catch (e) { return []; }
+};
 
 // Devuelve el siguiente consecutivo disponible (3 dígitos) para un prefijo de código (ej. "MEO-CAL-PRS-").
 // Considera TANTO los documentos ya publicados en Control Documental (SGD_Documentos.Codigo)
@@ -412,6 +455,23 @@ async function sgdDescargarOrigen(ref, nombre){
   var nombreArchivo = ((nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_')) + ' (ORIGEN)' + ext;
   sgdDispararDescarga(new Blob([got.bytes], { type: got.mime || 'application/octet-stream' }), nombreArchivo);
   if (window.SGD.bitacora) window.SGD.bitacora('Descargar documento origen', 'Documento', nombre || '', {});
+}
+
+// Descarga un archivo TAL CUAL (bytes crudos), sin estampar leyenda. Sirve para
+// respaldos/trazabilidad (versiones anteriores) de PDF, Word, Excel o Visio.
+async function sgdDescargarArchivo(ref, nombre){
+  if (!ref){ alert('El archivo no está disponible.'); return; }
+  var got = await window.SGD.obtenerBytes(ref);
+  if (!got || !got.bytes){
+    if (got && got.error && /403|forbidden/i.test(got.error)){ alert('No tienes permiso para descargar este documento.'); return; }
+    var resB = await window.SGD.obtenerBlobUrl(ref);
+    if (resB && resB.url){ sgdDispararDescarga(await (await fetch(resB.url)).blob(), (nombre||'documento')); }
+    else { alert('No se pudo preparar la descarga.'); }
+    return;
+  }
+  var ext = sgdExtDeMime(got.mime);
+  var nombreArchivo = ((nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_')) + ext;
+  sgdDispararDescarga(new Blob([got.bytes], { type: got.mime || 'application/octet-stream' }), nombreArchivo);
 }
 
 /* ============================================================================

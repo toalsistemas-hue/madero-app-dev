@@ -575,6 +575,7 @@ async function atencionCargarSolicitudes(){
         respuestaDoc:f.Respuesta_Documento||'',
         comentariosDoc:f.Comentarios_Doc||'',
         codigoDoc:  f.Codigo_Documento||'',
+        codigoOrigen: f.Codigo_Documento_Origen||'',   // Actualización/Baja: código del documento vigente
         fecha:      atcFmtFecha(f.Fecha_Solicitud),
         fechaISO:   f.Fecha_Solicitud||'',
         fechaCitaISO:(f.Fecha_Revision||'').split('T')[0],
@@ -666,8 +667,9 @@ function atcVerDetalle(idx){
   var citaTxt = (s.fechaCita?atcEsc(s.fechaCita):'—') + (s.horaCita?(' · '+atcEsc(s.horaCita)):'');
   var revision = (String(s.requiereRev).toLowerCase()==='sí'||String(s.requiereRev).toLowerCase()==='si') ? 'Sí' : (s.requiereRev||'No');
   var esActualiz = String(s.tipo||'').toLowerCase().indexOf('actualiz')>=0;
-  var bloqueOrigen = (esActualiz && s.codigoDoc) ?
-      '<div class="det-block"><div class="k">Documento vigente (para editar la nueva versión)</div>'
+  var codVigente = s.codigoOrigen || s.codigoDoc || '';
+  var bloqueOrigen = (esActualiz && codVigente) ?
+      '<div class="det-block"><div class="k">Documento vigente '+(codVigente?('('+atcEsc(codVigente)+')'):'')+' — para editar la nueva versión</div>'
       + '<button class="atc-btn-origen" onclick="atcDescargarOrigenVigente()"><i class="fa-solid fa-file-arrow-down"></i> Descargar formato de origen de la versión vigente</button>'
       + '<div class="atc-origen-hint" id="atc-origen-hint"></div></div>' : '';
   var html =
@@ -715,13 +717,14 @@ async function atcBuscarOrigenPorCodigo(codigo){
 async function atcDescargarOrigenVigente(){
   var s=ATC_VISIBLE[ATC_DET_IDX]; if(!s) return;
   var hint=document.getElementById('atc-origen-hint');
-  if(!s.codigoDoc){ if(hint) hint.textContent='Esta solicitud no tiene un documento vigente asociado.'; return; }
+  var codVig = s.codigoOrigen || s.codigoDoc || '';
+  if(!codVig){ if(hint) hint.textContent='Esta solicitud no tiene un documento vigente asociado.'; return; }
   if(hint){ hint.className='atc-origen-hint'; hint.textContent='Buscando el documento vigente…'; }
   try{
-    var ref = await atcBuscarOrigenPorCodigo(s.codigoDoc);
+    var ref = await atcBuscarOrigenPorCodigo(codVig);
     if(!ref){ if(hint){ hint.className='atc-origen-hint err'; hint.textContent='No se encontró el formato de origen de la versión vigente en Control Documental.'; } return; }
     if(hint) hint.textContent='';
-    if(typeof sgdDescargarOrigen==='function') sgdDescargarOrigen(ref, s.documento||s.codigoDoc);
+    if(typeof sgdDescargarOrigen==='function') sgdDescargarOrigen(ref, s.documento||codVig);
     else alert('No está disponible la descarga en este contexto.');
   }catch(e){ if(hint){ hint.className='atc-origen-hint err'; hint.textContent='No se pudo obtener el documento. Intenta de nuevo.'; } }
 }
@@ -973,26 +976,33 @@ async function libLlenarSelect(selId, lista){
 
 function libAbrir(idx){
   LIB_IDX=idx; var s=ATC_VISIBLE[idx]; if(!s) return;
-  var tieneCodigo = !!(s.codigoDoc && s.codigoDoc.trim());
+  var esActualiz = String(s.tipo||'').toLowerCase().indexOf('actualiz')>=0;
+  var codReservado = (s.codigoDoc && s.codigoDoc.trim()) ? s.codigoDoc.trim() : '';
+  var codigoBase = codReservado || (esActualiz && s.codigoOrigen ? s.codigoOrigen.trim() : '');
+  var tieneCodigo = !!codigoBase;
   document.getElementById('lib-info').innerHTML =
     '<b>'+atcEsc(s.documento)+'</b><br>Estatus: <b>En liberación</b> (liberado por el solicitante).'
-    + (tieneCodigo? '<br>Este documento ya tiene un código <b>apartado</b>: <b style="color:#1f4e79;">'+atcEsc(s.codigoDoc)+'</b>' : '');
+    + (codReservado
+        ? '<br>Este documento ya tiene un código <b>apartado</b>: <b style="color:#1f4e79;">'+atcEsc(codReservado)+'</b>'
+        : (esActualiz && codigoBase
+            ? '<br>Actualización del documento <b style="color:#1f4e79;">'+atcEsc(codigoBase)+'</b>: se conserva el mismo código.'
+            : ''));
   document.querySelector('#lib-modal input[value="final"]').checked=true;
   document.getElementById('lib-consec').value=''; document.getElementById('lib-codigo').value='';
   document.getElementById('lib-error').textContent='';
 
-  // Opción "Liberar código" solo aparece si ya hay un código apartado
-  document.getElementById('lib-opt-liberar').style.display = tieneCodigo ? '' : 'none';
+  // Opción "Liberar código" solo aparece si hay un código APARTADO (no aplica a Actualización)
+  document.getElementById('lib-opt-liberar').style.display = codReservado ? '' : 'none';
 
   var selEmp=document.getElementById('lib-empresa'), selDep=document.getElementById('lib-depto'), selTip=document.getElementById('lib-tipo');
   var labelFinal = document.querySelector('#lib-opt-final .cab');
 
   if(tieneCodigo){
-    // Ya tiene código: se muestra (bloqueado) y no se vuelve a generar
-    if(labelFinal) labelFinal.innerHTML = '<input type="radio" name="lib-op" value="final" checked onchange="libSel()"> Continuar con el código apartado';
-    document.getElementById('lib-codigo').value = s.codigoDoc;
+    // Ya hay código (apartado, o el de la versión vigente en Actualización): se muestra bloqueado y no se regenera
+    if(labelFinal) labelFinal.innerHTML = '<input type="radio" name="lib-op" value="final" checked onchange="libSel()"> '+((esActualiz && !codReservado) ? 'Continuar con el mismo código (actualización)' : 'Continuar con el código apartado');
+    document.getElementById('lib-codigo').value = codigoBase;
     [selEmp,selDep,selTip].forEach(function(sl){ if(sl){ sl.disabled=true; sl.innerHTML='<option>—</option>'; } });
-    document.getElementById('lib-consec').value = (s.codigoDoc.split('-').pop()||'');
+    document.getElementById('lib-consec').value = (codigoBase.split('-').pop()||'');
   } else {
     if(labelFinal) labelFinal.innerHTML = '<input type="radio" name="lib-op" value="final" checked onchange="libSel()"> Documento final — generar código';
     [selEmp,selDep,selTip].forEach(function(sl){ if(sl) sl.disabled=false; });
@@ -1037,10 +1047,24 @@ async function libConfirmar(){
     fields={ Codigo_Documento:'', Evento_Notificacion:'CODIGO_LIBERADO' };
     accion='Liberar código apartado'; detalle=(s.codigoDoc||'');
   } else { // final
+    var esActualiz = String(s.tipo||'').toLowerCase().indexOf('actualiz')>=0;
     if(yaTieneCodigo){
       // Ya tiene código apartado: no se regenera, solo continuar
       libCerrar();
       alert('Este documento ya tiene el código '+s.codigoDoc+' apartado.\nUsa "Cargar documento final" en la columna Documento Finalizado.');
+      return;
+    }
+    if(esActualiz && s.codigoOrigen && s.codigoOrigen.trim()){
+      // ACTUALIZACIÓN: se REUSA el código de la versión vigente (no se genera uno nuevo)
+      fields={ Codigo_Documento:s.codigoOrigen.trim(), Estatus:'En liberación', Evento_Notificacion:'CODIGO_GENERADO' };
+      accion='Reusar código (actualización)'; detalle=s.codigoOrigen.trim();
+      btn.disabled=true; btn.textContent='Guardando…';
+      try{
+        await atcAplicarCambio(s, fields, accion, detalle);
+        libCerrar();
+        alert('Actualización lista con el código '+s.codigoOrigen.trim()+'.\nAhora usa "Cargar documento final" en la columna Documento Finalizado.');
+      }catch(e){ err.textContent='No se pudo guardar. Intenta de nuevo.'; }
+      finally{ btn.disabled=false; btn.textContent='Guardar'; }
       return;
     }
     var codigo=(document.getElementById('lib-codigo').value||'').trim();

@@ -212,7 +212,7 @@ async function actRegistrar(){
         Title: ACT_DOC.nombre||'',
         Tipo_Documento: ACT_DOC.tipoDoc||'',
         Tipo_Modificacion: 'Actualización',
-        Codigo_Documento: ACT_DOC.codigo||'',   // código del documento vigente que se actualiza
+        Codigo_Documento_Origen: ACT_DOC.codigo||'',   // código del documento vigente que se actualiza (NO se limpia)
         Solicitante: u.nombre||'',
         Correo: u.correo||'',
         Departamento: departamento,

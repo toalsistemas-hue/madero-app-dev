@@ -161,7 +161,7 @@ async function bajRegistrar(){
         Title: BAJ_DOC.nombre||'',
         Tipo_Documento: BAJ_DOC.tipoDoc||'',
         Tipo_Modificacion: 'Baja',
-        Codigo_Documento: BAJ_DOC.codigo||'',   // código del documento vigente que se da de baja
+        Codigo_Documento_Origen: BAJ_DOC.codigo||'',   // código del documento vigente que se da de baja (NO se limpia)
         Solicitante: u.nombre||'',
         Correo: u.correo||'',
         Departamento: departamento,

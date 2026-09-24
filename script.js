@@ -388,11 +388,11 @@ function sgdDispararDescarga(blob, nombreArchivo) {
   setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 4000);
 }
 
-// Descarga la "Copia NO controlada": estampa en cada hoja, abajo a la derecha,
-// la leyenda "Copia NO controlada, Fecha de reimpresión: dd/mm/aaaa hh:mm".
+// Descarga el documento: estampa en cada hoja, abajo a la derecha,
+// la leyenda "Fecha y hora de reimpresión: dd/mm/aaaa hh:mm".
 async function sgdDescargarCopia(ref, nombre) {
   if (!ref) { alert('El documento aún no está disponible para descargar.'); return; }
-  var nombreArchivo = ((nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_')) + ' (COPIA NO CONTROLADA).pdf';
+  var nombreArchivo = ((nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_')) + '.pdf';
   var got = await window.SGD.obtenerBytes(ref);
 
   // Si no se pudieron obtener los bytes (URL antigua o sin permiso), intentar descarga directa
@@ -408,7 +408,7 @@ async function sgdDescargarCopia(ref, nombre) {
     var PDFLib = await window.SGD.cargarPdfLib();
     var pdfDoc = await PDFLib.PDFDocument.load(got.bytes);
     var font = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
-    var texto = 'Copia NO controlada, Fecha de reimpresión: ' + sgdFechaHoraLeyenda();
+    var texto = 'Fecha y hora de reimpresión: ' + sgdFechaHoraLeyenda();
     var size = 8, margen = 22;
     var pages = pdfDoc.getPages();
     for (var i = 0; i < pages.length; i++) {
@@ -418,7 +418,7 @@ async function sgdDescargarCopia(ref, nombre) {
     }
     var out = await pdfDoc.save();
     sgdDispararDescarga(new Blob([out], { type: 'application/pdf' }), nombreArchivo);
-    if (window.SGD.bitacora) window.SGD.bitacora('Descargar copia NO controlada', 'Documento', nombre || '', {});
+    if (window.SGD.bitacora) window.SGD.bitacora('Descargar documento', 'Documento', nombre || '', {});
   } catch (e) {
     // Si falla el estampado, descargar el PDF sin la leyenda para no bloquear al usuario
     try { sgdDispararDescarga(new Blob([got.bytes], { type: 'application/pdf' }), nombreArchivo); } catch (_) {}
@@ -491,6 +491,22 @@ function sgdDocPuedeVer(d, u){
   return lista.indexOf(correo) >= 0;
 }
 
+// ¿El usuario en sesión puede DESCARGAR este documento? (requiere poder verlo)
+//  - Modo "todos": manda Descarga_Todos (Sí permite / No bloquea).
+//  - Modo usuarios: el correo debe estar en la lista Descargas.
+//  - Documentos anteriores a esta función (sin ninguno de los dos campos): se permite (compatibilidad).
+function sgdDocPuedeDescargar(d, u){
+  if (!sgdDocPuedeVer(d, u)) return false;
+  var dt = String(d.descargaTodos||'').trim();
+  var dl = String(d.descargas||'').trim();
+  if (!dt && !dl) return true;   // documento sin configurar (heredado): se permite descargar
+  var todos = /^(s[íi]|true)$/i.test(String(d.accesoTodos||'')) || d.accesoTodos===true;
+  if (todos) return /^(s[íi]|true)$/i.test(dt);
+  var correo = (u && u.correo) ? String(u.correo).toLowerCase() : '';
+  if (!correo) return false;
+  return dl.toLowerCase().split(/[;,\n]+/).map(function(x){ return x.trim(); }).indexOf(correo) >= 0;
+}
+
 // Documentos de ejemplo (solo standalone)
 window.SGD.DOCS_DEMO = [
   { id:'d1', nombre:'Procedimiento de compras', codigo:'PR-COM-01', tipo:'Procedimiento', version:'1', fechaCambio:'2025-11-10', url:'', wordUrl:'', accesoTodos:'Sí', estatus:'Vigente' },
@@ -518,7 +534,9 @@ async function sgdCargarDocumentos(){
         id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo||'', tipo:f.Tipo_Doc||'',
         version:f.Version||'', fechaCambio:(f.Fecha_Cambio||''), url:f.Documento_URL||'', wordUrl:f.Documento_Word_URL||'',
         copiaUrl:f.Documento_Copia_URL||'',
-        accesos:f.Accesos||'', accesoTodos:f.Acceso_Todos||'', estatus:f.Estatus||'Vigente'
+        accesos:f.Accesos||'', accesoTodos:f.Acceso_Todos||'',
+        descargas:f.Descargas||'', descargaTodos:f.Descarga_Todos||'',
+        estatus:f.Estatus||'Vigente'
       };
     })
     .filter(function(d){ var e=String(d.estatus).toLowerCase(); return e!=='obsoleto' && e!=='baja'; })
@@ -559,9 +577,13 @@ function sgdRenderDocumentos(docs){
     tbody.innerHTML = '<tr><td colspan="6" style="display:table-cell;text-align:center;padding:30px;color:#8a94a2;">No hay documentos disponibles para tu usuario.</td></tr>';
     return;
   }
+  var u = (window.SGD.getUsuario && window.SGD.getUsuario()) || null;
   tbody.innerHTML = docs.map(function(d){
     var nom = sgdDocEsc(d.nombre), nomA = sgdDocApos(d.nombre), urlA = sgdDocApos(d.url);
     var copiaA = sgdDocApos(d.copiaUrl || d.url);   // la descarga usa la copia controlada; si no hay, el autorizado
+    var btnDesc = sgdDocPuedeDescargar(d, u)
+      ? '<div class="tooltip"><button class="accion descargar" onclick="sgdDescargarCopia(\''+copiaA+'\',\''+nomA+'\')"><i class="fa-solid fa-circle-down"></i></button><span class="tooltiptext">Descargar</span></div>'
+      : '';
     return '<tr>'
       + '<td>'+sgdDocEsc(d.version||'—')+'</td>'
       + '<td>'+sgdDocEsc(sgdDocFmtFecha(d.fechaCambio))+'</td>'
@@ -569,7 +591,7 @@ function sgdRenderDocumentos(docs){
       + '<td class="nombre"><a href="#" onclick="sgdVerDocumento(\''+urlA+'\',\''+nomA+'\');return false;">'+nom+'</a></td>'
       + '<td class="tipo"><span>'+sgdDocEsc(d.tipo)+'</span></td>'
       + '<td>'
-        + '<div class="tooltip"><button class="accion descargar" onclick="sgdDescargarCopia(\''+copiaA+'\',\''+nomA+'\')"><i class="fa-solid fa-circle-down"></i></button><span class="tooltiptext">Descargar Copia NO controlada</span></div>'
+        + btnDesc
         + '<div class="tooltip"><button class="accion actualizar" onclick="sgdSolicitarActualizacion(\''+sgdDocApos(d.id)+'\',\''+nomA+'\',\''+sgdDocApos(d.codigo)+'\',\''+sgdDocApos(d.tipo)+'\',\''+sgdDocApos(d.url)+'\')"><i class="fa-solid fa-rotate"></i></button><span class="tooltiptext">Solicitar Actualización</span></div>'
         + '<div class="tooltip"><button class="accion eliminar" onclick="sgdSolicitarBaja(\''+sgdDocApos(d.id)+'\',\''+nomA+'\',\''+sgdDocApos(d.codigo)+'\',\''+sgdDocApos(d.tipo)+'\',\''+sgdDocApos(d.url)+'\')"><i class="fa-solid fa-xmark"></i></button><span class="tooltiptext">Solicitar Baja</span></div>'
       + '</td>'

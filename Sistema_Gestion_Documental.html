@@ -86,6 +86,11 @@
         <div style="display:flex; flex-direction:column; gap:14px; align-items:flex-end;">
 
             <div class="sgd-tools" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
+                <label style="color:#33455a; font-size:14px; font-weight:600;">Departamento:</label>
+                <select id="sgd-f-depto" onchange="sgdRenderDocsFiltrado()"
+                        style="padding:10px 12px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; background:#fff; min-width:170px;">
+                    <option value="">Todos</option>
+                </select>
                 <label style="color:#33455a; font-size:14px; font-weight:600;">Tipo de documento:</label>
                 <select id="sgd-f-tipo" onchange="sgdRenderDocsFiltrado()"
                         style="padding:10px 12px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; background:#fff; min-width:180px;">
@@ -107,7 +112,7 @@
                     type="text"
                     id="sgd-buscar"
                     placeholder="Buscar documento por nombre…"
-                    oninput="sgdFiltrarTabla(this.value)">
+                    oninput="sgdRenderDocsFiltrado()">
 
             </div>
 

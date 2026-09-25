@@ -491,6 +491,15 @@ td:last-child{
    NO deben volverse flex: se mantienen como celda de tabla y centran su texto. */
 .tabla1 td[colspan]{ display:table-cell; text-align:center; white-space:normal; }
 
+/* ===== Encabezados de segmento (Departamento / Tipo) ===== */
+.tabla1 tr.grp-dept td{ background:#1f4e79; color:#fff; font-weight:700; font-size:15px; text-align:left; padding:11px 16px; letter-spacing:.3px; }
+.tabla1 tr.grp-dept td i{ margin-right:8px; opacity:.9; }
+.tabla1 tr.grp-tipo td{ background:#eaf2fb; color:#1f4e79; font-weight:700; font-size:12.5px; text-align:left; padding:7px 16px 7px 30px; text-transform:uppercase; letter-spacing:.5px; }
+.tabla1 tr.grp-tipo td i{ margin-right:7px; }
+.tabla1 tr.grp-dept:hover, .tabla1 tr.grp-tipo:hover{ transform:none; }
+.tabla1 tr.grp-dept:hover td{ background:#1f4e79; }
+.tabla1 tr.grp-tipo:hover td{ background:#eaf2fb; }
+
 .tooltiptext{
 
 

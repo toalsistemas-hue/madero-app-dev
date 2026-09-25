@@ -514,18 +514,51 @@ window.SGD.DOCS_DEMO = [
 ];
 
 var SGD_DOCS_ALL = [];  // documentos visibles para el usuario (antes del filtro de tipo)
+var SGD_DEPTOS_MAP = {}; // { ABREVIATURA(mayúsculas): Nombre del departamento }
+
+// Descompone un código EMPRESA-DEPTO-TIPO-CONSEC (ej. MEO-CAL-PRS-001)
+function sgdParseCodigo(codigo){
+  var partes = String(codigo||'').split('-');
+  var deptoAb='', tipoAb='', consecStr='';
+  if (partes.length>=4){ deptoAb=partes[1]; tipoAb=partes[2]; consecStr=partes[3]; }
+  else if (partes.length===3){ deptoAb=partes[0]; tipoAb=partes[1]; consecStr=partes[2]; }
+  var m = String(consecStr).match(/(\d+)/);
+  return { deptoAb:(deptoAb||'').trim(), tipoAb:(tipoAb||'').trim(), consec: m?parseInt(m[1],10):0 };
+}
+
+// Carga el catálogo de departamentos (abreviatura → nombre) una sola vez
+async function sgdCargarDeptos(){
+  if (Object.keys(SGD_DEPTOS_MAP).length) return;
+  if (!(window.SGD.embebido && window.SGD.embebido())) return;
+  try{
+    var r = await window.SGD.sp('list', { lista:(window.SGD.LISTA_DEPARTAMENTOS||'SGD_Departamentos'), queryParams:'$expand=fields&$top=500' });
+    var items = (r && r.value) ? r.value : [];
+    items.forEach(function(it){ var f=it.fields||it; var ab=(f.Abreviatura||'').toString().trim().toUpperCase(); var nom=(f.Title||'').toString().trim(); if(ab) SGD_DEPTOS_MAP[ab]=nom||ab; });
+  }catch(e){}
+}
+
+// Agrega a cada documento su departamento y consecutivo (para segmentar/ordenar)
+function sgdEnriquecerDocs(){
+  SGD_DOCS_ALL.forEach(function(d){
+    var pc = sgdParseCodigo(d.codigo);
+    d.deptoAb = pc.deptoAb;
+    d.consec = pc.consec;
+    d.deptoNombre = SGD_DEPTOS_MAP[(pc.deptoAb||'').toUpperCase()] || pc.deptoAb || 'Sin departamento';
+  });
+}
 
 async function sgdCargarDocumentos(){
   var tbody = document.getElementById('sgd-doc-tbody');
   if (!tbody) return;
   if (!(window.SGD.embebido && window.SGD.embebido())){
     SGD_DOCS_ALL = window.SGD.DOCS_DEMO.slice();
-    sgdPoblarFiltroTipos(); sgdRenderDocsFiltrado();
+    sgdEnriquecerDocs(); sgdPoblarFiltroTipos(); sgdPoblarFiltroDeptos(); sgdRenderDocsFiltrado();
     return;
   }
   tbody.innerHTML = '<tr><td colspan="6" style="display:table-cell;text-align:center;padding:30px;color:#8a94a2;">Cargando documentos…</td></tr>';
   try{
     var u = window.SGD.getUsuario();
+    await sgdCargarDeptos();
     var r = await window.SGD.sp('list', { lista: window.SGD.LISTA_DOCUMENTOS, queryParams:'$expand=fields&$top=1000' });
     var items = (r && r.value) ? r.value : [];
     SGD_DOCS_ALL = items.map(function(it){
@@ -542,7 +575,9 @@ async function sgdCargarDocumentos(){
     .filter(function(d){ var e=String(d.estatus).toLowerCase(); return e!=='obsoleto' && e!=='baja'; })
     .filter(function(d){ return sgdDocPuedeVer(d, u); })
     .sort(function(a,b){ return (a.codigo||'').localeCompare(b.codigo||''); });
+    sgdEnriquecerDocs();
     sgdPoblarFiltroTipos();
+    sgdPoblarFiltroDeptos();
     sgdRenderDocsFiltrado();
   }catch(e){
     tbody.innerHTML = '<tr><td colspan="6" style="display:table-cell;text-align:center;padding:30px;color:#c0392b;">No se pudieron cargar los documentos.</td></tr>';
@@ -561,13 +596,30 @@ function sgdPoblarFiltroTipos(){
   if (tipos.indexOf(actual) >= 0) sel.value = actual;
 }
 
-// Aplica el filtro de tipo y vuelve a pintar; conserva el texto del buscador
+// Llena el <select> de departamentos con los presentes en los documentos visibles
+function sgdPoblarFiltroDeptos(){
+  var sel = document.getElementById('sgd-f-depto');
+  if (!sel) return;
+  var actual = sel.value;
+  var deptos = [];
+  SGD_DOCS_ALL.forEach(function(d){ if (d.deptoNombre && deptos.indexOf(d.deptoNombre) < 0) deptos.push(d.deptoNombre); });
+  deptos.sort(function(a,b){ return a.localeCompare(b); });
+  sel.innerHTML = '<option value="">Todos</option>' + deptos.map(function(t){ return '<option>'+sgdDocEsc(t)+'</option>'; }).join('');
+  if (deptos.indexOf(actual) >= 0) sel.value = actual;
+}
+
+// Aplica los filtros (departamento, tipo, búsqueda) y vuelve a pintar la tabla segmentada
 function sgdRenderDocsFiltrado(){
-  var tipo = (document.getElementById('sgd-f-tipo')||{}).value || '';
-  var docs = tipo ? SGD_DOCS_ALL.filter(function(d){ return (d.tipo||'') === tipo; }) : SGD_DOCS_ALL.slice();
+  var tipo  = (document.getElementById('sgd-f-tipo')||{}).value || '';
+  var depto = (document.getElementById('sgd-f-depto')||{}).value || '';
+  var buscar = ((document.getElementById('sgd-buscar')||{}).value || '').toLowerCase().trim();
+  var docs = SGD_DOCS_ALL.filter(function(d){
+    if (tipo  && (d.tipo||'') !== tipo) return false;
+    if (depto && (d.deptoNombre||'') !== depto) return false;
+    if (buscar && (d.nombre||'').toLowerCase().indexOf(buscar) < 0) return false;
+    return true;
+  });
   sgdRenderDocumentos(docs);
-  var buscar = (document.getElementById('sgd-buscar')||{}).value || '';
-  if (buscar) sgdFiltrarTabla(buscar);
 }
 
 function sgdRenderDocumentos(docs){
@@ -578,13 +630,30 @@ function sgdRenderDocumentos(docs){
     return;
   }
   var u = (window.SGD.getUsuario && window.SGD.getUsuario()) || null;
-  tbody.innerHTML = docs.map(function(d){
+  // Segmenta por Departamento → Tipo de documento y ordena por consecutivo
+  var ordenados = docs.slice().sort(function(a,b){
+    var dn = (a.deptoNombre||'').localeCompare(b.deptoNombre||''); if (dn) return dn;
+    var tn = (a.tipo||'').localeCompare(b.tipo||''); if (tn) return tn;
+    return (a.consec||0) - (b.consec||0);
+  });
+  var html = '', lastDept = null, lastTipo = null;
+  ordenados.forEach(function(d){
+    var dep = d.deptoNombre || 'Sin departamento';
+    var tip = d.tipo || 'Sin tipo';
+    if (dep !== lastDept){
+      html += '<tr class="grp-dept"><td colspan="6"><i class="fa-solid fa-building"></i> '+sgdDocEsc(dep)+'</td></tr>';
+      lastDept = dep; lastTipo = null;
+    }
+    if (tip !== lastTipo){
+      html += '<tr class="grp-tipo"><td colspan="6"><i class="fa-regular fa-folder"></i> '+sgdDocEsc(tip)+'</td></tr>';
+      lastTipo = tip;
+    }
     var nom = sgdDocEsc(d.nombre), nomA = sgdDocApos(d.nombre), urlA = sgdDocApos(d.url);
     var copiaA = sgdDocApos(d.copiaUrl || d.url);   // la descarga usa la copia controlada; si no hay, el autorizado
     var btnDesc = sgdDocPuedeDescargar(d, u)
       ? '<div class="tooltip"><button class="accion descargar" onclick="sgdDescargarCopia(\''+copiaA+'\',\''+nomA+'\')"><i class="fa-solid fa-circle-down"></i></button><span class="tooltiptext">Descargar</span></div>'
       : '';
-    return '<tr>'
+    html += '<tr>'
       + '<td>'+sgdDocEsc(d.version||'—')+'</td>'
       + '<td>'+sgdDocEsc(sgdDocFmtFecha(d.fechaCambio))+'</td>'
       + '<td class="codigo">'+sgdDocEsc(d.codigo)+'</td>'
@@ -596,7 +665,8 @@ function sgdRenderDocumentos(docs){
         + '<div class="tooltip"><button class="accion eliminar" onclick="sgdSolicitarBaja(\''+sgdDocApos(d.id)+'\',\''+nomA+'\',\''+sgdDocApos(d.codigo)+'\',\''+sgdDocApos(d.tipo)+'\',\''+sgdDocApos(d.url)+'\')"><i class="fa-solid fa-xmark"></i></button><span class="tooltiptext">Solicitar Baja</span></div>'
       + '</td>'
       + '</tr>';
-  }).join('');
+  });
+  tbody.innerHTML = html;
 }
 
 // Guarda el documento seleccionado y navega a la pantalla de solicitud correspondiente

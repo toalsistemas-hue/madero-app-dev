@@ -408,7 +408,7 @@ async function sgdDescargarCopia(ref, nombre) {
     var PDFLib = await window.SGD.cargarPdfLib();
     var pdfDoc = await PDFLib.PDFDocument.load(got.bytes);
     var font = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
-    var texto = 'Fecha y hora de reimpresión: ' + sgdFechaHoraLeyenda();
+    var texto = 'reimpresión: ' + sgdFechaHoraLeyenda();
     var size = 8, margen = 22;
     var pages = pdfDoc.getPages();
     for (var i = 0; i < pages.length; i++) {

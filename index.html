@@ -4832,9 +4832,15 @@ async function ftAdmOpSave(){
   var desc=document.getElementById('op-edit-desc').value.trim();
   var spId=document.getElementById('op-edit-spid').value;
   if(!nombre){alert('El nombre de la operación es requerido.');return;}
-  // Verificar duplicado
-  var dup=(DB.opCatalogFull||[]).find(function(o){return o.nombre.toLowerCase()===nombre.toLowerCase()&&o.spId!==spId;});
-  if(dup){alert('La operación "'+nombre+'" ya existe.');return;}
+  // Verificar duplicado: solo es duplicado si coincide la descripción/nombre Y el mismo número de artículo.
+  // Se permite la misma descripción si el artículo es distinto.
+  var _artLc=(artKey||'').toLowerCase();
+  var dup=(DB.opCatalogFull||[]).find(function(o){
+    return o.nombre.toLowerCase()===nombre.toLowerCase()
+        && (o.articulo||'').toLowerCase()===_artLc
+        && o.spId!==spId;
+  });
+  if(dup){alert('La operación "'+nombre+'" ya existe para el artículo "'+(artKey||'(sin artículo)')+'".');return;}
   var _b=document.getElementById('opcat-save-btn'); _btnSpinner(_b,true);
   try{
     var fields={Title:nombre};
@@ -4893,13 +4899,16 @@ function ftAdmOpProcessFile(file){
     var ws=wb.Sheets[wb.SheetNames[0]];
     var rows=XLSX.utils.sheet_to_json(ws,{header:0,defval:''});
     var items=[];var dups=0;
-    var existingNames=(DB.opCatalogFull||[]).map(function(o){return o.nombre.toLowerCase();});
+    // Clave de duplicado = descripción/nombre + número de artículo (misma descripción con distinto artículo SÍ se permite)
+    var existingKeys=(DB.opCatalogFull||[]).map(function(o){return (o.nombre||'').toLowerCase()+'|'+(o.articulo||'').toLowerCase();});
     rows.forEach(function(r){
       var nombre=(r.Operacion||r.operacion||r.Title||r.Nombre||'').toString().trim();
       var art=(r.Articulo_Key||r.articulo||r.Articulo||'').toString().trim().toUpperCase();
       var desc=(r.Descripcion||r.descripcion||'').toString().trim();
       if(!nombre) return;
-      if(existingNames.indexOf(nombre.toLowerCase())>=0){dups++;return;}
+      var key=nombre.toLowerCase()+'|'+art.toLowerCase();
+      if(existingKeys.indexOf(key)>=0){dups++;return;}   // ya existe (misma descripción y mismo artículo) o repetido en el archivo
+      existingKeys.push(key);
       items.push({nombre:nombre,art:art,desc:desc});
     });
     _ftOpPendingExcel=items;
@@ -6512,7 +6521,7 @@ async function ftLoadDataFromSP() {
       flowGet('FT_Operaciones', '', 5000).catch(empty),
       flowGet('FT_Tecnicos', '', 200).catch(empty),
       flowGet('FT_Estaciones', '', 100).catch(empty),
-      flowGet('FT_Cola_Estacion', '', 2000).catch(empty),
+      flowGet('FT_Cola_Estacion', '', 5000).catch(empty),
       flowGet('FT_Status_Estacion', '', 100).catch(empty),
       flowGet('FT_Timers', '', 2000).catch(empty),
       flowGet('FT_Plantillas_Operaciones', '', 500).catch(empty),
@@ -7313,7 +7322,7 @@ async function ftLoadDataFromSP() {
           });
           // Recargar FT_Cola_Estacion para reflejar reordenamientos desde app móvil
           try {
-            var colaResPoll = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500');
+            var colaResPoll = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=5000');
             window.DB_STATION_QUEUE = {};
             window.STATIONS.forEach(function(s){ window.DB_STATION_QUEUE[s]=[]; });
             var colaItemsPoll = (colaResPoll.value||[]).sort(function(a,b){return (a.fields.Posicion||0)-(b.fields.Posicion||0);});
@@ -7650,7 +7659,7 @@ async function ftSaveQueueToSP(of_sap) {
     // ── Step 1: Load existing FT_Cola_Estacion items via Flow ──────────────
     if(!window._queueSpIdCache) window._queueSpIdCache = {};
     try {
-      var existingRes = await flowGet('FT_Cola_Estacion', '', 500);
+      var existingRes = await flowGet('FT_Cola_Estacion', '', 5000);
       (existingRes.value||[]).forEach(function(item){
         var opId = item.fields && item.fields.Op_ID;
         if(opId) window._queueSpIdCache[opId] = item.id;
@@ -7721,6 +7730,163 @@ async function ftSaveQueueToSP(of_sap) {
     }
   } catch(e) { ftErrNotify('ftSaveQueueToSP', e, 'FT_Cola_Estacion'); }
 }
+
+// ============================================================================
+// PURGA de la cola de una OF: borra TODAS las filas de FT_Cola_Estacion de esa
+// OF (se llama al CERRAR o CANCELAR la orden). Limpia además el _queueSpId en
+// memoria para que, si la OF se reabre, la app recree filas nuevas (no falle).
+// ============================================================================
+async function ftBorrarColaDeOF(of_sap){
+  if(!of_sap) return;
+  try{
+    if(!FT_SITE_ID){ try{ FT_SITE_ID = await getSiteId(); }catch(_e){} }
+    var raw = await flowGet('FT_Cola_Estacion', '', 5000);
+    var sap = String(of_sap).trim();
+    var ids = ((raw && raw.value) ? raw.value : [])
+      .filter(function(it){ var f=it.fields||it; return String(f.OF_SAP||'').trim()===sap; })
+      .map(function(it){ return it.id || (it.fields && it.fields.ID); })
+      .filter(Boolean);
+    // Limpia referencias en memoria de esa OF (para que al reabrir se recree)
+    (DB.activeOFs||[]).forEach(function(a){
+      if(a && a.of_sap===of_sap && a.ops){
+        a.ops.forEach(function(op){ op._queueSpId=null; if(window._queueSpIdCache) delete window._queueSpIdCache[op.id]; });
+      }
+    });
+    for(var i=0;i<ids.length;i++){
+      try{ await graphDelete('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+ids[i]); }catch(e){}
+      if((i+1)%50===0) await new Promise(function(r){ setTimeout(r, 200); });
+    }
+    if(ids.length) console.log('[Cola] Purga OF '+of_sap+': '+ids.length+' filas eliminadas.');
+  }catch(e){ console.warn('[ftBorrarColaDeOF]', e && e.message); }
+}
+window.ftBorrarColaDeOF = ftBorrarColaDeOF;
+
+// ============================================================================
+// DIAGNÓSTICO (SOLO LECTURA) de FT_Cola_Estacion — NO BORRA NADA.
+// Cuenta duplicados por clave (OF_SAP + Op_ID) y filas de OFs cerradas/canceladas.
+// Ejecutar desde la consola del navegador (F12 → Consola):   ftDiagnosticoCola()
+// ============================================================================
+async function ftDiagnosticoCola(){
+  try{
+    console.log('%c[Diag Cola] Leyendo FT_Cola_Estacion completa… (solo lectura)', 'color:#2f75a8;font-weight:bold');
+    var raw = await flowGet('FT_Cola_Estacion', '', 5000);
+    var items = (raw && raw.value) ? raw.value : [];
+    var total = items.length;
+
+    // OFs en estado terminal (cerradas / canceladas), desde DB.ofs ya cargado en memoria
+    var cerradas = {};
+    (DB.ofs||[]).forEach(function(o){
+      if(o && (o.pedidoCerrado || o.status==='Cerrado' || o.status==='Pedido Cancelado')) cerradas[String(o.of_sap)] = true;
+    });
+
+    var porClave = {};      // "OF_SAP__Op_ID" -> nº de copias
+    var sinClave = 0;       // filas sin OF_SAP u Op_ID
+    var filasCerradas = 0;  // filas cuya OF está cerrada/cancelada
+    items.forEach(function(it){
+      var f = it.fields || it;
+      var of = String(f.OF_SAP||'').trim();
+      var op = String(f.Op_ID||'').trim();
+      if(!of || !op){ sinClave++; return; }
+      porClave[of+'__'+op] = (porClave[of+'__'+op]||0) + 1;
+      if(cerradas[of]) filasCerradas++;
+    });
+
+    var claves = Object.keys(porClave);
+    var unicos = claves.length;
+    var duplicados = 0, mantener = 0, topDup = [];
+    claves.forEach(function(k){
+      var c = porClave[k];
+      if(c > 1){ duplicados += (c-1); topDup.push({clave:k, copias:c}); }
+      if(!cerradas[k.split('__')[0]]) mantener++;   // operaciones únicas de OFs NO cerradas
+    });
+    topDup.sort(function(a,b){ return b.copias - a.copias; });
+
+    // Clasifica las operaciones únicas según el ESTATUS REAL de su OF en FT_OrdenesFabricacion
+    // (no solo lo que hay en memoria), para saber cuántas son de OFs realmente activas.
+    var porStatus = {}, huerfanas = 0;
+    try{
+      var ordRaw = await flowGet('FT_OrdenesFabricacion', '', 5000);
+      var ofStatus = {};
+      ((ordRaw && ordRaw.value) ? ordRaw.value : []).forEach(function(it){
+        var f = it.fields || it; var t = String(f.Title||'').trim();
+        if(t) ofStatus[t] = String(f.Status||'(sin status)');
+      });
+      claves.forEach(function(k){
+        var of = k.split('__')[0];
+        var st = ofStatus[of];
+        if(st === undefined){ huerfanas++; }
+        else { porStatus[st] = (porStatus[st]||0) + 1; }
+      });
+    }catch(eo){ console.warn('[Diag Cola] No se pudo leer FT_OrdenesFabricacion:', eo && eo.message); }
+
+    console.log('%c===== DIAGNÓSTICO FT_Cola_Estacion (solo lectura) =====', 'color:#1f4e79;font-weight:bold;font-size:13px');
+    console.log('Filas totales leídas:            ', total);
+    console.log('Operaciones únicas (OF_SAP+Op_ID):', unicos);
+    console.log('Filas DUPLICADAS (sobran):       ', duplicados, ' ← se eliminarían al activar el borrado');
+    console.log('Filas de OFs cerradas/canceladas:', filasCerradas, ' ← también depurables');
+    console.log('Filas sin OF_SAP/Op_ID:          ', sinClave);
+    console.log('Filas que quedarían tras depurar (≈):', mantener, ' (una por operación de OFs abiertas)');
+    console.log('Top 15 claves con más copias:');
+    topDup.slice(0,15).forEach(function(d){ console.log('   ' + d.clave + '  →  ' + d.copias + ' copias'); });
+    console.log('%c-- Desglose de las ' + unicos + ' operaciones únicas por ESTATUS REAL de su OF --', 'color:#1f4e79;font-weight:bold');
+    Object.keys(porStatus).sort(function(a,b){ return porStatus[b]-porStatus[a]; }).forEach(function(s){
+      console.log('   ' + s + ': ' + porStatus[s]);
+    });
+    console.log('   OF no encontrada en FT_OrdenesFabricacion (huérfanas):', huerfanas);
+    console.log('%c(No se borró nada. Esto es solo diagnóstico.)', 'color:#c77700;font-weight:bold');
+    return { total:total, operacionesUnicas:unicos, duplicados:duplicados, filasCerradas:filasCerradas, sinClave:sinClave, quedarianAprox:mantener, porStatusOF:porStatus, huerfanas:huerfanas };
+  }catch(e){
+    console.warn('[Diag Cola] No se pudo completar el diagnóstico:', e && e.message);
+  }
+}
+window.ftDiagnosticoCola = ftDiagnosticoCola;
+
+// ============================================================================
+// DE-DUPLICACIÓN de FT_Cola_Estacion (mismo criterio que FT_Operaciones).
+// Deja UNA fila por operación (clave OF_SAP + Op_ID) y borra las repetidas.
+// Conserva la de mayor Posicion (más informativa); en empate, la más reciente.
+// Lo borrado va a la Papelera de reciclaje (recuperable 93 días).
+// Uso: ejecutar en la consola  ->  await ftDedupCola()
+//   y DESPUÉS recargar la página para que la app cargue la lista ya limpia.
+// Es idempotente: si se vuelve a correr y no hay duplicados, no borra nada.
+// ============================================================================
+async function ftDedupCola(){
+  try{
+    console.log('%c[Dedup Cola] Leyendo FT_Cola_Estacion completa…', 'color:#2f75a8;font-weight:bold');
+    var raw = await flowGet('FT_Cola_Estacion', '', 5000);
+    var items = (raw && raw.value) ? raw.value : [];
+    var grupos = {};   // "OF_SAP__Op_ID" -> [{id, pos, numId}]
+    items.forEach(function(it){
+      var f = it.fields || it;
+      var of = String(f.OF_SAP||'').trim(), op = String(f.Op_ID||'').trim();
+      if(!of || !op) return;                 // filas sin clave: se dejan intactas
+      var id = it.id || (f.ID);
+      (grupos[of+'__'+op] = grupos[of+'__'+op] || []).push({
+        id: id, pos: parseInt(f.Posicion||0)||0, numId: parseInt(id||0)||0
+      });
+    });
+    var aBorrar = [];
+    Object.keys(grupos).forEach(function(k){
+      var arr = grupos[k];
+      if(arr.length <= 1) return;            // sin duplicados
+      arr.sort(function(a,b){ if(b.pos!==a.pos) return b.pos-a.pos; return b.numId-a.numId; });
+      for(var i=1;i<arr.length;i++){ if(arr[i].id!=null) aBorrar.push(arr[i].id); }  // arr[0] se conserva
+    });
+    if(!aBorrar.length){ console.log('%c[Dedup Cola] No hay duplicados. Nada que borrar.', 'color:#1e8449;font-weight:bold'); return {borradas:0, fallidas:0}; }
+    console.log('%c[Dedup Cola] Eliminando '+aBorrar.length+' filas duplicadas (van a la Papelera)…', 'color:#c77700;font-weight:bold');
+    if(!FT_SITE_ID){ try{ FT_SITE_ID = await getSiteId(); }catch(_e){} }
+    var ok=0, fail=0;
+    for(var i=0;i<aBorrar.length;i++){
+      try{ await graphDelete('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+aBorrar[i]); ok++; }
+      catch(e){ fail++; }
+      if((i+1)%50===0){ console.log('   … '+(i+1)+'/'+aBorrar.length); await new Promise(function(r){ setTimeout(r, 300); }); }
+    }
+    console.log('%c[Dedup Cola] Listo. Borradas: '+ok+(fail?(' · Fallidas: '+fail):''), 'color:#1f4e79;font-weight:bold');
+    console.log('%c➡ Ahora RECARGA la página para que la app cargue la lista ya limpia.', 'color:#c0392b;font-weight:bold');
+    return {borradas:ok, fallidas:fail};
+  }catch(e){ console.warn('[Dedup Cola] Error:', e && e.message); }
+}
+window.ftDedupCola = ftDedupCola;
 
 // ====== FT_Status_Estacion — save station status ======
 async function ftSaveStationStatusToSP(estacion) {
@@ -8710,6 +8876,7 @@ async function _ejecutarCancelacionOF(of, aof){
     var ofItem = (existRes.value||[]).find(function(i){return (i.fields.Title||i.fields.OF_SAP||'')===sap;});
     if(ofItem) await spEscribir('FT_OrdenesFabricacion',{Status:'Pedido Cancelado', Programado_Hoy:false}, ofItem.id);
   } catch(e){ console.warn('SP cancel OF:', e.message); }
+  ftBorrarColaDeOF(sap);   // purga las filas de cola de esta OF cancelada
   // Persistir en SP — Operaciones
   if(aof && aof.ops){
     for(var i=0;i<aof.ops.length;i++){
@@ -10841,7 +11008,7 @@ function confirmProgMain() {
         showLoadingModal('Guardando programación','Paso 2/3: Asignando posiciones de cola...\nNo cierres esta ventana.');
 
         // Fetch existing cola records via Flow
-        var _colaFlowRes = await flowGet('FT_Cola_Estacion', '', 2000).catch(function(){return {value:[]};});
+        var _colaFlowRes = await flowGet('FT_Cola_Estacion', '', 5000).catch(function(){return {value:[]};});
         var _colaRes = _colaFlowRes;
         var _existingColaMap = {};
         var _dups = [];
@@ -10910,7 +11077,7 @@ function confirmProgMain() {
               // Idempotencia: si el intento previo creó el registro de cola pero se perdió la respuesta,
               // re-leer y adoptar su spId para ACTUALIZAR en vez de duplicar.
               if(!(w.existing&&w.existing.spId)){
-                try{ var _cc=await flowGet('FT_Cola_Estacion','',2000); var _ch=(_cc.value||[]).find(function(it){var f=it.fields||{}; return String(f.Op_ID||'')===String(w.op.id);}); if(_ch) w.existing={spId:String(_ch.id),pos:w.op._colaPos}; }catch(_e){}
+                try{ var _cc=await flowGet('FT_Cola_Estacion','',5000); var _ch=(_cc.value||[]).find(function(it){var f=it.fields||{}; return String(f.Op_ID||'')===String(w.op.id);}); if(_ch) w.existing={spId:String(_ch.id),pos:w.op._colaPos}; }catch(_e){}
               }
             }
             try{
@@ -12537,7 +12704,7 @@ function saveTplModal(){
                   return op.nombre !== _dOp.nombre;
                 });
                 // Eliminar de cola en SP
-                var _qRes = await flowGet('FT_Cola_Estacion','',200);
+                var _qRes = await flowGet('FT_Cola_Estacion','',5000);
                 (_qRes&&_qRes.value||[]).forEach(async function(qItem){
                   var qf=qItem.fields||qItem;
                   if(qf.Estacion===_dOp.estacion && qf.OF_SAP===_aof.of_sap){
@@ -13299,6 +13466,7 @@ appConfirmValCal = function(){
       var ofItem = (existRes.value||[]).find(function(i){return (i.fields.Title||i.fields.OF_SAP||'')===sap;});
       if(ofItem) await spEscribir('FT_OrdenesFabricacion',{Status:'Pedido Cancelado', Programado_Hoy:false}, ofItem.id);
     } catch(e){ console.warn('SP cancel OF:', e.message); }
+    ftBorrarColaDeOF(sap);   // purga las filas de cola de esta OF cancelada
     // Persistir en SP — Operaciones
     if(aof && aof.ops){
       for(var i=0;i<aof.ops.length;i++){
@@ -14106,6 +14274,7 @@ async function _ofCerradaSetSP(of, val){
     await spEscribir('FT_OrdenesFabricacion', { OF_Cerrada: val }, of._spId);
     window._ofcLocal[of.of_sap] = { val: val, at: Date.now() }; // refrescar TTL tras confirmar
     fireSync('coord', val ? 'of_cerrada' : 'of_reabierta', { of_sap: of.of_sap });
+    if(val) ftBorrarColaDeOF(of.of_sap);   // al cerrar la OF, purga sus filas de cola
   }catch(e){
     of.ofCerrada = prev;                    // revertir en error
     if(window._ofcLocal) delete window._ofcLocal[of.of_sap];
@@ -14180,6 +14349,7 @@ async function cerrarPedido(pedido){
           var of = ofsDelPedido[i];
           var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
           if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Cerrado',Programado_Hoy:false,OF_Cerrada:false}, item.id);
+          ftBorrarColaDeOF(of.of_sap);   // purga la cola de cada OF del pedido cerrado
         }
       } catch(e){ console.warn('SP cerrarPedido:', e.message); }
     }
@@ -15463,7 +15633,7 @@ async function portalSaveColaToSP(estacion){
   // Always reload _queueSpIdCache from SP to get latest item IDs
   window._queueSpIdCache = {};
   try {
-    var existRes = await flowGet('FT_Cola_Estacion', '', 500);
+    var existRes = await flowGet('FT_Cola_Estacion', '', 5000);
     (existRes.value||[]).forEach(function(item){
       if(item.fields && item.fields.Op_ID) window._queueSpIdCache[item.fields.Op_ID] = item.id;
     });

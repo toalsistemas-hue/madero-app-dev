@@ -12,6 +12,12 @@
     <style>
         .campo input[readonly], .campo input:disabled{ background:#eef2f6; color:#333; cursor:not-allowed; }
         .baj-error{ width:750px; margin:16px auto 0; color:#c0392b; font-weight:600; text-align:center; min-height:20px; }
+        .fila-adjuntos{ width:750px; max-width:94vw; margin:18px auto 0; }
+        .fila-adjuntos .adj-label{ display:block; font-weight:600; color:#1f4e79; font-size:15px; margin-bottom:8px; }
+        .fila-adjuntos input[type=file]{ display:block; width:100%; box-sizing:border-box; padding:10px 12px; border:1px dashed #b7c4d4; border-radius:8px; background:#f8fafc; font-size:14px; cursor:pointer; }
+        .adj-lista{ margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+        .adj-lista .adj-item{ display:flex; align-items:center; gap:8px; font-size:13px; color:#33455a; background:#eef3f8; border:1px solid #dbe6f0; border-radius:8px; padding:7px 10px; }
+        .adj-vacio{ color:#8a94a2; font-size:13px; margin-top:6px; }
         .visor-nota{ width:750px; margin:0 auto 8px; text-align:center; color:#7b8794; font-size:13px; }
 
         /* Modal OK */
@@ -72,6 +78,12 @@
     <div class="motivo">
         <label>Motivos de la baja</label>
         <textarea id="baj-motivo" placeholder="Describe el motivo por el que se solicita dar de baja el documento…"></textarea>
+    </div>
+
+    <div class="fila-adjuntos">
+        <label class="adj-label">Documentos adjuntos (opcional)</label>
+        <input type="file" id="baj-adjuntos" multiple onchange="bajAdjLista()">
+        <div id="baj-adjuntos-lista" class="adj-lista"></div>
     </div>
 
     <div class="baj-error" id="baj-error"></div>
@@ -156,6 +168,9 @@ async function bajRegistrar(){
     var u = (window.SGD.getUsuario && window.SGD.getUsuario()) || {};
     var descripcion = 'Motivo de baja del documento '+(BAJ_DOC.codigo||'')+' ('+(BAJ_DOC.nombre||'')+'):\n'+motivo;
 
+    var adjInput = document.getElementById('baj-adjuntos');
+    var adjFiles = (adjInput && adjInput.files) ? Array.prototype.slice.call(adjInput.files) : [];
+
     // Las solicitudes de Baja se registran directamente como "Abierta" (no llevan cita)
     var fields = {
         Title: BAJ_DOC.nombre||'',
@@ -168,7 +183,8 @@ async function bajRegistrar(){
         Descripcion: descripcion,
         Requiere_Revision: 'No',
         Estatus: 'Abierta',
-        Fecha_Solicitud: new Date().toISOString()
+        Fecha_Solicitud: new Date().toISOString(),
+        Tiene_Adjuntos: adjFiles.length ? 'Sí' : 'No'
     };
     if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
 
@@ -188,11 +204,41 @@ async function bajRegistrar(){
         return;
     }
 
+    // Subir documentos adjuntos (si hay) y guardar sus referencias en la solicitud
+    if(nuevoId && adjFiles.length && window.SGD.embebido && window.SGD.embebido()){
+        btn.textContent='Subiendo adjuntos…';
+        var adjRefs=[];
+        for(var ai=0;ai<adjFiles.length;ai++){
+            var fAdj=adjFiles[ai];
+            try{
+                var b64a=await sgdFileB64(fAdj);
+                var safeName=(fAdj.name||('archivo_'+(ai+1))).replace(/[^\w.\- áéíóúÁÉÍÓÚñÑ]/g,'_');
+                var upa=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Adjuntos_Solicitud', itemId:nuevoId, fileName:(ai+1)+'_'+safeName, contentBase64:b64a });
+                if(upa&&upa.id) adjRefs.push({ id:upa.id, nombre:(fAdj.name||safeName) });
+            }catch(eUp){ console.warn('[Adjunto]', fAdj&&fAdj.name, eUp&&eUp.message); }
+        }
+        try{
+            var updAdj={ Adjuntos_JSON:JSON.stringify(adjRefs), Tiene_Adjuntos:adjRefs.length?'Sí':'No' };
+            if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(updAdj);
+            await window.SGD.sp('update',{ lista:(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes'), itemId:nuevoId, fields:updAdj });
+        }catch(eUpd){ console.warn('[Adjunto] update', eUpd&&eUpd.message); }
+    }
+
     if(window.SGD.bitacora) window.SGD.bitacora('Registrar solicitud de baja', 'SGD_Solicitudes', (BAJ_DOC.codigo||'')+' · '+(BAJ_DOC.nombre||''), { id:nuevoId, pantalla:'Solicitud de baja' });
 
     document.getElementById('baj-modal-ok').classList.add('activo');
     btn.disabled=false; btn.innerHTML='Registrar <i class="fa-solid fa-check"></i>';
 }
+
+// Lista los nombres de los archivos adjuntos seleccionados
+window.bajAdjLista=function(){
+    var inp=document.getElementById('baj-adjuntos'), cont=document.getElementById('baj-adjuntos-lista');
+    if(!cont) return;
+    var files=(inp&&inp.files)?inp.files:[];
+    if(!files.length){ cont.innerHTML='<div class="adj-vacio">No se han adjuntado documentos.</div>'; return; }
+    var h=''; for(var i=0;i<files.length;i++){ var kb=Math.round((files[i].size||0)/1024); h+='<div class="adj-item">📎 <span>'+String(files[i].name||'').replace(/</g,'&lt;')+'</span> <span style="color:#8a94a2;">('+kb+' KB)</span></div>'; }
+    cont.innerHTML=h;
+};
 
 // Arranque
 window.SGD = window.SGD || {};

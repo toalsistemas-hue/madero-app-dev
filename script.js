@@ -426,6 +426,50 @@ async function sgdDescargarCopia(ref, nombre) {
   }
 }
 
+// Descarga el BORRADOR con una marca de agua diagonal "BORRADOR" en cada página.
+async function sgdDescargarBorrador(ref, nombre){
+  if (!ref){ alert('El borrador aún no está disponible para descargar.'); return; }
+  var nombreArchivo = ((nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_')) + ' (BORRADOR).pdf';
+  var got = await window.SGD.obtenerBytes(ref);
+  if (!got || !got.bytes){
+    if (got && got.error && /403|forbidden/i.test(got.error)){ alert('No tienes permiso para descargar este borrador.'); return; }
+    var resB = await window.SGD.obtenerBlobUrl(ref);
+    if (resB && resB.url){ sgdDispararDescarga(await (await fetch(resB.url)).blob(), nombreArchivo); }
+    else { alert('No se pudo preparar la descarga del borrador.'); }
+    return;
+  }
+  try{
+    var PDFLib = await window.SGD.cargarPdfLib();
+    var pdfDoc = await PDFLib.PDFDocument.load(got.bytes);
+    var font = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+    var texto = 'BORRADOR';
+    var pages = pdfDoc.getPages();
+    for (var i = 0; i < pages.length; i++){
+      var pg = pages[i], w = pg.getWidth(), h = pg.getHeight();
+      var diag = Math.sqrt(w*w + h*h);
+      var w1 = font.widthOfTextAtSize(texto, 1) || 1;
+      var size = (diag * 0.72) / w1;          // el texto ocupa ~72% de la diagonal
+      var rad = Math.PI/4;                     // 45°
+      var tw = font.widthOfTextAtSize(texto, size);
+      pg.drawText(texto, {
+        x: (w/2) - (tw/2)*Math.cos(rad),
+        y: (h/2) - (tw/2)*Math.sin(rad),
+        size: size, font: font,
+        color: PDFLib.rgb(0.85, 0.12, 0.12),
+        rotate: PDFLib.degrees(45),
+        opacity: 0.20
+      });
+    }
+    var out = await pdfDoc.save();
+    sgdDispararDescarga(new Blob([out], { type: 'application/pdf' }), nombreArchivo);
+    if (window.SGD.bitacora) window.SGD.bitacora('Descargar borrador', 'Documento', nombre || '', {});
+  }catch(e){
+    // Si falla el estampado, descargar el PDF sin marca para no bloquear al usuario
+    try { sgdDispararDescarga(new Blob([got.bytes], { type: 'application/pdf' }), nombreArchivo); } catch(_){}
+    console.warn('[SGD] No se pudo estampar BORRADOR:', e && e.message);
+  }
+}
+
 // Deduce la extensión de archivo a partir del tipo MIME devuelto por SharePoint
 function sgdExtDeMime(m){
   m = (m||'').toLowerCase();

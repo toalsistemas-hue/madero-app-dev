@@ -268,9 +268,14 @@
     <div class="seg-body">
       <div class="seg-info" id="seg-doc-info"></div>
 
-      <button class="seg-btn" style="background:#6b34b3;margin-bottom:16px;" onclick="segVerBorradorActual()">
-        <i class="fa-regular fa-file-lines"></i> Ver borrador
-      </button>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
+        <button class="seg-btn" style="background:#6b34b3;margin:0;flex:1;" onclick="segVerBorradorActual()">
+          <i class="fa-regular fa-file-lines"></i> Ver borrador
+        </button>
+        <button class="seg-btn" style="background:#2f75a8;margin:0;flex:1;" onclick="segDescargarBorradorActual()">
+          <i class="fa-solid fa-download"></i> Descargar (BORRADOR)
+        </button>
+      </div>
 
       <label class="seg-opt sel" id="seg-doc-opt-aut">
         <div class="cab"><input type="radio" name="seg-doc" value="autorizar" checked onchange="segDocSel()"> Autorizar el documento</div>
@@ -474,6 +479,11 @@ function segDocSel(){
 function segVerBorradorActual(){
   var s=SEG_VISIBLE[SEG_DOC_IDX]; if(!s) return;
   segVerArchivo(s.docBorradorURL, 'Borrador · '+(s.documento||''));
+}
+function segDescargarBorradorActual(){
+  var s=SEG_VISIBLE[SEG_DOC_IDX]; if(!s||!s.docBorradorURL) return;
+  if(typeof sgdDescargarBorrador==='function') sgdDescargarBorrador(s.docBorradorURL, 'Borrador · '+(s.documento||''));
+  else alert('No está disponible la descarga en este contexto.');
 }
 async function segDocConfirmar(){
   var s=SEG_VISIBLE[SEG_DOC_IDX]; if(!s) return;

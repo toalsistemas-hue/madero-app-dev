@@ -101,6 +101,14 @@
         .atc-btn-origen:hover{ filter:brightness(1.08); transform:translateY(-1px); }
         .atc-origen-hint{ font-size:12px; color:#7b8794; margin-top:6px; }
         .atc-origen-hint.err{ color:#c0392b; font-weight:600; }
+        .atc-adj-lista{ display:flex; flex-direction:column; gap:8px; }
+        .atc-adj-item{ display:flex; align-items:center; justify-content:space-between; gap:12px; background:#f7f9fc; border:1px solid #e6eaf0; border-radius:8px; padding:8px 12px; }
+        .atc-adj-nom{ font-size:14px; color:#243244; word-break:break-word; }
+        .atc-adj-acc{ display:flex; gap:8px; flex:0 0 auto; }
+        .atc-adj-btn{ border:none; cursor:pointer; border-radius:7px; padding:7px 11px; font-size:13px; font-weight:600; display:inline-flex; align-items:center; gap:6px; transition:.2s; }
+        .atc-adj-btn.ver{ background:#eef7f0; color:#1e8449; }
+        .atc-adj-btn.dl{ background:#eef3fb; color:#3a5bd0; }
+        .atc-adj-btn:hover{ filter:brightness(.96); }
 
     </style>
 
@@ -576,6 +584,8 @@ async function atencionCargarSolicitudes(){
         comentariosDoc:f.Comentarios_Doc||'',
         codigoDoc:  f.Codigo_Documento||'',
         codigoOrigen: f.Codigo_Documento_Origen||'',   // Actualización/Baja: código del documento vigente
+        tieneAdjuntos: f.Tiene_Adjuntos||'',
+        adjuntos: (function(){ try{ return JSON.parse(f.Adjuntos_JSON||'[]'); }catch(_){ return []; } })(),
         fecha:      atcFmtFecha(f.Fecha_Solicitud),
         fechaISO:   f.Fecha_Solicitud||'',
         fechaCitaISO:(f.Fecha_Revision||'').split('T')[0],
@@ -672,6 +682,20 @@ function atcVerDetalle(idx){
       '<div class="det-block"><div class="k">Documento vigente '+(codVigente?('('+atcEsc(codVigente)+')'):'')+' — para editar la nueva versión</div>'
       + '<button class="atc-btn-origen" onclick="atcDescargarOrigenVigente()"><i class="fa-solid fa-file-arrow-down"></i> Descargar formato de origen de la versión vigente</button>'
       + '<div class="atc-origen-hint" id="atc-origen-hint"></div></div>' : '';
+  var adj = (s.adjuntos && s.adjuntos.length) ? s.adjuntos : [];
+  var bloqueAdjuntos;
+  if(adj.length){
+    var filasAdj = adj.map(function(a, i){
+      return '<div class="atc-adj-item"><span class="atc-adj-nom">📎 '+atcEsc(a.nombre||('Adjunto '+(i+1)))+'</span>'
+        + '<span class="atc-adj-acc">'
+        +   '<button class="atc-adj-btn ver" onclick="atcVerAdjunto('+i+')"><i class="fa-regular fa-eye"></i> Ver</button>'
+        +   '<button class="atc-adj-btn dl" onclick="atcDescargarAdjunto('+i+')"><i class="fa-solid fa-download"></i> Descargar</button>'
+        + '</span></div>';
+    }).join('');
+    bloqueAdjuntos = '<div class="det-block"><div class="k">Documentos adjuntos por el solicitante ('+adj.length+')</div><div class="atc-adj-lista">'+filasAdj+'</div></div>';
+  } else {
+    bloqueAdjuntos = '<div class="det-block"><div class="k">Documentos adjuntos por el solicitante</div><div class="v">Sin documentos adjuntos.</div></div>';
+  }
   var html =
     '<div class="det-grid">'
     + atcCampo('Estatus', s.estatus)
@@ -687,6 +711,7 @@ function atcVerDetalle(idx){
     + atcCampo('Fecha/hora de cita', citaTxt)
     + '</div>'
     + bloqueOrigen
+    + bloqueAdjuntos
     + atcBloque('Propuesta de cita enviada al solicitante', s.propuesta)
     + atcBloque('Respuesta del solicitante', s.respuestaSol)
     + atcBloque('Comentario del solicitante', s.comentarioSol)
@@ -702,6 +727,18 @@ function atcVerDetalle(idx){
   document.getElementById('det-modal').classList.add('activo');
 }
 function atcCerrarDetalle(){ document.getElementById('det-modal').classList.remove('activo'); }
+
+// Ver / descargar un documento adjuntado por el solicitante (desde el detalle)
+function atcVerAdjunto(i){
+  var s=ATC_VISIBLE[ATC_DET_IDX]; if(!s||!s.adjuntos||!s.adjuntos[i]) return;
+  var a=s.adjuntos[i];
+  if(a && a.id && typeof sgdVerDocumento==='function') sgdVerDocumento(a.id, a.nombre||'Adjunto');
+}
+function atcDescargarAdjunto(i){
+  var s=ATC_VISIBLE[ATC_DET_IDX]; if(!s||!s.adjuntos||!s.adjuntos[i]) return;
+  var a=s.adjuntos[i];
+  if(a && a.id && typeof sgdDescargarArchivo==='function') sgdDescargarArchivo(a.id, a.nombre||'Adjunto');
+}
 
 /* Actualización: el analista descarga el formato de ORIGEN (editable) de la versión
    vigente publicada, para editarlo y generar la nueva versión. Busca el documento

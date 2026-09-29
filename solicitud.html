@@ -20,6 +20,13 @@
         /* Mensaje de error de validación */
         .sol-error{ color:#c0392b; font-weight:600; text-align:center; margin:14px 0 0; min-height:20px; }
 
+        /* Documentos adjuntos */
+        #sol-adjuntos{ display:block; width:100%; box-sizing:border-box; padding:10px 12px; border:1px dashed #b7c4d4; border-radius:8px; background:#f8fafc; font-size:14px; cursor:pointer; }
+        .sol-adj-lista{ margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+        .sol-adj-lista .adj-item{ display:flex; align-items:center; gap:8px; font-size:13px; color:#33455a; background:#eef3f8; border:1px solid #dbe6f0; border-radius:8px; padding:7px 10px; }
+        .sol-adj-lista .adj-item i{ color:#1f4e79; }
+        .sol-adj-vacio{ color:#8a94a2; font-size:13px; margin-top:6px; }
+
         /* Modal de confirmación */
         .sol-modal{
             display:none; position:fixed; inset:0; z-index:9999;
@@ -164,6 +171,20 @@
 
         </div>
 
+        <div class="campo-grande">
+            <label>
+                Documentos adjuntos (opcional)
+                <span class="help">
+                    ?
+                    <span class="tooltip">
+                        Adjunta archivos de apoyo para el analista (planos, formatos, referencias). Puedes seleccionar varios.
+                    </span>
+                </span>
+            </label>
+            <input type="file" id="sol-adjuntos" multiple onchange="sgdSolAdjLista()">
+            <div id="sol-adjuntos-lista" class="sol-adj-lista"></div>
+        </div>
+
         <div class="sol-error" id="sol-error"></div>
 
         <div class="botones">
@@ -210,6 +231,20 @@
   }
   // Exponer también con el nombre usado por el onchange inline (por compatibilidad)
   window.sgdToggleRevisionPresencial = aplicar;
+  // Lista de nombres de los archivos adjuntos seleccionados
+  window.sgdSolAdjLista = function(){
+    var inp = document.getElementById('sol-adjuntos');
+    var cont = document.getElementById('sol-adjuntos-lista');
+    if(!cont) return;
+    var files = (inp && inp.files) ? inp.files : [];
+    if(!files.length){ cont.innerHTML = '<div class="sol-adj-vacio">No se han adjuntado documentos.</div>'; return; }
+    var h = '';
+    for(var i=0;i<files.length;i++){
+      var kb = Math.round((files[i].size||0)/1024);
+      h += '<div class="adj-item">📎 <span>'+String(files[i].name||'').replace(/</g,'&lt;')+'</span> <span style="color:#8a94a2;">('+kb+' KB)</span></div>';
+    }
+    cont.innerHTML = h;
+  };
   document.addEventListener('DOMContentLoaded', function () {
     var chk = document.getElementById('sol-revision-presencial');
     if (chk) chk.addEventListener('change', aplicar);

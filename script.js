@@ -587,7 +587,12 @@ function sgdEnriquecerDocs(){
     var pc = sgdParseCodigo(d.codigo);
     d.deptoAb = pc.deptoAb;
     d.consec = pc.consec;
-    d.deptoNombre = SGD_DEPTOS_MAP[(pc.deptoAb||'').toUpperCase()] || pc.deptoAb || 'Sin departamento';
+    // El área se toma del campo guardado en el documento (Departamento), que SÍ
+    // distingue áreas que comparten abreviatura (p. ej. SAP y SISTEMAS = "SIS").
+    // Si el documento no la tiene (heredado), se cae a la abreviatura del código.
+    d.deptoNombre = (d.departamento && d.departamento.trim())
+      ? d.departamento.trim()
+      : (SGD_DEPTOS_MAP[(pc.deptoAb||'').toUpperCase()] || pc.deptoAb || 'Sin departamento');
   });
 }
 
@@ -613,6 +618,7 @@ async function sgdCargarDocumentos(){
         copiaUrl:f.Documento_Copia_URL||'',
         accesos:f.Accesos||'', accesoTodos:f.Acceso_Todos||'',
         descargas:f.Descargas||'', descargaTodos:f.Descarga_Todos||'',
+        departamento:f.Departamento||'',
         estatus:f.Estatus||'Vigente'
       };
     })

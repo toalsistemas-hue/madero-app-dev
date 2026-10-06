@@ -215,7 +215,7 @@
 
       <div class="cd-row2">
         <div class="cd-fila"><label>Versión</label><input type="text" id="cd-version" placeholder="Ej. 1"></div>
-        <div class="cd-fila"></div>
+        <div class="cd-fila"><label>Área / Departamento</label><select id="cd-area"><option value="">—</option></select><div class="cd-hint" id="cd-area-hint"></div></div>
       </div>
 
       <div class="cd-row2">
@@ -351,6 +351,7 @@
    ============================================================ */
 var CD_ITEMS = [];
 var CD_EDIT_ID = null;     // itemId en edición (null = alta)
+var CD_EDIT_AREA = '';     // área (Departamento) del documento en edición
 var CD_PREFILL = null;     // { pdf, fuente, solicitudId } cuando se agrega desde un pendiente
 var CD_BUSY = false;
 
@@ -397,6 +398,7 @@ async function cdCargar(){
       copiaUrl:f.Documento_Copia_URL||'',
       accesos:f.Accesos||'', accesoTodos:f.Acceso_Todos||'',
       descargas:f.Descargas||'', descargaTodos:f.Descarga_Todos||'',
+      departamento:f.Departamento||'',
       estatus:f.Estatus||'Vigente'
     };}).sort(function(a,b){ return (a.codigo||'').localeCompare(b.codigo||''); });
     await cdCargarPendientes();
@@ -429,6 +431,7 @@ async function cdCargarPendientes(){
     CD_PENDIENTES=items.map(function(it){ var f=it.fields||it; var tm=f.Tipo_Modificacion||''; return {
       id:(it.id!==undefined?it.id:''), nombre:f.Title||'', codigo:f.Codigo_Documento||'', tipoDoc:f.Tipo_Documento||'',
       tipoMod:tm, esActualizacion:(String(tm).toLowerCase().indexOf('actualiz')>=0),
+      area:f.Area_Departamento||'',
       pdfRef:f.Documento_Final_URL||'', copiaRef:f.Documento_Copia_URL||'', fuenteRef:f.Documento_Fuente_URL||'', fecha:(f.Ultima_Modificacion||f.Fecha_Solicitud||''), estatus:f.Estatus||''
     };})
     .filter(function(p){ return String(p.estatus).toLowerCase()==='atendida' && p.codigo && p.pdfRef; })
@@ -565,7 +568,7 @@ function cdDescargarOrigenPendiente(i){
 function cdAgregarDesdePendiente(i){
   var p=CD_PENDIENTES[i]; if(!p) return;
   cdAbrirModal();  // resetea a modo alta
-  CD_PREFILL={ pdf:p.pdfRef||'', copia:p.copiaRef||'', fuente:p.fuenteRef||'', solicitudId:p.id, esActualizacion:!!p.esActualizacion, prev:null };
+  CD_PREFILL={ pdf:p.pdfRef||'', copia:p.copiaRef||'', fuente:p.fuenteRef||'', solicitudId:p.id, esActualizacion:!!p.esActualizacion, prev:null, area:(p.area||'') };
   document.getElementById('cd-nombre').value=p.nombre||'';
   // El código ya viene APARTADO / vigente: se muestra fijo, sin generador
   cdCodMostrar(false);
@@ -588,6 +591,8 @@ function cdAgregarDesdePendiente(i){
       CD_SEL_PENDIENTE = (existente.accesos||'').split(/[;,\n]+/).map(function(x){ return x.trim(); }).filter(Boolean);
       CD_SEL_DESCARGA = (existente.descargas||'').split(/[;,\n]+/).map(function(x){ return x.trim(); }).filter(Boolean);
       document.getElementById('cd-desc-todos').checked = !/^no$/i.test(String(existente.descargaTodos||'').trim());
+      // conserva el área del documento vigente (prioridad sobre la de la solicitud)
+      if(existente.departamento) CD_PREFILL.area = existente.departamento;
       CD_USERS_RENDERED=false; cdToggleAccesos();
       if(hPend){ hPend.className='cd-hint'; hPend.innerHTML='Actualización del documento <b>'+cdEsc(p.codigo||'')+'</b> (versión vigente '+cdEsc(existente.version||'—')+'). La versión vigente se archivará como respaldo.'; }
     } else {
@@ -602,6 +607,8 @@ function cdAgregarDesdePendiente(i){
   document.getElementById('cd-pdf-actual').textContent   = p.pdfRef   ? 'Documento autorizado ya preparado (deja vacío para usarlo, o selecciona otro para reemplazar).' : '';
   document.getElementById('cd-copia-actual').textContent = p.copiaRef ? 'Copia controlada ya preparada (deja vacío para usarla, o selecciona otra).' : '';
   document.getElementById('cd-word-actual').textContent  = p.fuenteRef ? 'Documento de origen ya preparado (deja vacío para usarlo, o selecciona otro).' : '';
+  // Área: preseleccionada (de la solicitud o del documento vigente), editable por si hay que corregir
+  cdAreaLlenar((CD_PREFILL && CD_PREFILL.area) || '', true);
 }
 // Siguiente número de versión (entero) a partir del actual
 function cdSiguienteVersion(v){ return String((parseInt(v,10)||0)+1); }
@@ -694,7 +701,7 @@ function cdToggleAccesos(){
 }
 
 function cdAbrirModal(idx){
-  CD_PREFILL=null;
+  CD_PREFILL=null; CD_AREA=''; CD_EDIT_AREA='';
   document.getElementById('cd-error').textContent='';
   document.getElementById('cd-pdf').value=''; document.getElementById('cd-copia').value=''; document.getElementById('cd-word').value='';
   document.getElementById('cd-pdf-actual').textContent=''; document.getElementById('cd-copia-actual').textContent=''; document.getElementById('cd-word-actual').textContent='';
@@ -712,9 +719,12 @@ function cdAbrirModal(idx){
     CD_SEL_PENDIENTE=[]; CD_SEL_DESCARGA=[];
     document.getElementById('cd-desc-todos').checked=true;   // por defecto: todos pueden descargar
     cdCodMostrar(true);   // alta directa: mostrar generador/validador de código
+    cdAreaLlenar('', false);   // el área sigue al generador (se sincroniza al elegir departamento)
   } else {
     var d=CD_ITEMS[idx]; if(!d) return;
     CD_EDIT_ID=d.id;
+    CD_EDIT_AREA=d.departamento||'';   // conserva el área al editar
+    cdAreaLlenar(d.departamento||'', true);   // editable: permite fijar/corregir el área
     document.getElementById('cd-modal-titulo').textContent='Editar documento';
     document.getElementById('cd-nombre').value=d.nombre||''; document.getElementById('cd-codigo').value=d.codigo||'';
     document.getElementById('cd-version').value=d.version||''; document.getElementById('cd-fecha').value=(d.fechaCambio||'').split('T')[0]||cdHoyISO();
@@ -743,6 +753,8 @@ function cdCerrarModal(){ document.getElementById('cd-modal').classList.remove('
    SGD_Solicitudes), igual que en la liberación del analista. */
 var CD_GEN_ACTIVO=false;      // true cuando el generador está visible (alta directa)
 var CD_COD_TIPOS=[];          // [{ab,nom}] para sincronizar el "Tipo de documento"
+var CD_COD_DEPTOS=[];         // [{ab,nom}] departamentos (la abreviatura puede repetirse)
+var CD_AREA='';               // nombre del área (Departamento) a guardar en el documento
 
 function cdCodMostrar(show){
   CD_GEN_ACTIVO=!!show;
@@ -756,8 +768,8 @@ function cdCodMostrar(show){
   if(cod){ if(show){ cod.readOnly=true; cod.value=''; } else { cod.readOnly=false; } }
   if(show && cdEmbebido()){
     cdCodLlenarSelect('cd-cod-empresa', (window.SGD.LISTA_EMPRESA||'SGD_Empresa'));
-    cdCodLlenarSelect('cd-cod-depto',   (window.SGD.LISTA_DEPARTAMENTOS||'SGD_Departamentos'));
-    cdCodLlenarSelect('cd-cod-tipo',    (window.SGD.LISTA_TIPOS||'SGD_TiposDocumento'), true);
+    cdCodLlenarSelect('cd-cod-depto',   (window.SGD.LISTA_DEPARTAMENTOS||'SGD_Departamentos'), 'depto');
+    cdCodLlenarSelect('cd-cod-tipo',    (window.SGD.LISTA_TIPOS||'SGD_TiposDocumento'), 'tipo');
   }
 }
 
@@ -770,27 +782,54 @@ async function cdCodLlenarSelect(selId, lista, esTipo){
     var pares=items.map(function(it){ var f=it.fields||it; return { ab:(f.Abreviatura||'').toString().trim(), nom:(f.Title||'').toString().trim() }; })
       .filter(function(x){ return x.ab; })
       .sort(function(a,b){ return a.ab.localeCompare(b.ab); });
-    pares.forEach(function(x){ var o=document.createElement('option'); o.value=x.ab; o.textContent=x.ab+' — '+x.nom; sel.appendChild(o); });
-    if(esTipo) CD_COD_TIPOS=pares;
+    // El DEPARTAMENTO usa el NOMBRE como valor (único), porque la abreviatura puede
+    // repetirse entre áreas (p. ej. SAP y SISTEMAS = "SIS"). Los demás usan abreviatura.
+    pares.forEach(function(x){ var o=document.createElement('option'); o.value=(kind==='depto'? x.nom : x.ab); o.textContent=x.ab+' — '+x.nom; sel.appendChild(o); });
+    if(kind==='tipo')  CD_COD_TIPOS=pares;
+    if(kind==='depto') CD_COD_DEPTOS=pares;
+  }catch(e){}
+}
+
+// Llena el selector "Área / Departamento" del modal (valor = NOMBRE del área) y lo
+// preselecciona. Es la fuente única del área que se guarda en el documento.
+async function cdAreaLlenar(preValor, editable){
+  var sel=document.getElementById('cd-area'); if(!sel) return;
+  if(!cdEmbebido()){ sel.disabled=!editable; return; }
+  try{
+    var r=await window.SGD.sp('list',{ lista:(window.SGD.LISTA_DEPARTAMENTOS||'SGD_Departamentos'), queryParams:'$expand=fields&$top=500' });
+    var items=(r&&r.value)?r.value:[];
+    var pares=items.map(function(it){ var f=it.fields||it; return { ab:(f.Abreviatura||'').toString().trim(), nom:(f.Title||'').toString().trim() }; })
+      .filter(function(x){ return x.nom; })
+      .sort(function(a,b){ return a.nom.localeCompare(b.nom); });
+    sel.innerHTML='<option value="">—</option>'+pares.map(function(x){ return '<option value="'+cdEsc(x.nom)+'">'+cdEsc(x.nom)+' ('+cdEsc(x.ab)+')</option>'; }).join('');
+    CD_COD_DEPTOS=pares;   // también disponible para el generador
+    sel.value = preValor||'';
+    sel.disabled = !editable;
   }catch(e){}
 }
 
 async function cdCodCalcular(){
   if(!CD_GEN_ACTIVO) return;
   var emp=(document.getElementById('cd-cod-empresa')||{}).value||'';
-  var dep=(document.getElementById('cd-cod-depto')||{}).value||'';
+  var depNom=(document.getElementById('cd-cod-depto')||{}).value||'';   // ahora es el NOMBRE del área
   var tip=(document.getElementById('cd-cod-tipo')||{}).value||'';
   var con=document.getElementById('cd-cod-consec');
   var cod=document.getElementById('cd-codigo');
   var hint=document.getElementById('cd-cod-hint');
   // Sincroniza el "Tipo de documento" (Tipo_Doc) con el tipo elegido para el código
   if(tip){ var par=CD_COD_TIPOS.filter(function(x){return x.ab===tip;})[0]; if(par){ var t=document.getElementById('cd-tipo'); if(t) t.value=par.nom; } }
-  if(!emp||!dep||!tip){
+  // Área a guardar en el documento (nombre completo, no la abreviatura)
+  CD_AREA = depNom;
+  var areaEl=document.getElementById('cd-area'); if(areaEl) areaEl.value=depNom;   // refleja el área en el selector visible
+  if(!emp||!depNom||!tip){
     if(con) con.value=''; if(cod) cod.value='';
     if(hint){ hint.className='cd-hint'; hint.textContent='Selecciona empresa, departamento y tipo para ver el código disponible.'; }
     return;
   }
-  var prefijo=emp+'-'+dep+'-'+tip+'-';
+  // Para el código se usa la ABREVIATURA del área elegida
+  var depPair=CD_COD_DEPTOS.filter(function(x){return x.nom===depNom;})[0];
+  var depAb = depPair ? depPair.ab : depNom;
+  var prefijo=emp+'-'+depAb+'-'+tip+'-';
   if(con) con.value='…';
   if(hint){ hint.className='cd-hint'; hint.textContent='Verificando disponibilidad…'; }
   var n = (window.SGD.siguienteConsecutivo) ? await window.SGD.siguienteConsecutivo(prefijo) : '001';
@@ -813,10 +852,13 @@ async function cdGuardar(){
   // Alta directa con generador: revalidar el consecutivo disponible al momento de guardar
   if(CD_GEN_ACTIVO && cdEmbebido()){
     var gEmp=(document.getElementById('cd-cod-empresa')||{}).value||'';
-    var gDep=(document.getElementById('cd-cod-depto')||{}).value||'';
+    var gDepNom=(document.getElementById('cd-cod-depto')||{}).value||'';   // NOMBRE del área
     var gTip=(document.getElementById('cd-cod-tipo')||{}).value||'';
-    if(!gEmp||!gDep||!gTip){ err.textContent='Selecciona empresa, departamento y tipo para asignar el código.'; return; }
-    var gPref=gEmp+'-'+gDep+'-'+gTip+'-';
+    if(!gEmp||!gDepNom||!gTip){ err.textContent='Selecciona empresa, departamento y tipo para asignar el código.'; return; }
+    var gDepPair=CD_COD_DEPTOS.filter(function(x){return x.nom===gDepNom;})[0];
+    var gDepAb = gDepPair ? gDepPair.ab : gDepNom;   // la abreviatura es la que va en el código
+    CD_AREA = gDepNom;
+    var gPref=gEmp+'-'+gDepAb+'-'+gTip+'-';
     var gN=(window.SGD.siguienteConsecutivo)?await window.SGD.siguienteConsecutivo(gPref):'001';
     codigo=gPref+gN;
     document.getElementById('cd-codigo').value=codigo;
@@ -838,9 +880,15 @@ async function cdGuardar(){
   descArr.forEach(function(c){ if(accesosArr.map(function(x){return x.toLowerCase();}).indexOf(c.toLowerCase())<0){ accesosArr.push(c); } });
   accesos = accesosArr.join('; ');
 
+  // Área (Departamento) a guardar: la fuente única es el selector "Área / Departamento".
+  var areaGuardar = (document.getElementById('cd-area')||{}).value || '';
+  // Respaldo por si el selector no cargó (red lenta): usa lo capturado por modo.
+  if(!areaGuardar){ areaGuardar = CD_GEN_ACTIVO ? (CD_AREA||'') : ((CD_PREFILL && CD_PREFILL.area) ? CD_PREFILL.area : (CD_EDIT_AREA||'')); }
+
   var fields={
     Title:nombre, Codigo:codigo, Tipo_Doc:tipo, Version:version,
     Fecha_Cambio: fecha ? (fecha+'T00:00:00Z') : '',
+    Departamento: areaGuardar,
     Acceso_Todos: todos ? 'Sí' : 'No',
     Accesos: todos ? '' : accesos,
     Descargas: todos ? '' : descArr.join('; '),

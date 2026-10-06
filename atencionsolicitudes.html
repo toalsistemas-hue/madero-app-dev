@@ -997,17 +997,20 @@ async function estConfirmar(){
    LIBERACIÓN: generar código o reabrir revisión + cargar documento final
    ============================================================ */
 var LIB_IDX=-1, FINAL_IDX=-1;
+var LIB_DEPTOS=[];   // [{ab,nom}] departamentos (la abreviatura puede repetirse entre áreas)
 
-async function libLlenarSelect(selId, lista){
+async function libLlenarSelect(selId, lista, kind){
   var sel=document.getElementById(selId); if(!sel) return;
   sel.innerHTML='<option value="">…</option>';
   try{
     var r=await window.SGD.sp('list',{ lista:lista, queryParams:'$expand=fields&$top=500' });
     var items=(r&&r.value)?r.value:[];
-    items.map(function(it){ var f=it.fields||it; return { ab:(f.Abreviatura||'').toString().trim(), nom:(f.Title||'').toString().trim() }; })
+    var pares=items.map(function(it){ var f=it.fields||it; return { ab:(f.Abreviatura||'').toString().trim(), nom:(f.Title||'').toString().trim() }; })
       .filter(function(x){ return x.ab; })
-      .sort(function(a,b){ return a.ab.localeCompare(b.ab); })
-      .forEach(function(x){ var o=document.createElement('option'); o.value=x.ab; o.textContent=x.ab+' — '+x.nom; sel.appendChild(o); });
+      .sort(function(a,b){ return a.ab.localeCompare(b.ab); });
+    // El DEPARTAMENTO usa el NOMBRE como valor (único); la abreviatura puede repetirse (p. ej. SAP y SISTEMAS = "SIS").
+    pares.forEach(function(x){ var o=document.createElement('option'); o.value=(kind==='depto'? x.nom : x.ab); o.textContent=x.ab+' — '+x.nom; sel.appendChild(o); });
+    if(kind==='depto') LIB_DEPTOS=pares;
   }catch(e){}
 }
 
@@ -1045,7 +1048,7 @@ function libAbrir(idx){
     [selEmp,selDep,selTip].forEach(function(sl){ if(sl) sl.disabled=false; });
     if(atcEmbebido()){
       libLlenarSelect('lib-empresa', (window.SGD.LISTA_EMPRESA||'SGD_Empresa'));
-      libLlenarSelect('lib-depto', (window.SGD.LISTA_DEPARTAMENTOS||'SGD_Departamentos'));
+      libLlenarSelect('lib-depto', (window.SGD.LISTA_DEPARTAMENTOS||'SGD_Departamentos'), 'depto');
       libLlenarSelect('lib-tipo', (window.SGD.LISTA_TIPOS||'SGD_TiposDocumento'));
     }
   }
@@ -1060,10 +1063,13 @@ function libSel(){
   document.getElementById('lib-opt-liberar').classList.toggle('sel', v==='liberar');
 }
 async function libCalcular(){
-  var emp=document.getElementById('lib-empresa').value, dep=document.getElementById('lib-depto').value, tip=document.getElementById('lib-tipo').value;
+  var emp=document.getElementById('lib-empresa').value, depNom=document.getElementById('lib-depto').value, tip=document.getElementById('lib-tipo').value;
   var cod=document.getElementById('lib-codigo'), con=document.getElementById('lib-consec');
-  if(!emp||!dep||!tip){ con.value=''; cod.value=''; return; }
-  var prefijo=emp+'-'+dep+'-'+tip+'-';
+  if(!emp||!depNom||!tip){ con.value=''; cod.value=''; return; }
+  // El código usa la ABREVIATURA del área elegida (el value del select es el NOMBRE)
+  var depPair=LIB_DEPTOS.filter(function(x){return x.nom===depNom;})[0];
+  var depAb = depPair ? depPair.ab : depNom;
+  var prefijo=emp+'-'+depAb+'-'+tip+'-';
   con.value='…';
   var n = (window.SGD.siguienteConsecutivo) ? await window.SGD.siguienteConsecutivo(prefijo) : '001';
   con.value=n; cod.value=prefijo+n;
@@ -1116,7 +1122,8 @@ async function libConfirmar(){
       document.getElementById('lib-codigo').value=codigoFinal;
       codigo=codigoFinal;
     }
-    fields={ Codigo_Documento:codigo, Estatus:'En liberación', Evento_Notificacion:'CODIGO_GENERADO' };
+    var areaSel=(document.getElementById('lib-depto')||{}).value||'';   // NOMBRE del área elegida
+    fields={ Codigo_Documento:codigo, Area_Departamento:areaSel, Estatus:'En liberación', Evento_Notificacion:'CODIGO_GENERADO' };
     accion='Apartar código de documento'; detalle=codigo;
   }
   btn.disabled=true; btn.textContent='Guardando…';

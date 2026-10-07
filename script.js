@@ -867,7 +867,7 @@ async function sgdRegistrarSolicitud(ev) {
     Descripcion: datos.descripcion,
     Departamento: datos.departamento,
     Requiere_Revision: requierePresencial ? 'Sí' : 'No',
-    Fecha_Revision: (requierePresencial && datos.fecha) ? (datos.fecha + 'T00:00:00Z') : '',
+    Fecha_Revision: (requierePresencial && datos.fecha) ? (datos.fecha + 'T12:00:00Z') : '',
     Hora_Revision: requierePresencial ? (datos.hora || '') : '',
     Estatus: estatusInicial,
     Fecha_Solicitud: new Date().toISOString(),

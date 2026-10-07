@@ -233,7 +233,7 @@ async function actRegistrar(){
         Departamento: departamento,
         Descripcion: descripcion,
         Requiere_Revision: requierePresencial ? 'Sí' : 'No',
-        Fecha_Revision: (requierePresencial && fecha) ? (fecha+'T00:00:00Z') : '',
+        Fecha_Revision: (requierePresencial && fecha) ? (fecha+'T12:00:00Z') : '',
         Hora_Revision: requierePresencial ? (hora||'') : '',
         Estatus: estatusInicial,
         Fecha_Solicitud: new Date().toISOString(),

@@ -16842,6 +16842,7 @@ async function ftRptLoad() {
       var ayudantes=ayRaw?ayRaw.split(',').map(function(s){return s.trim();}).filter(Boolean):[];
       return{of_sap:f.OF_SAP||'',op_id:f.Op_ID||'',nombre:f.Nombre||f.Title||'',estacion:f.Estacion||'',
         tecnico:f.Tecnico||'',ayudantes:ayudantes,status:f.Status||'pending',
+        fecha_inicio_real:f.Fecha_Inicio||'',fecha_fin_real:f.Fecha_Fin||'',
         qty_total:parseInt(f.Qty_Total||0)||0,qty_ok:parseInt(f.Qty_OK||0)||0,secuencia:parseInt(f.Secuencia||0)||0};
     });
     _rptData.loaded=true;
@@ -16869,8 +16870,16 @@ async function ftRptLoad() {
 function ftRptFmtFecha(s){if(!s)return'—';var p=s.split('-');if(p.length<3)return s;return p[2]+'/'+p[1]+'/'+p[0].slice(2);}
 // Fecha (solo día) de inicio/terminación de las operaciones de una fila del reporte.
 function _rptFechaSolo(s){ if(!s) return ''; return String(s).split('T')[0].split(' ')[0]; }
-function _rptOpsInicio(ops){ var best=''; (ops||[]).forEach(function(o){ var d=_rptFechaSolo(o.fecha_inicio_real); if(d && (!best||d<best)) best=d; }); return best; }
-function _rptOpsTermino(ops){ var best=''; (ops||[]).forEach(function(o){ var d=_rptFechaSolo(o.fecha_fin_real); if(d && (!best||d>best)) best=d; }); return best; }
+// F.Inicio = fecha de inicio de la PRIMERA operación (por secuencia) que ya inició.
+function _rptOpsInicio(ops){
+  var arr=(ops||[]).filter(function(o){return _rptFechaSolo(o.fecha_inicio_real);}).slice().sort(function(a,b){return (a.secuencia||0)-(b.secuencia||0);});
+  return arr.length?_rptFechaSolo(arr[0].fecha_inicio_real):'';
+}
+// F.Terminación = fecha de fin de la ÚLTIMA operación (por secuencia) que ya terminó.
+function _rptOpsTermino(ops){
+  var arr=(ops||[]).filter(function(o){return _rptFechaSolo(o.fecha_fin_real);}).slice().sort(function(a,b){return (a.secuencia||0)-(b.secuencia||0);});
+  return arr.length?_rptFechaSolo(arr[arr.length-1].fecha_fin_real):'';
+}
 function ftRptEsUrgente(fEntrega,pct){
   if(!fEntrega||pct>=100)return false;
   var hoy=new Date();hoy.setHours(0,0,0,0);var limite=new Date(hoy);limite.setDate(limite.getDate()+7);

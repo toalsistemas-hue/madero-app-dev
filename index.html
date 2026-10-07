@@ -1099,6 +1099,7 @@ tr:last-child td{border-bottom:none;}
         <button id="ftab-sin-prog"    onclick="setProgTab('sin-prog')"    class="btn btn-sm btn-ghost">Sin programar</button>
         <button id="ftab-programados" onclick="setProgTab('programados')" class="btn btn-sm btn-ghost">Programados</button>
         <button id="ftab-terminados"  onclick="setProgTab('terminados')"  class="btn btn-sm btn-ghost">Terminados</button>
+        <button id="ftab-completados" onclick="setProgTab('completados')" class="btn btn-sm btn-ghost" style="color:var(--green);border-color:rgba(46,160,67,.3);">✓ Completados</button>
         <div style="margin-left:auto;">
           <button id="ftab-cancelados" onclick="setProgTab('cancelados')" class="btn btn-sm btn-ghost" style="color:var(--red);border-color:rgba(239,68,68,.3);">🚫 Cancelados <span id="ftab-cancelados-badge" style="display:none;background:var(--red);color:#fff;border-radius:10px;padding:0 5px;font-size:.65rem;margin-left:3px;">0</span></button>
         </div>
@@ -8673,15 +8674,16 @@ function setProgTab(tab){
   if(tab==='cancelados' && C.filterStatus==='cancelados') tab='todos';
   C.filterStatus = tab;
   // Actualizar estilos igual que Tiempo Real
-  ['todos','sin-prog','programados','terminados','cancelados'].forEach(function(t){
+  ['todos','sin-prog','programados','terminados','completados','cancelados'].forEach(function(t){
     var b=document.getElementById('ftab-'+t);
     if(!b) return;
     if(t===tab){
       b.className = 'btn btn-sm btn-primary';
-      if(t==='cancelados') b.style.cssText=''; // reset inline style cuando activo
+      if(t==='cancelados'||t==='completados') b.style.cssText=''; // reset inline style cuando activo
     } else {
       b.className = 'btn btn-sm btn-ghost';
       if(t==='cancelados') b.style.cssText='color:var(--red);border-color:rgba(239,68,68,.3);';
+      if(t==='completados') b.style.cssText='color:var(--green);border-color:rgba(46,160,67,.3);';
     }
   });
   (window.renderProg||renderProg)();
@@ -11424,6 +11426,10 @@ function _renderProgBody(){
       if(!aof || !aof.ops || aof.ops.length===0) return false;
       return aof.ops.every(function(op){return op.status==='done';});
     }
+    if(fStatus==='completados'){
+      // Pedidos marcados en verde con "✓ Completado" (listos para cerrar)
+      return pedidoIsComplete(of.pedido);
+    }
     return true;
   }));
 
@@ -13951,6 +13957,45 @@ async function ftCycleMonitorVis(ofSap){
   }
 }
 
+// ── Filtro por estatus de operación (Tiempo Real · En proceso) ──────────
+// Categorías visibles para el coordinador. "Fin de turno" es un subtipo de 'paused'.
+var SEG_OP_CATS=[
+  {k:'concluidas',l:'✓ Concluidas',          c:'var(--green)'},
+  {k:'activas',   l:'▶ Activas',             c:'var(--accent-l)'},
+  {k:'pausadas',  l:'⏸ Pausadas',            c:'var(--yellow)'},
+  {k:'finturno',  l:'🌙 Fin de turno',       c:'var(--accent-l)'},
+  {k:'aguarda',   l:'⏳ Aguarda confirmación Supervisor', c:'#f59e0b'},
+  {k:'omitidas',  l:'🏁 Omitidas',           c:'#6e7681'},
+  {k:'siniciar',  l:'○ Sin iniciar',         c:'var(--muted)'}
+];
+function _opEstadoCat(op){
+  if(!op) return 'otros';
+  var s=op.status;
+  if(s==='done') return 'concluidas';
+  if(s==='running') return 'activas';
+  if(s==='op_concluded') return 'aguarda';
+  if(s==='omitida') return 'omitidas';
+  if(s==='pending') return 'siniciar';
+  if(s==='paused'){
+    var ft=(op._pauseTipo==='turno')||((op.pauseReason||'').indexOf('🌙')>=0)||((op.pauseReason||'').indexOf('Fin de turno')>=0);
+    return ft?'finturno':'pausadas';
+  }
+  return 'otros'; // validating / retrabajo / chatarra — no filtrables
+}
+function _segOpFilterActive(){
+  return (C.segFilter||'activos')==='activos' && C.segOpFilter && Object.keys(C.segOpFilter).some(function(k){return C.segOpFilter[k];});
+}
+function _opCatSelected(op){ var f=C.segOpFilter||{}; return !!f[_opEstadoCat(op)]; }
+function _ofHasSelectedOp(aof){ return !!(aof && aof.ops && aof.ops.some(function(op){return _opCatSelected(op);})); }
+function toggleSegOpFilter(cat){
+  if(!C.segOpFilter) C.segOpFilter={};
+  C.segOpFilter[cat]=!C.segOpFilter[cat];
+  renderSeg();
+}
+function clearSegOpFilter(){ C.segOpFilter={}; renderSeg(); }
+window.toggleSegOpFilter=toggleSegOpFilter;
+window.clearSegOpFilter=clearSegOpFilter;
+
 function renderSeg(){
   window.renderSeg = renderSeg; // expose globally
 
@@ -13968,6 +14013,29 @@ function renderSeg(){
     h+='<button class="btn btn-sm '+(filterStatus===f?'btn-primary':'btn-ghost')+'" onclick="C.segFilter=\''+f+'\';renderSeg()">'+labels[f]+(f==='ofcerradas'&&_cnt>0?' ('+_cnt+')':'')+'</button>';
   });
   h+='</div>';
+
+  // -- Filtro multi-selección por estatus de operación (solo "En proceso") --
+  if(filterStatus==='activos'){
+    var _ocCounts={};
+    DB.ofs.filter(function(o){return o.programadoHoy && !o.pedidoCerrado && !o.pedidoCierre && !o.ofCerrada;}).forEach(function(of){
+      var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+      if(aof&&aof.ops) aof.ops.forEach(function(op){var c=_opEstadoCat(op);_ocCounts[c]=(_ocCounts[c]||0)+1;});
+    });
+    var _fsel=C.segOpFilter||{};
+    var _anySel=Object.keys(_fsel).some(function(k){return _fsel[k];});
+    h+='<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">';
+    h+='<span style="font-size:.72rem;color:var(--dim);margin-right:2px;">Filtrar operaciones:</span>';
+    SEG_OP_CATS.forEach(function(oc){
+      var on=!!_fsel[oc.k];
+      var cnt=_ocCounts[oc.k]||0;
+      h+='<button onclick="toggleSegOpFilter(\''+oc.k+'\')" class="btn btn-sm" style="'
+        +(on?('background:'+oc.c+';color:#0b0f14;border:1px solid '+oc.c+';font-weight:600;')
+            :('background:rgba(255,255,255,.04);color:'+oc.c+';border:1px solid var(--border);'))
+        +'white-space:nowrap;">'+oc.l+' ('+cnt+')</button>';
+    });
+    if(_anySel) h+='<button onclick="clearSegOpFilter()" class="btn btn-sm btn-ghost" style="white-space:nowrap;">✕ Limpiar</button>';
+    h+='</div>';
+  }
 
   var pedidos_to_show;
   if(filterStatus==='activos'){
@@ -14035,7 +14103,13 @@ function renderSeg(){
   // Mapa de OFs visibles en el Monitor (para el indicador 📺)
   var _monVis = (typeof ftComputeMonitorVisible==='function') ? ftComputeMonitorVisible() : {};
 
+  var _segEmitted=0;
   groups.forEach(function(g){
+    // Filtro de operaciones: ocultar pedidos sin ninguna operación del estatus seleccionado
+    if(_segOpFilterActive()){
+      var _gm=(g.ofs||[]).some(function(of){var a=DB.activeOFs.find(function(x){return x.of_sap===of.of_sap;});return _ofHasSelectedOp(a);});
+      if(!_gm) return;
+    }
     var grpDone=0, grpTotal=0, grpAll=0;
     g.ofs.forEach(function(of){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
@@ -14076,6 +14150,8 @@ function renderSeg(){
 
     g.ofs.forEach(function(of){
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+      // Filtro de operaciones: ocultar OFs sin operaciones del estatus seleccionado
+      if(_segOpFilterActive() && !_ofHasSelectedOp(aof)) return;
       var done = aof ? aof.ops.filter(function(o){return o.status==='done'||o.status==='op_concluded';}).length : 0;
       var totalOps = aof ? aof.ops.length : 0;
       var pct = totalOps>0 ? Math.round(done/totalOps*100) : (filterStatus==='cerrados'?100:0);
@@ -14142,6 +14218,8 @@ function renderSeg(){
       // -- 8: Ops con comentarios --
       h+='<div style="display:flex;flex-direction:column;gap:3px;">';
       aof.ops.forEach(function(op){
+        // Filtro de operaciones: ocultar las que no coincidan con el estatus seleccionado
+        if(_segOpFilterActive() && !_opCatSelected(op)) return;
         var sCol={done:'var(--green)',running:'var(--accent-l)',paused:'var(--yellow)',validating:'var(--purple)',pending:'var(--muted)',retrabajo:'var(--red)',chatarra:'var(--red)',op_concluded:'#f59e0b',omitida:'#6e7681'}[op.status]||'var(--muted)';
         var sIco={done:'✓',running:'▶',paused:'⏸',validating:'🔍',pending:'○',retrabajo:'🔄',chatarra:'🗑',op_concluded:'⏳',omitida:'🏁'}[op.status]||'○';
         var _esOmit = op.status==='omitida';
@@ -14243,10 +14321,11 @@ function renderSeg(){
     });
     h+='</div>'; // close collapsible content
     h+='</div>'; // close group card
+    _segEmitted++;
   });
-  if(!h || h.indexOf('prog-card') === -1 && groups.length===0){
+  if(_segEmitted===0){
     h+='<div style="text-align:center;padding:30px;color:var(--muted);font-size:.82rem;">'+
-      (_sq?'Sin resultados para la búsqueda.':(filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='ofcerradas'?'Sin OFs cerradas. Cierra órdenes finalizadas desde 🟢 En proceso para depurar la vista.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.'))))+'</div>';
+      (_segOpFilterActive()?'Sin operaciones que coincidan con el filtro seleccionado.':(_sq?'Sin resultados para la búsqueda.':(filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='ofcerradas'?'Sin OFs cerradas. Cierra órdenes finalizadas desde 🟢 En proceso para depurar la vista.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.')))))+'</div>';
   }
   document.getElementById('seg-list').innerHTML=h;
   // Update Carga por Estacion in historial page too

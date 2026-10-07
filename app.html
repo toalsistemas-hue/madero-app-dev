@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.97</title>
+<title>FabTracker App v2.99</title>
 
 <!-- MSAL Browser -->
 
@@ -3664,7 +3664,8 @@ function renderAppHoy(){
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
-  if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
+  if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 6px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
+  if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='monReporteMetaOpen(\"super\")' style='width:100%;margin:0 0 12px;background:linear-gradient(135deg,#0d9488,#0f766e);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📊 Reporte Meta</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -3682,12 +3683,16 @@ function renderAppHoy(){
   }
   h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+_visOFs.length+"</span></div>";
   h+=_appFiltroBarHTML(true);
+  h+=_appOpFilterBarHTML(_visOFs);
   var _hoySrc=(_visOFs||[]).filter(Boolean);
   var _fOF=(APP.searchOF||'').trim().toLowerCase(), _fTec=(APP.searchTec||'').trim().toLowerCase(), _fEst=(APP.searchEst||'').trim().toLowerCase();
   if(_fOF)  _hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_fOF)>=0;});
   if(_fTec) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.tecnico||'').toLowerCase().indexOf(_fTec)>=0;});});
   if(_fEst) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.estacion||'').toLowerCase().indexOf(_fEst)>=0;});});
+  // Filtro por estatus de operación: ocultar OFs sin operaciones del estatus seleccionado
+  if(_appOpFilterActive()) _hoySrc=_hoySrc.filter(function(o){return _appOfHasSelOp(o);});
   var groups=groupByPedido(_hoySrc);
+  if(_appOpFilterActive() && groups.length===0){ h+="<div class='app-empty'><p>Sin operaciones que coincidan con el filtro.</p></div>"; return h; }
   groups.forEach(function(g){
     var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
     var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
@@ -3749,8 +3754,10 @@ function renderAppOpsPanel(of){
     h+="<div class='app-ops-sub'>Sub-artículos</div>";
     of.subarts.forEach(function(sa){h+=renderAppSACard(sa);});
   }
-  h+="<div class='app-ops-sub'>Operaciones ("+of.ops.length+")</div>";
+  var _opsVis = _appOpFilterActive() ? of.ops.filter(_appOpCatSel) : of.ops;
+  h+="<div class='app-ops-sub'>Operaciones ("+_opsVis.length+")</div>";
   of.ops.forEach(function(op,idx){
+    if(_appOpFilterActive() && !_appOpCatSel(op)) return;
     var key=of.of_sap+"_"+op.id;
     // Aplicar _localStatus reciente como estado efectivo (protege contra reload lento)
     var _effectiveStatus = (op._localStatus && op._localStatusAt && (Date.now()-op._localStatusAt)<60000)
@@ -3966,9 +3973,10 @@ function renderAppFlujo(){
       h+="<div class='app-notif-b'><div class='app-ndot'></div><div style='flex:1'><div class='app-ntxt'><strong>OF "+esc(n.of_sap)+"</strong> — "+esc(op.nombre)+"<br><span style='font-size:.68rem;color:var(--adim);'>"+esc(n.note||"")+"</span></div><div style='margin-top:6px;'><button class='app-ob app-ob-lib' onclick='openCalResp(\""+n.of_sap+"\",\""+n.op_id+"\")'>Responder</button></div></div></div>";
     });
   }
-  if(DB.activeOFs.length===0)return h+"<div class='app-empty'><p>Agrega OFs al día para ver el flujo.</p></div>";
+  var _flujoOFs=DB.activeOFs.filter(function(o){return !o.ofCerrada;});
+  if(_flujoOFs.length===0)return h+"<div class='app-empty'><p>Agrega OFs al día para ver el flujo.</p></div>";
   h+="<div class='app-sh'>Flujo del día</div>";
-  DB.activeOFs.forEach(function(of){
+  _flujoOFs.forEach(function(of){
     if(!of.ops.length){return;}
     h+="<div class='app-ofc' style='margin-bottom:10px;border-radius:8px;overflow:hidden;'>";
     h+="<div class='app-ofc-hdr' style='cursor:default;'><div><div class='app-of-num'>OF "+esc(of.of_sap)+(of.articulo?"<span class='app-of-art'> · "+esc(of.articulo)+"</span>":"")+"</div><div class='app-of-desc' style='font-size:.76rem;'>"+esc(of.descripcion.substring(0,48))+"</div></div></div>";
@@ -7283,6 +7291,7 @@ function renderAppQueueList(){
     var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
     var op=aof?aof.ops.find(function(o){return o.id===item.op_id;}):null;
     if(!op) return;
+    if(aof && aof.ofCerrada) return; // ocultar ops de OFs cerradas por el Coordinador
     // Active = any non-pending status (these ops cannot be moved in queue)
     var isActive=op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded';
     var bgCol=op.status==='running'?'rgba(34,197,94,.08)':'rgba(255,255,255,.03)';
@@ -8352,7 +8361,7 @@ async function _appLoadDataFromSP_impl() {
       appFlowGet('FT_Operaciones', 5000).catch(emptyFn),
       appFlowGet('FT_Tecnicos', 200).catch(emptyFn),
       appFlowGet('FT_Estaciones', 100).catch(emptyFn),
-      appFlowGet('FT_Cola_Estacion', 2000).catch(emptyFn),
+      appFlowGet('FT_Cola_Estacion', 5000).catch(emptyFn),
       appFlowGet('FT_Status_Estacion', 100).catch(emptyFn),
       appFlowGet('FT_Timers', 2000).catch(emptyFn),
       appFlowGet('FT_Plantillas_Operaciones', 500).catch(emptyFn),
@@ -8413,6 +8422,7 @@ async function _appLoadDataFromSP_impl() {
         Monitor_Override:     f.Monitor_Override || f.MonitorOverride || '',
         Grupo_Fabricacion:    f.Grupo_Fabricacion || f.GrupoFabricacion || '',
         Grupo_Modo:           f.Grupo_Modo || f.GrupoModo || '',
+        OF_Cerrada:           (f.OF_Cerrada!==undefined ? f.OF_Cerrada : f.OFCerrada),
       };
     };
     // Normalize Op fields
@@ -10357,6 +10367,64 @@ function appSetSearchEst(v){ APP.searchEst = v; _appDebouncedFilter('app-search-
 
 // Barra de filtros FabTracker. full=true incluye Operador y Estación (vista HOY);
 // full=false solo N° de OF (vista ÓRDENES). Siempre incluye el botón Actualizar.
+// ── Filtro por estatus de operación (Supervisor · vista HOY) ───────────
+// Mismo comportamiento que el filtro de Tiempo Real del coordinador.
+var APP_OP_CATS=[
+  {k:'concluidas',l:'✓ Concluidas',          c:'var(--agreen)'},
+  {k:'activas',   l:'▶ Activas',             c:'var(--aaccent)'},
+  {k:'pausadas',  l:'⏸ Pausadas',            c:'var(--ayellow)'},
+  {k:'finturno',  l:'🌙 Fin de turno',       c:'#8b5cf6'},
+  {k:'aguarda',   l:'⏳ Aguarda confirmación Supervisor', c:'#f59e0b'},
+  {k:'omitidas',  l:'🏁 Omitidas',           c:'#6e7681'},
+  {k:'siniciar',  l:'○ Sin iniciar',         c:'var(--adim)'}
+];
+function _appOpEstadoCat(op){
+  if(!op) return 'otros';
+  var s=op.status;
+  if(s==='done') return 'concluidas';
+  if(s==='running') return 'activas';
+  if(s==='op_concluded') return 'aguarda';
+  if(s==='omitida') return 'omitidas';
+  if(s==='pending') return 'siniciar';
+  if(s==='paused'){
+    var ft=(op._pauseTipo==='turno')||((op.pauseReason||'').indexOf('🌙')>=0)||((op.pauseReason||'').indexOf('Fin de turno')>=0);
+    return ft?'finturno':'pausadas';
+  }
+  return 'otros'; // validating / retrabajo / chatarra — no filtrables
+}
+function _appOpFilterActive(){
+  return APP && APP.view==='hoy' && APP.opFilter && Object.keys(APP.opFilter).some(function(k){return APP.opFilter[k];});
+}
+function _appOpCatSel(op){ var f=(APP&&APP.opFilter)||{}; return !!f[_appOpEstadoCat(op)]; }
+function _appOfHasSelOp(of){ return !!(of && of.ops && of.ops.some(function(op){return _appOpCatSel(op);})); }
+function toggleAppOpFilter(cat){
+  if(!APP.opFilter) APP.opFilter={};
+  APP.opFilter[cat]=!APP.opFilter[cat];
+  renderApp();
+}
+function clearAppOpFilter(){ if(APP) APP.opFilter={}; renderApp(); }
+window.toggleAppOpFilter=toggleAppOpFilter;
+window.clearAppOpFilter=clearAppOpFilter;
+// Barra de chips multi-selección para la vista HOY
+function _appOpFilterBarHTML(visOFs){
+  var _counts={};
+  (visOFs||[]).forEach(function(of){ (of.ops||[]).forEach(function(op){ var c=_appOpEstadoCat(op); _counts[c]=(_counts[c]||0)+1; }); });
+  var _fsel=(APP&&APP.opFilter)||{};
+  var _anySel=Object.keys(_fsel).some(function(k){return _fsel[k];});
+  var h='<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">';
+  h+='<span style="font-size:.68rem;color:var(--adim);width:100%;margin-bottom:1px;">Filtrar operaciones:</span>';
+  APP_OP_CATS.forEach(function(oc){
+    var on=!!_fsel[oc.k]; var cnt=_counts[oc.k]||0;
+    h+='<button onclick="toggleAppOpFilter(\''+oc.k+'\')" style="'
+      +(on?('background:'+oc.c+';color:#0b0f14;border:1px solid '+oc.c+';font-weight:700;')
+          :('background:rgba(255,255,255,.05);color:'+oc.c+';border:1px solid rgba(255,255,255,.14);'))
+      +'border-radius:8px;padding:5px 9px;font-size:.68rem;cursor:pointer;white-space:nowrap;">'+oc.l+' ('+cnt+')</button>';
+  });
+  if(_anySel) h+='<button onclick="clearAppOpFilter()" style="background:rgba(255,255,255,.05);color:var(--adim);border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:5px 9px;font-size:.68rem;cursor:pointer;white-space:nowrap;">✕ Limpiar</button>';
+  h+='</div>';
+  return h;
+}
+
 function _appFiltroBarHTML(full){
   var _st='flex:1;min-width:90px;box-sizing:border-box;padding:7px 9px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--atext);font-size:.8rem;outline:none;';
   var _btn='<button onclick="appActualizar()" title="Actualizar datos" style="flex:0 0 auto;padding:7px 12px;background:rgba(0,180,216,.15);border:1px solid rgba(0,180,216,.35);border-radius:8px;color:var(--aaccent);font-size:.8rem;font-weight:600;cursor:pointer;white-space:nowrap;">🔄 Actualizar</button>';
@@ -10705,31 +10773,74 @@ function monitorRender() {
 
 // ── Escaneo de QR de operación → acciones rápidas ────────────────────────
 var _monScanner = null;
-// ── Reporte Meta: OFs y % de avance de las estaciones asignadas a ESTE monitor ──
-function monReporteMetaOpen(){
-  var ests=(_MON.estaciones||[]).slice();
+// ── Reporte Meta: OFs y % de avance. scope 'monitor' = estaciones del monitor; 'super' = todas ──
+function monReporteMetaOpen(scope){
+  window._metaScope = (scope==='super') ? 'super' : 'monitor';
+  var sup = window._metaScope==='super';
   var ex=document.getElementById('mon-reporte-meta-modal'); if(ex) ex.remove();
   var d=document.createElement('div'); d.id='mon-reporte-meta-modal';
   d.style.cssText='position:fixed;inset:0;background:#0d1117;z-index:730;display:flex;flex-direction:column;';
+  var inpSty='background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:7px;padding:7px 9px;color:#e6edf3;font-size:.78rem;box-sizing:border-box;';
+  var filtros='<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;background:#111820;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;">';
+  filtros+='<input id="meta-f-of" placeholder="🔍 N° de OF" oninput="monReporteMetaRender()" style="'+inpSty+'flex:1;min-width:95px;">';
+  filtros+='<input id="meta-f-op" placeholder="👷 Operador" oninput="monReporteMetaRender()" style="'+inpSty+'flex:1;min-width:95px;">';
+  if(sup){
+    filtros+='<input id="meta-f-ped" placeholder="📦 N° de pedido" oninput="monReporteMetaRender()" style="'+inpSty+'flex:1;min-width:95px;">';
+  }
+  // Filtro de estación para ambos: en supervisor = todas; en monitor = solo las asignadas
+  var _estList;
+  if(sup){ var estAll={}; (DB.activeOFs||[]).forEach(function(aof){ (aof.ops||[]).forEach(function(o){ if(o.estacion) estAll[o.estacion]=true; }); }); _estList=Object.keys(estAll).sort(); }
+  else { _estList=(_MON.estaciones||[]).slice(); }
+  var sel='<select id="meta-f-est" onchange="monReporteMetaRender()" style="'+inpSty+'flex:1;min-width:120px;"><option value="">🏭 Todas las estaciones</option>';
+  _estList.forEach(function(e){ sel+='<option value="'+esc(e)+'">'+esc(e)+'</option>'; });
+  filtros+=sel+'</select>';
+  filtros+='<button onclick="monReporteMetaLimpiar()" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 10px;color:#8b949e;font-size:.74rem;cursor:pointer;white-space:nowrap;">✕ Limpiar</button>';
+  filtros+='</div>';
   d.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:linear-gradient(135deg,#0d9488,#0f766e);flex-shrink:0;">'+
-      '<div style="font-weight:800;font-size:1.05rem;color:#fff;">📊 Reporte Meta</div>'+
-      '<button onclick="monReporteMetaClose()" style="background:rgba(255,255,255,.18);border:none;color:#fff;font-size:1.1rem;cursor:pointer;line-height:1;border-radius:8px;padding:5px 13px;">✕</button>'+
+      '<div style="font-weight:800;font-size:1.05rem;color:#fff;">📊 Reporte Meta'+(sup?' — Todas las estaciones':'')+'</div>'+
+      '<div style="display:flex;align-items:center;gap:8px;">'+
+        '<button id="meta-refresh-btn" onclick="monReporteMetaRefresh()" title="Actualizar datos" style="background:rgba(255,255,255,.18);border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;border-radius:8px;padding:6px 12px;">↻</button>'+
+        '<button onclick="monReporteMetaClose()" style="background:rgba(255,255,255,.18);border:none;color:#fff;font-size:1.1rem;cursor:pointer;line-height:1;border-radius:8px;padding:5px 13px;">✕</button>'+
+      '</div>'+
     '</div>'+
-    '<div style="padding:8px 16px;background:#111820;color:#8b949e;font-size:.72rem;flex-shrink:0;border-bottom:1px solid rgba(255,255,255,.06);">'+
-      'Órdenes cargadas y avance de '+(ests.length?('tus estaciones: '+ests.map(esc).join(', ')):'este monitor')+'</div>'+
+    filtros+
     '<div id="mon-reporte-meta-body" style="flex:1;overflow-y:auto;padding:12px;"></div>';
   document.body.appendChild(d);
   monReporteMetaRender();
 }
 function monReporteMetaClose(){ var m=document.getElementById('mon-reporte-meta-modal'); if(m) m.remove(); }
+function monReporteMetaLimpiar(){ ['meta-f-of','meta-f-op','meta-f-ped'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';}); var s=document.getElementById('meta-f-est'); if(s)s.value=''; monReporteMetaRender(); }
+// Actualizar: recarga los datos desde SharePoint y vuelve a dibujar el reporte
+async function monReporteMetaRefresh(){
+  var btn=document.getElementById('meta-refresh-btn');
+  if(btn){ btn.disabled=true; btn.textContent='⏳'; }
+  try{
+    if(typeof appReloadOpsFromSP==='function') await appReloadOpsFromSP();
+    else if(typeof appLoadDataFromSP==='function') await appLoadDataFromSP();
+  }catch(e){ console.warn('[Meta] actualizar:', e&&e.message); }
+  monReporteMetaRender();
+  var b2=document.getElementById('meta-refresh-btn'); if(b2){ b2.disabled=false; b2.textContent='↻'; }
+}
 function _monMetaColor(pct){ return pct>=100?'#22c55e':(pct>=60?'#58a6ff':(pct>=30?'#f59e0b':'#f87171')); }
 function monReporteMetaRender(){
   var body=document.getElementById('mon-reporte-meta-body'); if(!body) return;
-  var ests=(_MON.estaciones||[]).slice();
-  if(!ests.length){ body.innerHTML='<div style="text-align:center;color:#8b949e;padding:40px 20px;font-size:.85rem;">Este monitor no tiene estaciones asignadas.<br>Configúralas con el ⚙ de arriba.</div>'; return; }
+  var sup = window._metaScope==='super';
+  var fOf=(((document.getElementById('meta-f-of')||{}).value)||'').trim().toUpperCase();
+  var fOp=(((document.getElementById('meta-f-op')||{}).value)||'').trim().toLowerCase();
+  var fPed=(((document.getElementById('meta-f-ped')||{}).value)||'').trim().toUpperCase();
+  var fEst=((document.getElementById('meta-f-est')||{}).value)||'';
+  var ests;
+  if(sup){
+    var estAll={}; (DB.activeOFs||[]).forEach(function(aof){ (aof.ops||[]).forEach(function(o){ if(o.estacion) estAll[o.estacion]=true; }); });
+    ests=Object.keys(estAll).sort();
+  } else {
+    ests=(_MON.estaciones||[]).slice();
+  }
+  if(fEst) ests=ests.filter(function(e){ return e===fEst; });
+  if(!ests.length){ body.innerHTML='<div style="text-align:center;color:#8b949e;padding:40px 20px;font-size:.85rem;">'+(sup?'No hay estaciones con órdenes cargadas.':'Este monitor no tiene estaciones asignadas.<br>Configúralas con el ⚙ de arriba.')+'</div>'; return; }
   var porEst={}; ests.forEach(function(e){ porEst[e]=[]; });
-  var gTotal=0, gResueltas=0, gOFs={};
+  var gTotal=0, gResueltas=0, ofAgg={};
   (DB.activeOFs||[]).forEach(function(aof){
     if(aof.ofCerrada) return;
     var byEst={};
@@ -10741,26 +10852,40 @@ function monReporteMetaRender(){
       var running=ops.some(function(o){return (o.status||'')==='running';});
       var resueltas=fin+omit; var pct=total>0?Math.round(resueltas/total*100):0;
       var estado=(pct===100&&total>0)?'Terminada':((running||resueltas>0)?'En proceso':'Pendiente');
-      // operador(es) y cantidad de piezas de la orden
       var tset={}, piezas=0;
       ops.forEach(function(o){ if(o.tecnico) tset[o.tecnico]=true; (o.ayudantes||[]).forEach(function(a){ if(a) tset[a]=true; }); if((o.qty_total||0)>piezas) piezas=o.qty_total||0; });
       var operador=Object.keys(tset).join(' / ')||'—';
-      gTotal+=total; gResueltas+=resueltas; if(aof.of_sap) gOFs[aof.of_sap]=true;
-      porEst[e].push({sap:aof.of_sap||'', desc:(aof.descripcion||aof.articulo||''), pedido:(aof.pedido||''), pct:pct, estado:estado, operador:operador, piezas:piezas});
+      var sap=String(aof.of_sap||''), ped=String(aof.pedido||'');
+      // filtros
+      if(fOf && sap.toUpperCase().indexOf(fOf)<0) return;
+      if(fPed && ped.toUpperCase().indexOf(fPed)<0) return;
+      if(fOp && operador.toLowerCase().indexOf(fOp)<0) return;
+      gTotal+=total; gResueltas+=resueltas;
+      if(!ofAgg[sap]) ofAgg[sap]={tot:0,res:0,run:false};
+      ofAgg[sap].tot+=total; ofAgg[sap].res+=resueltas; if(running) ofAgg[sap].run=true;
+      porEst[e].push({sap:sap, desc:(aof.descripcion||aof.articulo||''), pedido:ped, pct:pct, estado:estado, operador:operador, piezas:piezas});
     });
   });
   var overall=gTotal>0?Math.round(gResueltas/gTotal*100):0;
-  var nOFs=Object.keys(gOFs).length;
+  var nOFs=0,nT=0,nP=0,nPend=0;
+  Object.keys(ofAgg).forEach(function(s){ nOFs++; var a=ofAgg[s]; if(a.tot>0&&a.res===a.tot) nT++; else if(a.res>0||a.run) nP++; else nPend++; });
   var h='';
-  // Resumen general del monitor (todas sus estaciones juntas)
   var _oc=_monMetaColor(overall);
-  h+='<div style="background:linear-gradient(135deg,#0e2a2a,#122420);border:1px solid rgba(13,148,136,.45);border-radius:10px;padding:14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">';
-  h+='<div style="font-size:.82rem;font-weight:800;color:#e6edf3;">📈 Avance general del monitor<div style="font-size:.68rem;color:#8b949e;font-weight:400;margin-top:2px;">'+nOFs+' OF'+(nOFs===1?'':'s')+' · '+ests.length+' estación'+(ests.length===1?'':'es')+'</div></div>';
+  var _lblGen = sup ? 'Avance general' : 'Avance general del monitor';
+  h+='<div style="background:linear-gradient(135deg,#0e2a2a,#122420);border:1px solid rgba(13,148,136,.45);border-radius:10px;padding:14px;margin-bottom:14px;">';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">';
+  h+='<div style="font-size:.82rem;font-weight:800;color:#e6edf3;">📈 '+_lblGen+'<div style="font-size:.68rem;color:#8b949e;font-weight:400;margin-top:2px;">'+nOFs+' OF'+(nOFs===1?'':'s')+' · '+ests.length+' estación'+(ests.length===1?'':'es')+'</div></div>';
   h+='<div style="display:flex;align-items:center;gap:10px;flex:1;min-width:150px;max-width:300px;">';
   h+='<div style="flex:1;height:11px;background:rgba(255,255,255,.1);border-radius:6px;overflow:hidden;"><div style="height:100%;width:'+overall+'%;background:'+_oc+';border-radius:6px;"></div></div>';
   h+='<span style="font-size:1.3rem;font-weight:800;color:'+_oc+';">'+overall+'%</span></div></div>';
+  h+='<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">';
+  h+='<span style="background:rgba(34,197,94,.14);color:#22c55e;border-radius:12px;padding:3px 10px;font-size:.7rem;font-weight:700;">✅ '+nT+' Terminadas</span>';
+  h+='<span style="background:rgba(88,166,255,.14);color:#58a6ff;border-radius:12px;padding:3px 10px;font-size:.7rem;font-weight:700;">▶ '+nP+' En proceso</span>';
+  h+='<span style="background:rgba(139,148,163,.14);color:#8b949e;border-radius:12px;padding:3px 10px;font-size:.7rem;font-weight:700;">⏳ '+nPend+' Pendientes</span>';
+  h+='</div></div>';
   ests.forEach(function(e){
     var rows=(porEst[e]||[]).slice().sort(function(a,b){ var na=parseInt(String(a.sap).replace(/\D/g,''))||0, nb=parseInt(String(b.sap).replace(/\D/g,''))||0; return na-nb; });
+    if(sup && !rows.length) return;  // en supervisor no mostramos estaciones vacías
     var avg=rows.length?Math.round(rows.reduce(function(s,r){return s+r.pct;},0)/rows.length):0;
     h+='<div style="margin-bottom:14px;">';
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:#161b22;border:1px solid rgba(255,255,255,.08);border-radius:8px 8px 0 0;">';
@@ -13973,7 +14098,8 @@ function renderAppHoy(){
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
-  if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
+  if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 6px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
+  if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='monReporteMetaOpen(\"super\")' style='width:100%;margin:0 0 12px;background:linear-gradient(135deg,#0d9488,#0f766e);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📊 Reporte Meta</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -13991,12 +14117,16 @@ function renderAppHoy(){
   }
   h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+_visOFs.length+"</span></div>";
   h+=_appFiltroBarHTML(true);
+  h+=_appOpFilterBarHTML(_visOFs);
   var _hoySrc=(_visOFs||[]).filter(Boolean);
   var _fOF=(APP.searchOF||'').trim().toLowerCase(), _fTec=(APP.searchTec||'').trim().toLowerCase(), _fEst=(APP.searchEst||'').trim().toLowerCase();
   if(_fOF)  _hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_fOF)>=0;});
   if(_fTec) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.tecnico||'').toLowerCase().indexOf(_fTec)>=0;});});
   if(_fEst) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.estacion||'').toLowerCase().indexOf(_fEst)>=0;});});
+  // Filtro por estatus de operación: ocultar OFs sin operaciones del estatus seleccionado
+  if(_appOpFilterActive()) _hoySrc=_hoySrc.filter(function(o){return _appOfHasSelOp(o);});
   var groups=groupByPedido(_hoySrc);
+  if(_appOpFilterActive() && groups.length===0){ h+="<div class='app-empty'><p>Sin operaciones que coincidan con el filtro.</p></div>"; return h; }
   groups.forEach(function(g){
     var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
     var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
@@ -14058,8 +14188,10 @@ function renderAppOpsPanel(of){
     h+="<div class='app-ops-sub'>Sub-artículos</div>";
     of.subarts.forEach(function(sa){h+=renderAppSACard(sa);});
   }
-  h+="<div class='app-ops-sub'>Operaciones ("+of.ops.length+")</div>";
+  var _opsVis = _appOpFilterActive() ? of.ops.filter(_appOpCatSel) : of.ops;
+  h+="<div class='app-ops-sub'>Operaciones ("+_opsVis.length+")</div>";
   of.ops.forEach(function(op,idx){
+    if(_appOpFilterActive() && !_appOpCatSel(op)) return;
     var key=of.of_sap+"_"+op.id;
     // Aplicar _localStatus reciente como estado efectivo (protege contra reload lento)
     var _effectiveStatus = (op._localStatus && op._localStatusAt && (Date.now()-op._localStatusAt)<60000)
@@ -14234,9 +14366,12 @@ function renderAppOpsPanel(of){
 
 // ─── ÓRDENES ─────────────────────────────────────────────
 function renderAppOFs(){
-  var asignadas=DB.activeOFs.map(function(o){return o.of_sap;});
+  // Excluir OFs cerradas individualmente por el Coordinador (OF Cerradas)
+  var _closedSap={}; DB.activeOFs.forEach(function(o){ if(o.ofCerrada) _closedSap[o.of_sap]=true; });
+  var asignadas=DB.activeOFs.filter(function(o){return !o.ofCerrada;}).map(function(o){return o.of_sap;});
+  var _allAsignadas=DB.activeOFs.map(function(o){return o.of_sap;});
   var enProceso=DB.ofs.filter(function(o){return asignadas.indexOf(o.of_sap)>-1;});
-  var planeacion=DB.ofs.filter(function(o){return asignadas.indexOf(o.of_sap)===-1;});
+  var planeacion=DB.ofs.filter(function(o){return _allAsignadas.indexOf(o.of_sap)===-1 && !_closedSap[o.of_sap];});
   if(APP.searchOF){var _oq=String(APP.searchOF).toLowerCase();var _ofx=function(o){return String(o.of_sap||'').toLowerCase().indexOf(_oq)>=0;};enProceso=enProceso.filter(_ofx);planeacion=planeacion.filter(_ofx);}
   var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
   var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
@@ -14274,9 +14409,10 @@ function renderAppFlujo(){
       h+="<div class='app-notif-b'><div class='app-ndot'></div><div style='flex:1'><div class='app-ntxt'><strong>OF "+esc(n.of_sap)+"</strong> — "+esc(op.nombre)+"<br><span style='font-size:.68rem;color:var(--adim);'>"+esc(n.note||"")+"</span></div><div style='margin-top:6px;'><button class='app-ob app-ob-lib' onclick='openCalResp(\""+n.of_sap+"\",\""+n.op_id+"\")'>Responder</button></div></div></div>";
     });
   }
-  if(DB.activeOFs.length===0)return h+"<div class='app-empty'><p>Agrega OFs al día para ver el flujo.</p></div>";
+  var _flujoOFs=DB.activeOFs.filter(function(o){return !o.ofCerrada;});
+  if(_flujoOFs.length===0)return h+"<div class='app-empty'><p>Agrega OFs al día para ver el flujo.</p></div>";
   h+="<div class='app-sh'>Flujo del día</div>";
-  DB.activeOFs.forEach(function(of){
+  _flujoOFs.forEach(function(of){
     if(!of.ops.length){return;}
     h+="<div class='app-ofc' style='margin-bottom:10px;border-radius:8px;overflow:hidden;'>";
     h+="<div class='app-ofc-hdr' style='cursor:default;'><div><div class='app-of-num'>OF "+esc(of.of_sap)+(of.articulo?"<span class='app-of-art'> · "+esc(of.articulo)+"</span>":"")+"</div><div class='app-of-desc' style='font-size:.76rem;'>"+esc(of.descripcion.substring(0,48))+"</div></div></div>";
@@ -17600,6 +17736,7 @@ function renderAppQueueList(){
     var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
     var op=aof?aof.ops.find(function(o){return o.id===item.op_id;}):null;
     if(!op) return;
+    if(aof && aof.ofCerrada) return; // ocultar ops de OFs cerradas por el Coordinador
     // Active = any non-pending status (these ops cannot be moved in queue)
     var isActive=op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded';
     var bgCol=op.status==='running'?'rgba(34,197,94,.08)':'rgba(255,255,255,.03)';
@@ -18382,7 +18519,7 @@ async function appReloadOpsFromSP() {
     window._colaReloadCount = (window._colaReloadCount||0) + 1;
     var _shouldReloadCola = (window._colaReloadCount % 3 === 1); // 1, 4, 7... (every 3 cycles)
     if (_shouldReloadCola) try {
-      var colaEstRes = await appFlowGet('FT_Cola_Estacion', 500);
+      var colaEstRes = await appFlowGet('FT_Cola_Estacion', 5000);
       // Build posicion map: Op_ID → {posicion, spId}
       var _posMap = {};
       (colaEstRes.value||[]).forEach(function(item){

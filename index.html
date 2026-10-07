@@ -16867,6 +16867,10 @@ async function ftRptLoad() {
 }
 
 function ftRptFmtFecha(s){if(!s)return'—';var p=s.split('-');if(p.length<3)return s;return p[2]+'/'+p[1]+'/'+p[0].slice(2);}
+// Fecha (solo día) de inicio/terminación de las operaciones de una fila del reporte.
+function _rptFechaSolo(s){ if(!s) return ''; return String(s).split('T')[0].split(' ')[0]; }
+function _rptOpsInicio(ops){ var best=''; (ops||[]).forEach(function(o){ var d=_rptFechaSolo(o.fecha_inicio_real); if(d && (!best||d<best)) best=d; }); return best; }
+function _rptOpsTermino(ops){ var best=''; (ops||[]).forEach(function(o){ var d=_rptFechaSolo(o.fecha_fin_real); if(d && (!best||d>best)) best=d; }); return best; }
 function ftRptEsUrgente(fEntrega,pct){
   if(!fEntrega||pct>=100)return false;
   var hoy=new Date();hoy.setHours(0,0,0,0);var limite=new Date(hoy);limite.setDate(limite.getDate()+7);
@@ -16914,7 +16918,7 @@ function ftRptBuildData(){
       var operador=Object.keys(personasSet).join(' / ')||'—';
       if(!porEstacion[est])porEstacion[est]=[];
       porEstacion[est].push({of:of,pct:pct,opStatus:opStatus,operador:operador,
-        fProg:of.fecha_prog||'',fEntrega:of.fecha_entrega||'',totalOps:total,termOps:term,noOmit:noOmit,ops:ops});
+        fProg:of.fecha_prog||'',fEntrega:of.fecha_entrega||'',fInicio:_rptOpsInicio(ops),fTermino:_rptOpsTermino(ops),totalOps:total,termOps:term,noOmit:noOmit,ops:ops});
     });
   });
   _rptData.ofs.forEach(function(of){
@@ -16924,7 +16928,7 @@ function ftRptBuildData(){
     // (botón "Finalizar" → status 'Finalizada'), deben verse como Terminadas al 100%, no en Planeación.
     var _fin=(of.status==='Finalizada'||of.status==='En proceso de cierre');
     porEstacion['Sin estación'].push({of:of,pct:_fin?100:0,opStatus:_fin?'Terminada (Sin programar)':'Planeación',operador:'—',
-      fProg:of.fecha_prog||'',fEntrega:of.fecha_entrega||'',totalOps:0,termOps:0,noOmit:0,_finSinProg:_fin,ops:[]});
+      fProg:of.fecha_prog||'',fEntrega:of.fecha_entrega||'',fInicio:'',fTermino:'',totalOps:0,termOps:0,noOmit:0,_finSinProg:_fin,ops:[]});
   });
   Object.keys(porEstacion).forEach(function(est){
     porEstacion[est].sort(function(a,b){
@@ -17058,7 +17062,7 @@ function ftRptRender(){
     if(enP)html+=' <span style="background:rgba(59,130,246,.15);color:#93c5fd;border-radius:20px;padding:1px 8px;font-size:.65rem;">'+enP+' en proceso</span>';
     if(term)html+=' <span style="background:rgba(34,197,94,.12);color:#4ade80;border-radius:20px;padding:1px 8px;font-size:.65rem;">'+term+' term.</span>';
     html+='</div><div class="rpt-section-meta">Avance prom: <strong>'+avg+'%</strong></div></div>';
-    html+='<div style="overflow-x:auto;"><table class="rpt-table"><thead><tr><th>OF SAP</th><th>Pedido</th><th>Cliente</th><th>Descripción</th><th style="text-align:center;">Cant.</th><th>Status</th><th>Operador</th><th>F.Prog</th><th>F.Entrega</th><th>Avance</th></tr></thead><tbody>';
+    html+='<div style="overflow-x:auto;"><table class="rpt-table"><thead><tr><th>OF SAP</th><th>Pedido</th><th>Cliente</th><th>Descripción</th><th style="text-align:center;">Cant.</th><th>Status</th><th>Operador</th><th>F.Prog</th><th>F.Inicio</th><th>F.Terminación</th><th>F.Entrega</th><th>Avance</th></tr></thead><tbody>';
     rows.forEach(function(r){
       var color=ftRptAvanceColor(r.pct);
       var urgente=ftRptEsUrgente(r.fEntrega,r.pct);
@@ -17071,6 +17075,8 @@ function ftRptRender(){
       html+='<td>'+ftRptStatusPill(r.opStatus)+'</td>';
       html+='<td style="font-size:.67rem;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+r.operador+'">'+r.operador+'</td>';
       html+='<td style="font-size:.68rem;white-space:nowrap;">'+ftRptFmtFecha(r.fProg)+'</td>';
+      html+='<td style="font-size:.68rem;white-space:nowrap;">'+ftRptFmtFecha(r.fInicio)+'</td>';
+      html+='<td style="font-size:.68rem;white-space:nowrap;">'+ftRptFmtFecha(r.fTermino)+'</td>';
       html+='<td style="font-size:.68rem;white-space:nowrap;">'+fEntHtml+'</td>';
       html+='<td><div class="rpt-avance-wrap"><div class="rpt-avance-bar"><div class="rpt-avance-fill" style="width:'+r.pct+'%;background:'+color+';"></div></div><span class="rpt-avance-pct" style="color:'+color+';">'+r.pct+'%</span></div></td></tr>';
     });
@@ -17112,11 +17118,11 @@ function ftRptExportPDF(){
       doc.text((est||'Sin estación')+' — '+rows.length+' OFs | Avance prom: '+avg+'%',14,yOffset);yOffset+=4;
       var pdfRows=rows.map(function(r){
         return[r.of.of_sap||'',r.of.pedido||'N/A',(r.of.cliente||'').substring(0,22),(r.of.descripcion||'').substring(0,40),
-          String(r.of.cantidad||'—'),r.opStatus,r.operador.substring(0,20),ftRptFmtFecha(r.fProg),ftRptFmtFecha(r.fEntrega),r.pct+'%'];
+          String(r.of.cantidad||'—'),r.opStatus,r.operador.substring(0,20),ftRptFmtFecha(r.fProg),ftRptFmtFecha(r.fInicio),ftRptFmtFecha(r.fTermino),ftRptFmtFecha(r.fEntrega),r.pct+'%'];
       });
-      doc.autoTable({startY:yOffset,head:[['OF SAP','Pedido','Cliente','Descripción','Cant.','Status','Operador','F.Prog','F.Entrega','Avance']],
+      doc.autoTable({startY:yOffset,head:[['OF SAP','Pedido','Cliente','Descripción','Cant.','Status','Operador','F.Prog','F.Inicio','F.Term.','F.Entrega','Avance']],
         body:pdfRows,styles:{fontSize:6.5,cellPadding:1.5},headStyles:{fillColor:[26,52,85],textColor:[180,200,230],fontStyle:'bold',fontSize:6},
-        columnStyles:{0:{cellWidth:16},1:{cellWidth:18},2:{cellWidth:28},3:{cellWidth:54},4:{cellWidth:10,halign:'center'},5:{cellWidth:18},6:{cellWidth:26},7:{cellWidth:14},8:{cellWidth:14},9:{cellWidth:12,halign:'right'}},
+        columnStyles:{0:{cellWidth:15},1:{cellWidth:16},2:{cellWidth:24},3:{cellWidth:42},4:{cellWidth:9,halign:'center'},5:{cellWidth:16},6:{cellWidth:22},7:{cellWidth:13},8:{cellWidth:13},9:{cellWidth:13},10:{cellWidth:13},11:{cellWidth:11,halign:'right'}},
         alternateRowStyles:{fillColor:[240,244,250]},margin:{left:14,right:14},theme:'grid'});
       yOffset=doc.lastAutoTable.finalY+6;
     });
@@ -17141,24 +17147,24 @@ function ftRptExportExcel(){
     estaciones.forEach(function(est){
       var rows=porEstacion[est];var wsData=[];var rowMeta=[];
       wsData.push(['ESTACIÓN: '+(est||'Sin estación')]);rowMeta.push({outline:0});
-      wsData.push(['OF SAP','Pedido','Cliente','Descripción','Cantidad','Status','Operador','F.Prog','F.Entrega','Avance %']);rowMeta.push({outline:0});
+      wsData.push(['OF SAP','Pedido','Cliente','Descripción','Cantidad','Status','Operador','F.Prog','F.Inicio','F.Terminación','F.Entrega','Avance %']);rowMeta.push({outline:0});
       rows.forEach(function(r){
-        wsData.push([r.of.of_sap||'',r.of.pedido||'N/A',r.of.cliente||'',r.of.descripcion||'',r.of.cantidad||0,r.opStatus,r.operador,r.fProg||'',r.fEntrega||'',r.pct/100]);
+        wsData.push([r.of.of_sap||'',r.of.pedido||'N/A',r.of.cliente||'',r.of.descripcion||'',r.of.cantidad||0,r.opStatus,r.operador,r.fProg||'',r.fInicio||'',r.fTermino||'',r.fEntrega||'',r.pct/100]);
         rowMeta.push({outline:0});
         var ops=(r.ops||[]).slice().sort(function(a,b){return a.secuencia-b.secuencia;});
         ops.forEach(function(op){
           var opS=(op.status||'').toLowerCase();
           var opLabel=(opS==='done'||opS==='terminada')?'Terminada':opS==='running'?'En Proceso':'Pendiente';
           var opOper=[op.tecnico].concat(op.ayudantes||[]).filter(Boolean).join(' / ')||'—';
-          wsData.push(['  → '+(op.op_id||''),'',op.nombre||'',opLabel,op.qty_total||'',opOper,'','','',op.qty_ok&&op.qty_total?op.qty_ok/op.qty_total:'']);
+          wsData.push(['  → '+(op.op_id||''),'',op.nombre||'',opLabel,op.qty_total||'',opOper,'','',_rptFechaSolo(op.fecha_inicio_real),_rptFechaSolo(op.fecha_fin_real),'',op.qty_ok&&op.qty_total?op.qty_ok/op.qty_total:'']);
           rowMeta.push({outline:1});
         });
         wsData.push(['']);rowMeta.push({outline:0});
       });
       var ws=XLSX.utils.aoa_to_sheet(wsData);
       var range=XLSX.utils.decode_range(ws['!ref']||'A1');
-      for(var R=2;R<=range.e.r;R++){var ca=XLSX.utils.encode_cell({r:R,c:9});if(ws[ca]&&typeof ws[ca].v==='number'){ws[ca].t='n';ws[ca].z='0%';}}
-      ws['!cols']=[{wch:12},{wch:14},{wch:28},{wch:42},{wch:10},{wch:14},{wch:28},{wch:12},{wch:12},{wch:10}];
+      for(var R=2;R<=range.e.r;R++){var ca=XLSX.utils.encode_cell({r:R,c:11});if(ws[ca]&&typeof ws[ca].v==='number'){ws[ca].t='n';ws[ca].z='0%';}}
+      ws['!cols']=[{wch:12},{wch:14},{wch:28},{wch:42},{wch:10},{wch:14},{wch:28},{wch:12},{wch:12},{wch:14},{wch:12},{wch:10}];
       ws['!rows']=rowMeta.map(function(m){return m.outline===1?{level:1}:{};});
       XLSX.utils.book_append_sheet(wb,ws,(est||'Sin estacion').replace(/[:\\/\[\]\*\?]/g,'-').substring(0,31));
     });

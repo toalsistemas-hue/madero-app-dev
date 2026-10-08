@@ -1076,6 +1076,7 @@ tr:last-child td{border-bottom:none;}
         <div><div class="page-title">📅 Programación</div><div class="page-sub">Gestiona qué OFs se fabrican hoy</div></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm" onclick="openPrioModal()" id="btn-prio">⚡ Prioridades</button>
+          <button class="btn btn-ghost btn-sm fab-read-only-hide" onclick="openReprogramarModal()" id="btn-reprog" title="Reprogramar fechas de entrega — al cambiar una fecha se recorren las órdenes posteriores">📆 Reprogramar entregas</button>
           <button class="btn btn-ghost btn-sm" onclick="ftProgExportExcel()" id="btn-prog-excel" title="Descargar el listado de OFs en Excel, agrupado por pedido">⬇ Descargar Excel</button>
           <button class="btn btn-ghost btn-sm fab-read-only-hide" onclick="ftAbrirAgrupar()" id="btn-agrupar" title="Agrupar OFs del mismo artículo para fabricar en lote">🔗 Agrupar</button>
           <button class="btn btn-primary btn-sm fab-read-only-hide" onclick="startEditMode()" id="btn-prog">✏ Editar Programación</button>
@@ -1139,6 +1140,42 @@ tr:last-child td{border-bottom:none;}
         <div id="opcat-list-preview" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;font-size:.74rem;"></div>
         <div class="coord-modal-actions" style="margin-top:16px;">
           <button class="btn btn-ghost btn-sm" onclick="closeCModal('modal-opcat')">Cerrar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Reprogramar Fechas de Entrega -->
+    <div class="coord-modal-bg" id="modal-reprog">
+      <div class="coord-modal-box" style="max-width:960px;max-height:92vh;display:flex;flex-direction:column;">
+        <div class="coord-modal-title">📆 Reprogramar fechas de entrega</div>
+        <p style="font-size:.78rem;color:var(--dim);line-height:1.5;margin-bottom:10px;">
+          Órdenes ordenadas por fecha de entrega (de la más próxima a la más lejana).
+          Al cambiar una fecha, <strong>las órdenes por debajo se recorren el mismo número de días</strong>.
+          Los cambios son solo visuales hasta que confirmes.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+          <input type="text" id="reprog-search" oninput="reprogRender()" placeholder="🔍 OF, pedido, cliente, descripción..." style="flex:1;min-width:180px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;padding:6px 10px;color:var(--text);font-size:.78rem;">
+          <span id="reprog-count" style="font-size:.74rem;color:var(--yellow);white-space:nowrap;">0 fechas modificadas</span>
+          <button class="btn btn-ghost btn-sm" onclick="reprogDeshacer()" title="Revertir todos los cambios a las fechas originales">↩ Deshacer cambios</button>
+        </div>
+        <div style="flex:1;overflow:auto;border:1px solid var(--border);border-radius:8px;">
+          <table class="tabla1" id="reprog-table" style="width:100%;border-collapse:collapse;font-size:.74rem;">
+            <thead><tr style="position:sticky;top:0;background:#161b22;z-index:2;">
+              <th style="padding:7px 8px;text-align:left;">#</th>
+              <th style="padding:7px 8px;text-align:left;">OF SAP</th>
+              <th style="padding:7px 8px;text-align:left;">Pedido</th>
+              <th style="padding:7px 8px;text-align:left;">Cliente</th>
+              <th style="padding:7px 8px;text-align:left;">Descripción</th>
+              <th style="padding:7px 8px;text-align:left;">Fecha actual</th>
+              <th style="padding:7px 8px;text-align:left;">Nueva fecha</th>
+            </tr></thead>
+            <tbody id="reprog-tbody"></tbody>
+          </table>
+        </div>
+        <div id="reprog-status" style="font-size:.76rem;color:var(--green);margin-top:8px;min-height:16px;"></div>
+        <div class="coord-modal-actions" style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn btn-ghost btn-sm" onclick="closeCModal('modal-reprog')" id="reprog-btn-cancel">Cancelar</button>
+          <button class="btn btn-success btn-sm" onclick="reprogConfirmar()" id="reprog-btn-ok">✓ Confirmar y guardar</button>
         </div>
       </div>
     </div>
@@ -5236,7 +5273,7 @@ async function ftConfirmExcelLoad() {
       };
       // Only include Cantidad and Fecha_Entrega when they have values (avoids SP errors)
       if (_cantVal)  optFields.Cantidad      = _cantVal;
-      if (_fechaISO) optFields.Fecha_Entrega = _fechaISO + 'T00:00:00Z';
+      if (_fechaISO) optFields.Fecha_Entrega = _fechaISO + 'T12:00:00Z';
       Object.assign(fields, optFields);
       okSaps.push(ofSap);
       try {
@@ -5360,7 +5397,7 @@ async function ftManualOFSave(){
       Prioridad:g('mof-prio')||'Normal',
       Status:'Sin programar', Programado_Hoy:false, Fecha_Carga:fcarga };
     if(!isNaN(cant) && cant>0) fields.Cantidad=cant;
-    if(fentrega) fields.Fecha_Entrega=fentrega+'T00:00:00Z';
+    if(fentrega) fields.Fecha_Entrega=fentrega+'T12:00:00Z';
     await spEscribir('FT_OrdenesFabricacion', fields, null);
     // Verificar que quedó registrada
     var ver=await flowGet('FT_OrdenesFabricacion','',5000).catch(function(){return {value:[]};});
@@ -5413,7 +5450,7 @@ async function ftSaveProgramacionToSP(sapsFilter) {
       var fieldsToSave = { Programado_Hoy: of_.programadoHoy === true, Status: newStatus };
       if (of_.fecha_entrega) {
         fieldsToSave.Fecha_Entrega = of_.fecha_entrega.includes('T')
-          ? of_.fecha_entrega : of_.fecha_entrega + 'T00:00:00Z';
+          ? of_.fecha_entrega : of_.fecha_entrega + 'T12:00:00Z';
       }
       if (of_.cantidad) fieldsToSave.Cantidad = of_.cantidad;
       if (of_.programadoHoy && !of_.fecha_programacion) {
@@ -11125,7 +11162,7 @@ function confirmProgMain() {
             var fields={Programado_Hoy:of_.programadoHoy===true,Status:newStatus};
             if(of_.fecha_entrega){
               fields.Fecha_Entrega=of_.fecha_entrega.includes('T')
-                ?of_.fecha_entrega:of_.fecha_entrega+'T00:00:00Z';
+                ?of_.fecha_entrega:of_.fecha_entrega+'T12:00:00Z';
             }
             if(of_.cantidad) fields.Cantidad=of_.cantidad;
             if(of_.programadoHoy&&!of_.fecha_programacion){
@@ -16866,6 +16903,173 @@ async function ftRptLoad() {
     if(loading) loading.innerHTML='<span style="color:#f87171;">⚠️ Error al cargar datos. Intenta de nuevo.</span>';
   } finally{_rptData.loading=false;}
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// REPROGRAMAR FECHAS DE ENTREGA (cascada tipo Excel) — Coordinador
+// ═══════════════════════════════════════════════════════════════════
+var REPROG_STATE = { rows: [] };
+function _reprogCss(s){ return String(s).replace(/[^a-z0-9]/gi,'_'); }
+function _reprogIso(s){ return (s||'').split('T')[0]; }
+function _reprogToDate(s){ var p=String(s).split('-'); return new Date(+p[0],(+p[1]||1)-1,+p[2]||1); }
+function _reprogDaysBetween(a,b){ return Math.round((_reprogToDate(b)-_reprogToDate(a))/86400000); }
+function _reprogAddDays(s,d){ var dt=_reprogToDate(s); dt.setDate(dt.getDate()+d); var y=dt.getFullYear(),m=('0'+(dt.getMonth()+1)).slice(-2),dd=('0'+dt.getDate()).slice(-2); return y+'-'+m+'-'+dd; }
+function _reprogFmt(s){ if(!s) return '<span style="color:var(--dim);">—</span>'; var p=s.split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):s; }
+
+function openReprogramarModal(){
+  var list=(DB.ofs||[]).filter(function(o){
+    if(!o) return false;
+    var s=(o.status||'').toLowerCase();
+    if(s==='cerrado'||s==='cerrada'||s==='pedido cancelado') return false;
+    if(o.pedidoCerrado) return false;
+    return true;
+  });
+  // Orden ascendente por fecha de entrega (más próxima a vencer arriba). Sin fecha → al final.
+  list.sort(function(a,b){
+    var fa=_reprogIso(a.fecha_entrega)||'', fb=_reprogIso(b.fecha_entrega)||'';
+    if(!fa&&!fb) return 0; if(!fa) return 1; if(!fb) return -1;
+    return fa<fb?-1:fa>fb?1:0;
+  });
+  REPROG_STATE.rows=list.map(function(o){ var f=_reprogIso(o.fecha_entrega); return {of_sap:o.of_sap,pedido:o.pedido||'',cliente:o.cliente||'',descripcion:o.descripcion||'',orig:f,val:f}; });
+  var st=document.getElementById('reprog-status'); if(st) st.textContent='';
+  var sb=document.getElementById('reprog-search'); if(sb) sb.value='';
+  reprogRender();
+  openCModal('modal-reprog');
+}
+function reprogRender(){
+  var tb=document.getElementById('reprog-tbody'); if(!tb) return;
+  var q=((document.getElementById('reprog-search')||{}).value||'').toLowerCase().trim();
+  var h='';
+  REPROG_STATE.rows.forEach(function(r,i){
+    if(q){ var hay=(r.of_sap+' '+r.pedido+' '+r.cliente+' '+r.descripcion).toLowerCase(); if(hay.indexOf(q)<0) return; }
+    var changed=(r.val||'')!==(r.orig||'');
+    var cssId=_reprogCss(r.of_sap);
+    h+='<tr id="reprog-row-'+cssId+'" style="border-top:1px solid var(--border);'+(changed?'background:rgba(212,160,23,.10);':'')+'">';
+    h+='<td style="padding:5px 8px;color:var(--dim);">'+(i+1)+'</td>';
+    h+='<td style="padding:5px 8px;font-family:\'DM Mono\',monospace;color:var(--accent-l);white-space:nowrap;">'+esc(r.of_sap)+'</td>';
+    h+='<td style="padding:5px 8px;color:var(--dim);white-space:nowrap;">'+esc(r.pedido||'N/A')+'</td>';
+    h+='<td style="padding:5px 8px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(r.cliente)+'">'+esc(r.cliente||'—')+'</td>';
+    h+='<td style="padding:5px 8px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(r.descripcion)+'">'+esc(r.descripcion||'—')+'</td>';
+    h+='<td style="padding:5px 8px;white-space:nowrap;'+(changed?'color:var(--dim);text-decoration:line-through;':'')+'">'+_reprogFmt(r.orig)+'</td>';
+    h+='<td style="padding:5px 8px;white-space:nowrap;"><input type="date" id="reprog-fe-'+cssId+'" value="'+(r.val||'')+'" onchange="reprogFechaChange(\''+esc(r.of_sap)+'\')" style="background:rgba(255,255,255,.06);border:1px solid '+(changed?'var(--yellow)':'var(--border)')+';border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;"></td>';
+    h+='</tr>';
+  });
+  tb.innerHTML=h||'<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--dim);">Sin órdenes para mostrar.</td></tr>';
+  _reprogUpdateCount();
+}
+function _reprogMarkRow(idx){
+  var r=REPROG_STATE.rows[idx]; if(!r) return;
+  var changed=(r.val||'')!==(r.orig||'');
+  var tr=document.getElementById('reprog-row-'+_reprogCss(r.of_sap));
+  if(tr) tr.style.background=changed?'rgba(212,160,23,.10)':'';
+  var inp=document.getElementById('reprog-fe-'+_reprogCss(r.of_sap));
+  if(inp) inp.style.borderColor=changed?'var(--yellow)':'var(--border)';
+}
+function _reprogUpdateCount(){
+  var n=REPROG_STATE.rows.filter(function(r){return (r.val||'')!==(r.orig||'');}).length;
+  var el=document.getElementById('reprog-count');
+  if(el) el.textContent=n+' fecha'+(n===1?'':'s')+' modificada'+(n===1?'':'s');
+}
+function reprogFechaChange(sap){
+  var idx=REPROG_STATE.rows.findIndex(function(r){return r.of_sap===sap;});
+  if(idx<0) return;
+  var row=REPROG_STATE.rows[idx];
+  var inp=document.getElementById('reprog-fe-'+_reprogCss(sap));
+  if(!inp) return;
+  var newVal=inp.value;          // 'YYYY-MM-DD' o ''
+  var prevVal=row.val;
+  var delta=(prevVal&&newVal)?_reprogDaysBetween(prevVal,newVal):0;
+  row.val=newVal;
+  _reprogMarkRow(idx);
+  // Recorrer las órdenes por debajo el mismo número de días
+  if(delta!==0){
+    for(var j=idx+1;j<REPROG_STATE.rows.length;j++){
+      var rj=REPROG_STATE.rows[j];
+      if(rj.val){
+        rj.val=_reprogAddDays(rj.val,delta);
+        var inj=document.getElementById('reprog-fe-'+_reprogCss(rj.of_sap));
+        if(inj) inj.value=rj.val;
+        _reprogMarkRow(j);
+      }
+    }
+  }
+  _reprogUpdateCount();
+}
+function reprogDeshacer(){
+  REPROG_STATE.rows.forEach(function(r){ r.val=r.orig; });
+  reprogRender();
+  var st=document.getElementById('reprog-status'); if(st) st.textContent='';
+}
+// Overlay bloqueante con progreso (evita que el coordinador haga cambios durante el guardado)
+function _reprogEnsureOverlay(){
+  if(document.getElementById('reprog-saving-overlay')) return;
+  var d=document.createElement('div');
+  d.id='reprog-saving-overlay';
+  d.style.cssText='display:none;position:fixed;inset:0;z-index:99500;background:rgba(3,8,16,.80);flex-direction:column;align-items:center;justify-content:center;gap:16px;backdrop-filter:blur(3px);';
+  d.innerHTML='<span class="fab-spinner" style="width:40px;height:40px;border-width:4px;"></span>'
+    +'<div id="reprog-saving-title" style="color:var(--text,#e6edf3);font-size:1rem;font-weight:700;">Guardando fechas de entrega…</div>'
+    +'<div id="reprog-saving-sub" style="color:var(--dim,#8b949e);font-size:.82rem;">Preparando…</div>'
+    +'<div style="width:240px;height:7px;background:rgba(255,255,255,.12);border-radius:4px;overflow:hidden;"><div id="reprog-saving-bar" style="height:100%;width:0%;background:var(--green,#2ea043);transition:width .2s;"></div></div>'
+    +'<div style="color:var(--dim,#8b949e);font-size:.72rem;max-width:300px;text-align:center;">No cierres ni cambies de pestaña hasta que termine.</div>';
+  document.body.appendChild(d);
+}
+function _reprogShowSaving(){ _reprogEnsureOverlay(); var o=document.getElementById('reprog-saving-overlay'); if(o) o.style.display='flex'; }
+function _reprogHideSaving(){ var o=document.getElementById('reprog-saving-overlay'); if(o) o.style.display='none'; }
+function _reprogSetSaving(done,total){
+  var sub=document.getElementById('reprog-saving-sub'); if(sub) sub.textContent='Guardando orden '+done+' de '+total+'…';
+  var bar=document.getElementById('reprog-saving-bar'); if(bar) bar.style.width=(total?Math.round(done/total*100):0)+'%';
+}
+async function reprogConfirmar(){
+  var changed=REPROG_STATE.rows.filter(function(r){ return (r.val||'')!==(r.orig||''); });
+  if(!changed.length){ closeCModal('modal-reprog'); return; }
+  if(!confirm('Se actualizarán '+changed.length+' fecha(s) de entrega en SharePoint. ¿Confirmar?')) return;
+  var btnOk=document.getElementById('reprog-btn-ok');
+  var btnCancel=document.getElementById('reprog-btn-cancel');
+  var st=document.getElementById('reprog-status');
+  if(btnOk){ btnOk.disabled=true; btnOk.textContent='⏳ Guardando...'; }
+  if(btnCancel) btnCancel.disabled=true;
+  window._confirmProgRunning=true;     // activa la advertencia al intentar salir
+  _reprogShowSaving();
+  _reprogSetSaving(0, changed.length);
+  var okCount=0, errCount=0;
+  try{
+    var _ofRes=await flowGet('FT_OrdenesFabricacion','',2000).catch(function(){return {value:[]};});
+    var itemMap={}; (_ofRes.value||[]).forEach(function(i){ var f=i.fields||{}; itemMap[f.OF_SAP||f.Title||'']=i.id; });
+    for(var i=0;i<changed.length;i++){
+      var r=changed[i];
+      _reprogSetSaving(i+1, changed.length);
+      if(st) st.textContent='Guardando '+(i+1)+' de '+changed.length+'...';
+      var spId=itemMap[r.of_sap];
+      if(!spId){ errCount++; continue; }
+      var fields={ Fecha_Entrega: r.val ? (r.val+'T12:00:00Z') : null };
+      try{
+        await spEscribir('FT_OrdenesFabricacion', fields, parseInt(spId));
+        okCount++;
+        var ofRec=DB.ofs.find(function(o){return o.of_sap===r.of_sap;});
+        if(ofRec) ofRec.fecha_entrega=r.val;
+      }catch(e){ errCount++; console.warn('[Reprog] error OF '+r.of_sap, e); }
+      if(i<changed.length-1) await new Promise(function(rr){setTimeout(rr,180);});
+    }
+    // Refrescar vistas dependientes
+    if(typeof renderProg==='function'){ try{ renderProg(); }catch(e){} }
+    if(typeof _rptData!=='undefined'){ _rptData.loaded=false; }  // el reporte recargará con nuevas fechas
+    var repVisible=(document.getElementById('coord-page-reportes')||{}).classList;
+    if(repVisible && repVisible.contains('active') && typeof ftRptLoad==='function'){ try{ ftRptLoad(); }catch(e){} }
+  }catch(e){
+    console.warn('[Reprog] fallo general', e);
+  }finally{
+    window._confirmProgRunning=false;
+    _reprogHideSaving();
+    if(btnOk){ btnOk.disabled=false; btnOk.textContent='✓ Confirmar y guardar'; }
+    if(btnCancel) btnCancel.disabled=false;
+  }
+  closeCModal('modal-reprog');
+  alert('Fechas actualizadas: '+okCount+(errCount?(' · Con error: '+errCount):''));
+}
+window.openReprogramarModal=openReprogramarModal;
+window.reprogRender=reprogRender;
+window.reprogFechaChange=reprogFechaChange;
+window.reprogDeshacer=reprogDeshacer;
+window.reprogConfirmar=reprogConfirmar;
 
 function ftRptFmtFecha(s){if(!s)return'—';var p=s.split('-');if(p.length<3)return s;return p[2]+'/'+p[1]+'/'+p[0].slice(2);}
 // Fecha (solo día) de inicio/terminación de las operaciones de una fila del reporte.

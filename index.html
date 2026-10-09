@@ -1340,6 +1340,17 @@ tr:last-child td{border-bottom:none;}
             <option value="120">Cada 2 minutos</option>
             <option value="300">Cada 5 minutos</option>
           </select>
+
+          <div style="font-weight:700;font-size:.9rem;margin:16px 0 6px;">🔁 Rotación de cuadrantes</div>
+          <div style="font-size:.74rem;color:var(--dim);margin-bottom:6px;">La pantalla muestra máximo 4 cuadrantes. Si eliges más de 4 estaciones, se rotan automáticamente cada:</div>
+          <select id="tablero-rotacion" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:6px 10px;font-size:.82rem;">
+            <option value="10">10 segundos</option>
+            <option value="15">15 segundos</option>
+            <option value="20" selected>20 segundos</option>
+            <option value="30">30 segundos</option>
+            <option value="45">45 segundos</option>
+            <option value="60">60 segundos</option>
+          </select>
           <div id="tablero-status" style="font-size:.76rem;color:var(--green);margin-top:12px;min-height:16px;"></div>
         </div>
 
@@ -17131,9 +17142,12 @@ window.reprogConfirmar=reprogConfirmar;
 // ═══════════════════════════════════════════════════════════════════
 // TABLERO DE PRODUCCIÓN (pantalla de piso, modo kiosco) — Coordinador
 // ═══════════════════════════════════════════════════════════════════
-var _TABLERO_CFG_DEFAULT = { estaciones:[], rango:'semana', dias:15, refresh:60 };
+var _TABLERO_CFG_DEFAULT = { estaciones:[], rango:'semana', dias:15, refresh:60, rotacion:20 };
 var _tableroCfgCache = null;
 var _tableroTimer = null;
+var _tableroRotTimer = null;
+var _tableroPage = 0;
+var _TABLERO_PER_PAGE = 4;
 function _tableroRangeDays(cfg){ if(!cfg) return 7; if(cfg.rango==='todas') return null; if(cfg.rango==='mes') return 30; if(cfg.rango==='dias') return parseInt(cfg.dias)||15; return 7; }
 function _tableroIconoEst(e){
   var ic={'Lavado':'💧','Pintura':'🎨','PINTURA':'🎨','Grabado':'✏️','CNC':'⚙️','Laser':'🔆','TIG':'🔥','MIG':'🔥','Torno':'🔩','Fresadora':'🔩','Electron':'⚡','Sierra':'🪚','Equipo':'🔌','Ensamble':'🧩','Rolado':'🌀','Doblez':'📐','Corte':'✂️','Ayudantes':'🤝'};
@@ -17180,6 +17194,7 @@ async function tableroCfgRender(){
   (document.querySelectorAll('input[name="tablero-rango"]')||[]).forEach(function(inp){ inp.checked=(inp.value===r); });
   var diasEl=document.getElementById('tablero-dias'); if(diasEl) diasEl.value=cfg.dias||15;
   var refEl=document.getElementById('tablero-refresh'); if(refEl) refEl.value=String(cfg.refresh||60);
+  var rotEl=document.getElementById('tablero-rotacion'); if(rotEl) rotEl.value=String(cfg.rotacion||20);
   var st=document.getElementById('tablero-status'); if(st) st.textContent='';
 }
 function tableroSelAll(on){ (document.querySelectorAll('.tablero-est-chk')||[]).forEach(function(c){ c.checked=!!on; }); }
@@ -17191,7 +17206,8 @@ function _tableroLeerUICfg(){
   (document.querySelectorAll('input[name="tablero-rango"]')||[]).forEach(function(inp){ if(inp.checked) rango=inp.value; });
   var dias=parseInt((document.getElementById('tablero-dias')||{}).value)||15;
   var refresh=parseInt((document.getElementById('tablero-refresh')||{}).value)||60;
-  return { estaciones:estaciones, rango:rango, dias:dias, refresh:refresh };
+  var rotacion=parseInt((document.getElementById('tablero-rotacion')||{}).value)||20;
+  return { estaciones:estaciones, rango:rango, dias:dias, refresh:refresh, rotacion:rotacion };
 }
 async function tableroGuardarCfg(){
   var cfg=_tableroLeerUICfg();
@@ -17233,6 +17249,7 @@ function _tableroEnsureOverlay(){
     +'    <div style="font-size:1.5rem;font-weight:800;color:#e6edf3;letter-spacing:.5px;">📺 PLANEACIÓN Y AVANCE — PISO DE PRODUCCIÓN</div>'
     +'  </div>'
     +'  <div style="display:flex;align-items:center;gap:16px;">'
+    +'    <div id="tablero-k-page" style="font-size:.95rem;font-weight:700;color:#facc15;"></div>'
     +'    <div id="tablero-k-clock" style="font-size:1.3rem;font-weight:700;color:#58a6ff;font-family:\'DM Mono\',monospace;"></div>'
     +'    <div id="tablero-k-updated" style="font-size:.8rem;color:#8b949e;"></div>'
     +'    <button onclick="tableroKioskStop()" title="Salir del tablero" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#e6edf3;font-size:1rem;padding:4px 12px;cursor:pointer;">✕</button>'
@@ -17244,20 +17261,26 @@ function _tableroEnsureOverlay(){
 function tableroKioskStop(){
   var o=document.getElementById('tablero-kiosk'); if(o) o.style.display='none';
   if(_tableroTimer){ clearInterval(_tableroTimer); _tableroTimer=null; }
+  if(_tableroRotTimer){ clearInterval(_tableroRotTimer); _tableroRotTimer=null; }
 }
 async function tableroKioskStart(){
   _tableroEnsureOverlay();
   var o=document.getElementById('tablero-kiosk'); if(o) o.style.display='flex';
   var grid=document.getElementById('tablero-k-grid');
   if(grid) grid.innerHTML='<div style="grid-column:1/-1;align-self:center;text-align:center;color:#8b949e;font-size:1.2rem;">⏳ Cargando tablero…</div>';
+  _tableroPage=0;
   // Reloj
   function _tick(){ var c=document.getElementById('tablero-k-clock'); if(c) c.textContent=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }
   _tick();
   if(_tableroTimer){ clearInterval(_tableroTimer); }
+  if(_tableroRotTimer){ clearInterval(_tableroRotTimer); }
   if(!_tableroCfgCache){ _tableroCfgCache=await _tableroCfgLoad(); }
   await tableroRefresh();
   var secs=(_tableroCfgCache&&_tableroCfgCache.refresh)||60;
   _tableroTimer=setInterval(function(){ _tick(); tableroRefresh(); }, Math.max(15,secs)*1000);
+  // Rotación de cuadrantes (solo re-renderiza con datos en memoria, sin recargar de SP)
+  var rot=(_tableroCfgCache&&_tableroCfgCache.rotacion)||20;
+  _tableroRotTimer=setInterval(function(){ _tableroPage++; try{ tableroRender(); }catch(e){} }, Math.max(5,rot)*1000);
 }
 async function tableroRefresh(){
   try{
@@ -17276,13 +17299,22 @@ function tableroRender(){
   var cutoff=null;
   if(rangeDays!=null){ var d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+rangeDays); var y=d.getFullYear(),m=('0'+(d.getMonth()+1)).slice(-2),dd=('0'+d.getDate()).slice(-2); cutoff=y+'-'+m+'-'+dd; }
   function _feIso(s){ return (s||'').split('T')[0]; }
-  // Rejilla automática
+  // Paginación: máximo 4 cuadrantes por pantalla; si hay más, se rotan.
   var n=ests.length;
-  var cols=Math.ceil(Math.sqrt(n));
+  var pages=Math.max(1, Math.ceil(n/_TABLERO_PER_PAGE));
+  var page=((_tableroPage % pages)+pages)%pages;
+  _tableroPage=page;
+  var pageEsts=ests.slice(page*_TABLERO_PER_PAGE, page*_TABLERO_PER_PAGE+_TABLERO_PER_PAGE);
+  var cnt=pageEsts.length;
+  var cols=cnt<=1?1:2;                 // 1 → 1 col; 2,3,4 → 2 cols (2x2 para 4)
   grid.style.gridTemplateColumns='repeat('+cols+',1fr)';
-  grid.style.gridAutoRows='1fr';
+  grid.style.gridTemplateRows='repeat('+Math.ceil(cnt/cols)+',1fr)';
+  grid.style.gridAutoRows='';
+  // Indicador de página / rotación en el encabezado
+  var pageInd=document.getElementById('tablero-k-page');
+  if(pageInd) pageInd.textContent = pages>1 ? ('Página '+(page+1)+'/'+pages) : '';
   var h='';
-  ests.forEach(function(est){
+  pageEsts.forEach(function(est){
     var rows=(built[est]||[]).slice();
     // Filtro por rango de fecha de entrega
     if(cutoff){ rows=rows.filter(function(r){ var f=_feIso(r.fEntrega); return f && f<=cutoff; }); }
@@ -17309,13 +17341,15 @@ function tableroRender(){
         var col=r.pct>=100?'#4ade80':r.pct>=60?'#60a5fa':r.pct>=30?'#facc15':'#f87171';
         var feIso=_feIso(r.fEntrega);
         var feTxt='—'; var feCol='#8b949e';
-        if(feIso){ var p=feIso.split('-'); feTxt=p.length===3?(p[2]+'/'+p[1]):feIso;
+        if(feIso){ var p=feIso.split('-'); feTxt=p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):feIso;
           var hoy=new Date();hoy.setHours(0,0,0,0); var fd=new Date(feIso+'T00:00:00'); var dd=Math.round((fd-hoy)/86400000);
           if(r.pct<100){ if(dd<0){feCol='#f87171';} else if(dd<=3){feCol='#facc15';} }
         }
+        var _oper=r.operador&&r.operador!=='—'?r.operador:'';
         h+='<tr style="border-top:1px solid rgba(255,255,255,.06);">';
         h+='<td style="padding:7px 10px;font-family:\'DM Mono\',monospace;color:#58a6ff;white-space:nowrap;font-weight:600;">'+esc(r.of.of_sap||'—')+'</td>';
-        h+='<td style="padding:7px 10px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#c9d1d9;" title="'+esc(r.of.descripcion||'')+'">'+esc(r.of.descripcion||r.of.cliente||'—')+'</td>';
+        h+='<td style="padding:7px 10px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#c9d1d9;" title="'+esc(r.of.descripcion||'')+'">'+esc(r.of.descripcion||r.of.cliente||'—')+'</td>';
+        h+='<td style="padding:7px 10px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#9ca3af;" title="'+esc(_oper)+'">'+(_oper?('👷 '+esc(_oper)):'')+'</td>';
         h+='<td style="padding:7px 10px;white-space:nowrap;color:'+feCol+';font-weight:600;">📅 '+feTxt+'</td>';
         h+='<td style="padding:7px 10px;white-space:nowrap;width:140px;"><div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;height:9px;background:rgba(255,255,255,.12);border-radius:5px;overflow:hidden;min-width:60px;"><div style="height:100%;width:'+r.pct+'%;background:'+col+';"></div></div><span style="color:'+col+';font-weight:700;min-width:42px;text-align:right;">'+r.pct+'%</span></div></td>';
         h+='</tr>';

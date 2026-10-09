@@ -1149,11 +1149,14 @@ tr:last-child td{border-bottom:none;}
     <div class="coord-modal-bg" id="modal-reprog">
       <div class="coord-modal-box" style="max-width:960px;max-height:92vh;display:flex;flex-direction:column;">
         <div class="coord-modal-title">📆 Reprogramar fechas de entrega</div>
-        <p style="font-size:.78rem;color:var(--dim);line-height:1.5;margin-bottom:10px;">
-          Órdenes ordenadas por fecha de entrega (de la más próxima a la más lejana).
-          Al cambiar una fecha, <strong>las órdenes por debajo se recorren el mismo número de días</strong>.
-          Los cambios son solo visuales hasta que confirmes.
-        </p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+          <span style="font-size:.76rem;color:var(--dim);margin-right:2px;">Tipo:</span>
+          <button id="reprog-modo-general"  class="btn btn-sm btn-primary" onclick="reprogSetModo('general')">General (todas)</button>
+          <button id="reprog-modo-estacion" class="btn btn-sm btn-ghost"   onclick="reprogSetModo('estacion')">Por estación</button>
+          <button id="reprog-modo-of"       class="btn btn-sm btn-ghost"   onclick="reprogSetModo('of')">Por orden</button>
+          <select id="reprog-estacion-sel" onchange="reprogSetEstacion(this.value)" style="display:none;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:5px 10px;font-size:.78rem;"></select>
+        </div>
+        <p id="reprog-desc" style="font-size:.78rem;color:var(--dim);line-height:1.5;margin-bottom:10px;"></p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
           <input type="text" id="reprog-search" oninput="reprogRender()" placeholder="🔍 OF, pedido, cliente, descripción..." style="flex:1;min-width:180px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;padding:6px 10px;color:var(--text);font-size:.78rem;">
           <span id="reprog-count" style="font-size:.74rem;color:var(--yellow);white-space:nowrap;">0 fechas modificadas</span>
@@ -8897,7 +8900,8 @@ function renderProg(){
       if(C.editingMode && !ofCancelada){
         h+="<div style='display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap;'>";
         h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;'>📅 Entrega:</label>";
-        h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;'>";
+        h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' disabled title='La fecha de entrega se cambia en «📆 Reprogramar entregas»' style='background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:5px;color:var(--dim);padding:3px 6px;font-size:.72rem;opacity:.65;cursor:not-allowed;'>";
+        h+="<span title='La fecha de entrega ya no se edita aquí. Usa el botón «📆 Reprogramar entregas».' style='font-size:.68rem;color:var(--dim);cursor:help;'>🔒</span>";
         h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;margin-left:4px;'>📦 Cant:</label>";
         h+="<input type='number' id='cant-"+esc(of.of_sap)+"' value='"+(of.cantidad||'')+"' min='1' placeholder='pzas' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;width:65px;'>";
         h+="</div>";
@@ -11624,7 +11628,8 @@ function _renderProgBody(){
       if(C.editingMode && !ofCancelada){
         h+="<div style='display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap;'>";
         h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;'>📅 Entrega:</label>";
-        h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;'>";
+        h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' disabled title='La fecha de entrega se cambia en «📆 Reprogramar entregas»' style='background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:5px;color:var(--dim);padding:3px 6px;font-size:.72rem;opacity:.65;cursor:not-allowed;'>";
+        h+="<span title='La fecha de entrega ya no se edita aquí. Usa el botón «📆 Reprogramar entregas».' style='font-size:.68rem;color:var(--dim);cursor:help;'>🔒</span>";
         h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;margin-left:4px;'>📦 Cant:</label>";
         h+="<input type='number' id='cant-"+esc(of.of_sap)+"' value='"+(of.cantidad||'')+"' min='1' placeholder='pzas' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;width:65px;'>";
         h+="</div>";
@@ -17015,21 +17020,74 @@ function _reprogDaysBetween(a,b){ return Math.round((_reprogToDate(b)-_reprogToD
 function _reprogAddDays(s,d){ var dt=_reprogToDate(s); dt.setDate(dt.getDate()+d); var y=dt.getFullYear(),m=('0'+(dt.getMonth()+1)).slice(-2),dd=('0'+dt.getDate()).slice(-2); return y+'-'+m+'-'+dd; }
 function _reprogFmt(s){ if(!s) return '<span style="color:var(--dim);">—</span>'; var p=s.split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):s; }
 
-function openReprogramarModal(){
-  var list=(DB.ofs||[]).filter(function(o){
-    if(!o) return false;
-    var s=(o.status||'').toLowerCase();
-    if(s==='cerrado'||s==='cerrada'||s==='pedido cancelado') return false;
-    if(o.pedidoCerrado) return false;
-    return true;
-  });
-  // Orden ascendente por fecha de entrega (más próxima a vencer arriba). Sin fecha → al final.
+function _reprogBaseFiltro(o){
+  if(!o) return false;
+  var s=(o.status||'').toLowerCase();
+  if(s==='cerrado'||s==='cerrada'||s==='pedido cancelado') return false;
+  if(o.pedidoCerrado) return false;
+  return true;
+}
+// Construye las filas de trabajo según el tipo de reprogramación.
+function reprogBuildRows(){
+  var modo=REPROG_STATE.modo||'general';
+  var list;
+  if(modo==='estacion'){
+    var est=REPROG_STATE.estacion;
+    if(!est){ REPROG_STATE.rows=[]; return; }
+    var saps={};
+    (DB.activeOFs||[]).forEach(function(a){ if(a&&a.ops&&a.ops.some(function(op){return (op.estacion||'')===est;})) saps[a.of_sap]=true; });
+    list=(DB.ofs||[]).filter(function(o){ return _reprogBaseFiltro(o) && saps[o.of_sap]; });
+  } else {
+    list=(DB.ofs||[]).filter(_reprogBaseFiltro);
+  }
   list.sort(function(a,b){
     var fa=_reprogIso(a.fecha_entrega)||'', fb=_reprogIso(b.fecha_entrega)||'';
     if(!fa&&!fb) return 0; if(!fa) return 1; if(!fb) return -1;
     return fa<fb?-1:fa>fb?1:0;
   });
   REPROG_STATE.rows=list.map(function(o){ var f=_reprogIso(o.fecha_entrega); return {of_sap:o.of_sap,pedido:o.pedido||'',cliente:o.cliente||'',descripcion:o.descripcion||'',orig:f,val:f}; });
+}
+function _reprogPoblarEstaciones(){
+  var sel=document.getElementById('reprog-estacion-sel'); if(!sel) return;
+  var set={};
+  (DB.activeOFs||[]).forEach(function(a){ (a&&a.ops||[]).forEach(function(op){ if(op.estacion) set[op.estacion]=true; }); });
+  var ests=Object.keys(set).sort();
+  var cur=REPROG_STATE.estacion||'';
+  sel.innerHTML='<option value="">— Elige estación —</option>'+ests.map(function(e){ return '<option value="'+e.replace(/"/g,'&quot;')+'"'+(e===cur?' selected':'')+'>'+esc(e)+'</option>'; }).join('');
+}
+function _reprogDescTxt(){
+  var modo=REPROG_STATE.modo||'general';
+  if(modo==='estacion') return 'Solo se reacomodan las órdenes de la estación elegida. Al cambiar una fecha, las de abajo (de esa estación) se recorren el mismo número de días.';
+  if(modo==='of') return 'Solo se cambia la fecha de entrega de la orden que edites. No se recorre ninguna otra.';
+  return 'Órdenes ordenadas por fecha de entrega (de la más próxima a la más lejana). Al cambiar una fecha, todas las órdenes por debajo se recorren el mismo número de días.';
+}
+function _reprogUpdateModoUI(){
+  var modo=REPROG_STATE.modo||'general';
+  ['general','estacion','of'].forEach(function(m){
+    var b=document.getElementById('reprog-modo-'+m);
+    if(b) b.className='btn btn-sm '+(m===modo?'btn-primary':'btn-ghost');
+  });
+  var sel=document.getElementById('reprog-estacion-sel'); if(sel) sel.style.display=(modo==='estacion')?'inline-block':'none';
+  var d=document.getElementById('reprog-desc'); if(d) d.innerHTML=_reprogDescTxt();
+}
+function reprogSetModo(modo){
+  REPROG_STATE.modo=modo;
+  if(modo!=='estacion') REPROG_STATE.estacion=null;
+  _reprogUpdateModoUI();
+  reprogBuildRows();
+  reprogRender();
+}
+function reprogSetEstacion(est){
+  REPROG_STATE.estacion=est||null;
+  reprogBuildRows();
+  reprogRender();
+}
+function openReprogramarModal(){
+  REPROG_STATE.modo='general';
+  REPROG_STATE.estacion=null;
+  _reprogPoblarEstaciones();
+  _reprogUpdateModoUI();
+  reprogBuildRows();
   var st=document.getElementById('reprog-status'); if(st) st.textContent='';
   var sb=document.getElementById('reprog-search'); if(sb) sb.value='';
   reprogRender();
@@ -17080,6 +17138,8 @@ function reprogFechaChange(sap){
   var delta=(prevVal&&newVal)?_reprogDaysBetween(prevVal,newVal):0;
   row.val=newVal;
   _reprogMarkRow(idx);
+  // En "Por orden" NO se recorre nada; solo cambia esa fecha.
+  if((REPROG_STATE.modo||'general')==='of'){ _reprogUpdateCount(); return; }
   // Recorrer las órdenes por debajo el mismo número de días
   if(delta!==0){
     for(var j=idx+1;j<REPROG_STATE.rows.length;j++){
@@ -17170,6 +17230,8 @@ window.reprogRender=reprogRender;
 window.reprogFechaChange=reprogFechaChange;
 window.reprogDeshacer=reprogDeshacer;
 window.reprogConfirmar=reprogConfirmar;
+window.reprogSetModo=reprogSetModo;
+window.reprogSetEstacion=reprogSetEstacion;
 
 // ═══════════════════════════════════════════════════════════════════
 // TABLERO DE PRODUCCIÓN (pantalla de piso, modo kiosco) — Coordinador

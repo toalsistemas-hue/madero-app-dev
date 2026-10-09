@@ -2402,6 +2402,8 @@ async function initMsal() {
 
     if (redirectResult && redirectResult.accessToken) {
       state.token = redirectResult.accessToken;
+      // Restaurar la intención del tablero que se perdió al redirigir el login.
+      try{ if(sessionStorage.getItem('ft_tablero_pending')==='1'){ sessionStorage.removeItem('ft_tablero_pending'); if(!/[?&]tablero=1\b/.test(location.search)) history.replaceState(null,'',location.pathname+'?tablero=1'); } }catch(e){}
       await loadUserFromSharePoint(_emailFromMsalAccount(redirectResult.account));
     } else if (!_ftSignedOut()) {
       // Reanudar sesión ya guardada en ESTE navegador sin pedir contraseña.
@@ -2449,6 +2451,8 @@ async function loginMicrosoft() {
   status.textContent = 'Redirigiendo a Microsoft…';
   try {
     try{ localStorage.removeItem('ft_signed_out'); }catch(e){}  // inicio explícito → reactiva recordar sesión
+    // Puentear la intención del tablero a través del redirect (el query se pierde):
+    try{ if(/[?&]tablero=1\b/.test(location.search) || location.hash==='#tablero') sessionStorage.setItem('ft_tablero_pending','1'); else sessionStorage.removeItem('ft_tablero_pending'); }catch(e){}
     await state.msalInstance.loginRedirect({
       scopes:      CONFIG.scopes,
       redirectUri: window.location.origin + window.location.pathname,
@@ -3643,7 +3647,8 @@ function doLogout() {
   document.getElementById('login-status').textContent='';
   document.getElementById('btn-ms-login').disabled=false;
   try { localStorage.setItem('ft_signed_out','1'); } catch(e){}   // bloquea reanudación silenciosa hasta próximo login explícito
-  try { localStorage.removeItem('ft_tablero_kiosk'); } catch(e){}
+  try { sessionStorage.removeItem('ft_tablero_pending'); } catch(e){}
+  try { if (/[?&]tablero=1\b/.test(location.search)) history.replaceState(null,'',location.pathname); } catch(e){} // quitar ?tablero=1 para que al recargar no reabra el tablero
   try { if (typeof tableroKioskStop==='function') tableroKioskStop(); } catch(e){}
   try { state.msalInstance&&state.msalInstance.clearCache(); } catch(e){}
 }
@@ -17422,16 +17427,14 @@ window.tableroAbrirKiosk=tableroAbrirKiosk;
 window.tableroKioskStart=tableroKioskStart;
 window.tableroKioskStop=tableroKioskStop;
 window.tableroRefresh=tableroRefresh;
+// Limpia una marca persistente antigua que hacía que el portal normal abriera
+// el tablero (ya no se usa; la intención la controla SOLO la URL).
+try{ localStorage.removeItem('ft_tablero_kiosk'); }catch(e){}
 // ¿La URL pide abrir directamente el tablero? (?tablero=1 o #tablero)
-// El login de Microsoft redirige a la URL SIN el query (?tablero=1 se pierde),
-// por eso guardamos la intención en el dispositivo para que sobreviva al redirect.
-(function(){ try{ if(/[?&]tablero=1\b/.test(location.search) || location.hash==='#tablero'){ localStorage.setItem('ft_tablero_kiosk','1'); } }catch(e){} })();
+// El puenteo del login de Microsoft (que quita el query al redirigir) se hace con
+// sessionStorage 'ft_tablero_pending' + restaurando el parámetro tras el login.
 function _tableroWantsKiosk(){
-  try{
-    if(/[?&]tablero=1\b/.test(location.search) || location.hash==='#tablero') return true;
-    if(localStorage.getItem('ft_tablero_kiosk')==='1') return true;
-  }catch(e){}
-  return false;
+  try{ return /[?&]tablero=1\b/.test(location.search) || location.hash==='#tablero'; }catch(e){ return false; }
 }
 window._tableroWantsKiosk=_tableroWantsKiosk;
 // Lanza el kiosco tras iniciar sesión (lo invoca enterApp). El tablero carga sus

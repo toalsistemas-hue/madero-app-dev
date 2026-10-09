@@ -17279,12 +17279,19 @@ function _tableroEnsureOverlay(){
     +'    <div id="tablero-k-page" style="font-size:1.05rem;font-weight:700;color:#c9d1d9;text-transform:capitalize;"></div>'
     +'    <div id="tablero-k-clock" style="font-size:1.3rem;font-weight:700;color:#58a6ff;font-family:\'DM Mono\',monospace;"></div>'
     +'    <div id="tablero-k-updated" style="font-size:.8rem;color:#8b949e;"></div>'
-    +'    <button onclick="tableroKioskStop()" title="Salir del tablero" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#e6edf3;font-size:1rem;padding:4px 12px;cursor:pointer;">✕</button>'
+    +'    <button onclick="tableroKioskSalir()" title="Cerrar tablero y cerrar sesión" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.35);border-radius:8px;color:#f87171;font-size:.9rem;font-weight:600;padding:5px 14px;cursor:pointer;">✕ Cerrar sesión</button>'
     +'  </div>'
     +'</div>'
     +'<div id="tablero-k-grid" style="flex:1;display:grid;gap:10px;padding:10px;overflow:hidden;"></div>';
   document.body.appendChild(d);
 }
+// La ✕ del tablero cierra sesión (deja la pantalla lista para el siguiente inicio).
+function tableroKioskSalir(){
+  if(!confirm('¿Cerrar el tablero y cerrar la sesión?')) return;
+  try{ tableroKioskStop(); }catch(e){}
+  if(typeof doLogout==='function') doLogout();
+}
+window.tableroKioskSalir=tableroKioskSalir;
 function tableroKioskStop(){
   var o=document.getElementById('tablero-kiosk'); if(o) o.style.display='none';
   try{ localStorage.removeItem('ft_tablero_kiosk'); }catch(e){}  // al salir, el dispositivo vuelve al uso normal
@@ -17420,7 +17427,9 @@ window._tableroWantsKiosk=_tableroWantsKiosk;
 // propios datos vía ftRptLoad, así que no depende del módulo en que caiga el usuario.
 function tableroAutoStartSiAplica(){
   if(!_tableroWantsKiosk()) return;
-  setTimeout(function(){ try{ tableroKioskStart(); }catch(e){ console.warn('[Tablero] auto-start', e&&e.message); } }, 500);
+  // Inmediato (sin setTimeout) para que el overlay cubra la pantalla principal
+  // en el mismo ciclo que enterApp y no se vea el "parpadeo" del inicio.
+  try{ tableroKioskStart(); }catch(e){ console.warn('[Tablero] auto-start', e&&e.message); }
 }
 window.tableroAutoStartSiAplica=tableroAutoStartSiAplica;
 

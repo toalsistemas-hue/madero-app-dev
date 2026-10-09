@@ -16979,7 +16979,7 @@ async function ftRptLoad() {
       var ayudantes=ayRaw?ayRaw.split(',').map(function(s){return s.trim();}).filter(Boolean):[];
       return{of_sap:f.OF_SAP||'',op_id:f.Op_ID||'',nombre:f.Nombre||f.Title||'',estacion:f.Estacion||'',
         tecnico:f.Tecnico||'',ayudantes:ayudantes,status:f.Status||'pending',
-        fecha_inicio_real:f.Fecha_Inicio||'',fecha_fin_real:f.Fecha_Fin||'',
+        fecha_inicio_real:f.Fecha_Inicio||'',fecha_fin_real:f.Fecha_Fin||'',pauseReason:f.PauseReason||'',
         qty_total:parseInt(f.Qty_Total||0)||0,qty_ok:parseInt(f.Qty_OK||0)||0,secuencia:parseInt(f.Secuencia||0)||0};
     });
     _rptData.loaded=true;
@@ -17186,6 +17186,28 @@ function _tableroIconoEst(e){
   if(!e||e==='Sin estación') return '📭'; var k=Object.keys(ic).find(function(k){return e.indexOf(k)>=0;}); return k?ic[k]:'🏗️';
 }
 function _tableroURL(){ try{ var u=location.origin+location.pathname+'?tablero=1'; return u; }catch(e){ return '?tablero=1'; } }
+// Estado "vivo" de una OF en su estación, a partir de sus operaciones (como Tiempo Real).
+function _tbLiveStatus(ops){
+  if(!ops||!ops.length) return '';
+  var low=function(o){return (o.status||'').toLowerCase();};
+  if(ops.some(function(o){return low(o)==='running';})) return 'activa';
+  if(ops.some(function(o){return low(o)==='validating';})) return 'valcal';
+  var paused=ops.filter(function(o){return low(o)==='paused';});
+  if(paused.length){
+    var ft=paused.some(function(o){ var pr=o.pauseReason||''; return (o._pauseTipo==='turno')||pr.indexOf('🌙')>=0||pr.indexOf('Fin de turno')>=0; });
+    return ft?'finturno':'pausa';
+  }
+  var nonOmit=ops.filter(function(o){return low(o)!=='omitida';});
+  if(nonOmit.length && nonOmit.every(function(o){var s=low(o);return s==='done'||s==='terminada'||s==='terminado';})) return 'ok';
+  return '';
+}
+var _TB_LIVE_MAP={
+  activa:  {c:'#22c55e', tint:'rgba(34,197,94,.16)',  blink:true},
+  pausa:   {c:'#facc15', tint:'rgba(250,204,21,.16)', blink:true},
+  finturno:{c:'#818cf8', tint:'rgba(129,140,248,.18)',blink:true},
+  valcal:  {c:'#a855f7', tint:'rgba(168,85,247,.16)', blink:true},
+  ok:      {c:'#4ade80', tint:'rgba(74,222,128,.12)', blink:false}
+};
 
 // ── Persistencia de configuración en SharePoint (lista Configuracion) ──
 async function _tableroCfgLoad(){
@@ -17273,13 +17295,28 @@ async function tableroAbrirKiosk(){
 // ── Vista kiosco (pantalla completa, autorefresco) ──
 function _tableroEnsureOverlay(){
   if(document.getElementById('tablero-kiosk')) return;
+  if(!document.getElementById('tablero-kiosk-style')){
+    var stl=document.createElement('style'); stl.id='tablero-kiosk-style';
+    stl.textContent='@keyframes tbPulse{0%,100%{background-color:var(--tbpc,transparent);}50%{background-color:transparent;}}'
+      +'#tablero-k-grid tr.tbrow-live{animation:tbPulse 1.3s ease-in-out infinite;}'
+      +'#tablero-k-legend span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}'
+      +'#tablero-k-legend i{width:11px;height:11px;border-radius:3px;display:inline-block;}';
+    document.head.appendChild(stl);
+  }
   var d=document.createElement('div');
   d.id='tablero-kiosk';
   d.style.cssText='position:fixed;inset:0;z-index:99800;background:#0a0e14;display:none;flex-direction:column;overflow:hidden;';
   d.innerHTML=''
     +'<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:#0d1420;border-bottom:1px solid rgba(255,255,255,.08);flex:0 0 auto;">'
-    +'  <div style="display:flex;align-items:center;gap:14px;">'
+    +'  <div style="display:flex;flex-direction:column;gap:4px;">'
     +'    <div style="font-size:1.5rem;font-weight:800;color:#e6edf3;letter-spacing:.5px;">📺 PLANEACIÓN Y AVANCE — PISO DE PRODUCCIÓN</div>'
+    +'    <div id="tablero-k-legend" style="display:flex;gap:14px;flex-wrap:wrap;font-size:.72rem;color:#8b949e;">'
+    +'      <span><i style="background:#22c55e;"></i>▶ Activa</span>'
+    +'      <span><i style="background:#facc15;"></i>⏸ Pausa</span>'
+    +'      <span><i style="background:#818cf8;"></i>🌙 Pausa fin de turno</span>'
+    +'      <span><i style="background:#a855f7;"></i>🔍 Val. Calidad</span>'
+    +'      <span><i style="background:#4ade80;"></i>✓ OK</span>'
+    +'    </div>'
     +'  </div>'
     +'  <div style="display:flex;align-items:center;gap:16px;">'
     +'    <div id="tablero-k-page" style="font-size:1.05rem;font-weight:700;color:#c9d1d9;text-transform:capitalize;"></div>'
@@ -17403,8 +17440,12 @@ function tableroRender(){
           if(r.pct<100){ if(dd<0){feCol='#f87171';} else if(dd<=3){feCol='#facc15';} }
         }
         var _oper=r.operador&&r.operador!=='—'?r.operador:'';
-        h+='<tr style="border-top:1px solid rgba(255,255,255,.06);">';
-        h+='<td style="padding:7px 10px;font-family:\'DM Mono\',monospace;color:#58a6ff;white-space:nowrap;font-weight:600;">'+esc(r.of.of_sap||'—')+'</td>';
+        var _live=_tbLiveStatus(r.ops); var _lv=_TB_LIVE_MAP[_live];
+        var _trClass=(_lv&&_lv.blink)?' class="tbrow-live"':'';
+        var _trStyle='border-top:1px solid rgba(255,255,255,.06);'+(_lv?('--tbpc:'+_lv.tint+';'+(_lv.blink?'':'background-color:'+_lv.tint+';')):'');
+        var _firstBorder=_lv?('border-left:5px solid '+_lv.c+';'):'';
+        h+='<tr'+_trClass+' style="'+_trStyle+'">';
+        h+='<td style="padding:7px 10px;'+_firstBorder+'font-family:\'DM Mono\',monospace;color:#58a6ff;white-space:nowrap;font-weight:600;">'+esc(r.of.of_sap||'—')+'</td>';
         h+='<td style="padding:7px 10px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#c9d1d9;" title="'+esc(r.of.descripcion||'')+'">'+esc(r.of.descripcion||r.of.cliente||'—')+'</td>';
         h+='<td style="padding:7px 10px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#9ca3af;" title="'+esc(_oper)+'">'+(_oper?('👷 '+esc(_oper)):'')+'</td>';
         h+='<td style="padding:7px 10px;white-space:nowrap;color:'+feCol+';font-weight:600;">📅 '+feTxt+'</td>';

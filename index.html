@@ -2367,6 +2367,18 @@ let pendingAction = null;
 // ═══════════════════════════════════════════════════════
 // MSAL — INICIALIZACIÓN
 // ═══════════════════════════════════════════════════════
+// Normaliza el email de la cuenta MSAL (incluye el caso de invitados #EXT#).
+function _emailFromMsalAccount(account){
+  var rawEmail = ((account && account.username) || '').toLowerCase();
+  var email = rawEmail;
+  if (rawEmail.includes('#ext#')) {
+    // karim_maderodairysystems.com#EXT#@maderoequipos.com → karim@maderodairysystems.com
+    var sinExt = rawEmail.split('#ext#')[0];
+    var lastUnderscore = sinExt.lastIndexOf('_');
+    if (lastUnderscore > 0) email = sinExt.substring(0, lastUnderscore) + '@' + sinExt.substring(lastUnderscore + 1);
+  }
+  return email;
+}
 async function initMsal() {
   try {
     state.msalInstance = new msal.PublicClientApplication({
@@ -2387,21 +2399,24 @@ async function initMsal() {
 
     if (redirectResult && redirectResult.accessToken) {
       state.token = redirectResult.accessToken;
-      // Los usuarios externos (Guest) tienen username como:
-      // karim_maderodairysystems.com#EXT#@maderoequipos.com
-      // Hay que convertirlo a: karim@maderodairysystems.com
-      var rawEmail = redirectResult.account.username.toLowerCase();
-      var emailParaBuscar = rawEmail;
-      if (rawEmail.includes('#ext#')) {
-        // Extraer la parte antes de #EXT# y convertir _ a @ (solo el primer _)
-        var sinExt = rawEmail.split('#ext#')[0];
-        // El formato es: nombre_dominio.com → nombre@dominio.com
-        var lastUnderscore = sinExt.lastIndexOf('_');
-        if (lastUnderscore > 0) {
-          emailParaBuscar = sinExt.substring(0, lastUnderscore) + '@' + sinExt.substring(lastUnderscore + 1);
+      await loadUserFromSharePoint(_emailFromMsalAccount(redirectResult.account));
+    } else {
+      // Reanudar sesión ya guardada en ESTE navegador sin pedir contraseña.
+      // Mantiene la sesión activa tras recargar/reiniciar; solo volverá a pedir
+      // contraseña la primera vez o cuando el token expire y no se pueda renovar.
+      try {
+        var _accts = (state.msalInstance.getAllAccounts && state.msalInstance.getAllAccounts()) || [];
+        if (_accts.length) {
+          var _silent = await state.msalInstance.acquireTokenSilent({ scopes: CONFIG.scopes, account: _accts[0] });
+          if (_silent && _silent.accessToken) {
+            state.token = _silent.accessToken;
+            await loadUserFromSharePoint(_emailFromMsalAccount(_silent.account || _accts[0]));
+          }
         }
+      } catch(_se) {
+        // Silencioso falló (sesión expirada o requiere interacción) → se queda la pantalla de login.
+        console.warn('[MSAL] No se pudo reanudar la sesión en silencio:', _se && _se.message);
       }
-      await loadUserFromSharePoint(emailParaBuscar);
     }
   } catch(e) {
     console.warn('initMsal error:', e);
@@ -17262,6 +17277,7 @@ function _tableroEnsureOverlay(){
 }
 function tableroKioskStop(){
   var o=document.getElementById('tablero-kiosk'); if(o) o.style.display='none';
+  try{ localStorage.removeItem('ft_tablero_kiosk'); }catch(e){}  // al salir, el dispositivo vuelve al uso normal
   if(_tableroTimer){ clearInterval(_tableroTimer); _tableroTimer=null; }
   if(_tableroRotTimer){ clearInterval(_tableroRotTimer); _tableroRotTimer=null; }
   if(window._tableroClockT){ clearInterval(window._tableroClockT); window._tableroClockT=null; }
@@ -17379,7 +17395,16 @@ window.tableroKioskStart=tableroKioskStart;
 window.tableroKioskStop=tableroKioskStop;
 window.tableroRefresh=tableroRefresh;
 // ¿La URL pide abrir directamente el tablero? (?tablero=1 o #tablero)
-function _tableroWantsKiosk(){ try{ return /[?&]tablero=1\b/.test(location.search) || location.hash==='#tablero'; }catch(e){ return false; } }
+// El login de Microsoft redirige a la URL SIN el query (?tablero=1 se pierde),
+// por eso guardamos la intención en el dispositivo para que sobreviva al redirect.
+(function(){ try{ if(/[?&]tablero=1\b/.test(location.search) || location.hash==='#tablero'){ localStorage.setItem('ft_tablero_kiosk','1'); } }catch(e){} })();
+function _tableroWantsKiosk(){
+  try{
+    if(/[?&]tablero=1\b/.test(location.search) || location.hash==='#tablero') return true;
+    if(localStorage.getItem('ft_tablero_kiosk')==='1') return true;
+  }catch(e){}
+  return false;
+}
 window._tableroWantsKiosk=_tableroWantsKiosk;
 // Lanza el kiosco tras iniciar sesión (lo invoca enterApp). El tablero carga sus
 // propios datos vía ftRptLoad, así que no depende del módulo en que caiga el usuario.

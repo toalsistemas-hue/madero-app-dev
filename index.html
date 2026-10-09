@@ -3111,6 +3111,8 @@ function enterApp() {
   buildSidebarNav();
   buildWelcomeModules();
   showPage('inicio');
+  // Si se entró por la URL del tablero, abrirlo automáticamente a pantalla completa
+  if (typeof tableroAutoStartSiAplica === 'function') tableroAutoStartSiAplica();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -17249,7 +17251,7 @@ function _tableroEnsureOverlay(){
     +'    <div style="font-size:1.5rem;font-weight:800;color:#e6edf3;letter-spacing:.5px;">📺 PLANEACIÓN Y AVANCE — PISO DE PRODUCCIÓN</div>'
     +'  </div>'
     +'  <div style="display:flex;align-items:center;gap:16px;">'
-    +'    <div id="tablero-k-page" style="font-size:.95rem;font-weight:700;color:#facc15;"></div>'
+    +'    <div id="tablero-k-page" style="font-size:1.05rem;font-weight:700;color:#c9d1d9;text-transform:capitalize;"></div>'
     +'    <div id="tablero-k-clock" style="font-size:1.3rem;font-weight:700;color:#58a6ff;font-family:\'DM Mono\',monospace;"></div>'
     +'    <div id="tablero-k-updated" style="font-size:.8rem;color:#8b949e;"></div>'
     +'    <button onclick="tableroKioskStop()" title="Salir del tablero" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#e6edf3;font-size:1rem;padding:4px 12px;cursor:pointer;">✕</button>'
@@ -17262,6 +17264,7 @@ function tableroKioskStop(){
   var o=document.getElementById('tablero-kiosk'); if(o) o.style.display='none';
   if(_tableroTimer){ clearInterval(_tableroTimer); _tableroTimer=null; }
   if(_tableroRotTimer){ clearInterval(_tableroRotTimer); _tableroRotTimer=null; }
+  if(window._tableroClockT){ clearInterval(window._tableroClockT); window._tableroClockT=null; }
 }
 async function tableroKioskStart(){
   _tableroEnsureOverlay();
@@ -17269,9 +17272,17 @@ async function tableroKioskStart(){
   var grid=document.getElementById('tablero-k-grid');
   if(grid) grid.innerHTML='<div style="grid-column:1/-1;align-self:center;text-align:center;color:#8b949e;font-size:1.2rem;">⏳ Cargando tablero…</div>';
   _tableroPage=0;
-  // Reloj
-  function _tick(){ var c=document.getElementById('tablero-k-clock'); if(c) c.textContent=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }
+  // Reloj + fecha (Vie 9 de oct 2026)
+  function _tick(){
+    var now=new Date();
+    var c=document.getElementById('tablero-k-clock'); if(c) c.textContent=now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    var dEl=document.getElementById('tablero-k-page');
+    if(dEl){ var ds=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'], ms=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+      dEl.textContent=ds[now.getDay()]+' '+now.getDate()+' de '+ms[now.getMonth()]+' '+now.getFullYear(); }
+  }
   _tick();
+  if(window._tableroClockT){ clearInterval(window._tableroClockT); }
+  window._tableroClockT=setInterval(_tick, 30000);
   if(_tableroTimer){ clearInterval(_tableroTimer); }
   if(_tableroRotTimer){ clearInterval(_tableroRotTimer); }
   if(!_tableroCfgCache){ _tableroCfgCache=await _tableroCfgLoad(); }
@@ -17280,7 +17291,7 @@ async function tableroKioskStart(){
   _tableroTimer=setInterval(function(){ _tick(); tableroRefresh(); }, Math.max(15,secs)*1000);
   // Rotación de cuadrantes (solo re-renderiza con datos en memoria, sin recargar de SP)
   var rot=(_tableroCfgCache&&_tableroCfgCache.rotacion)||20;
-  _tableroRotTimer=setInterval(function(){ _tableroPage++; try{ tableroRender(); }catch(e){} }, Math.max(5,rot)*1000);
+  _tableroRotTimer=setInterval(function(){ _tick(); _tableroPage++; try{ tableroRender(); }catch(e){} }, Math.max(5,rot)*1000);
 }
 async function tableroRefresh(){
   try{
@@ -17310,9 +17321,6 @@ function tableroRender(){
   grid.style.gridTemplateColumns='repeat('+cols+',1fr)';
   grid.style.gridTemplateRows='repeat('+Math.ceil(cnt/cols)+',1fr)';
   grid.style.gridAutoRows='';
-  // Indicador de página / rotación en el encabezado
-  var pageInd=document.getElementById('tablero-k-page');
-  if(pageInd) pageInd.textContent = pages>1 ? ('Página '+(page+1)+'/'+pages) : '';
   var h='';
   pageEsts.forEach(function(est){
     var rows=(built[est]||[]).slice();
@@ -17370,17 +17378,16 @@ window.tableroAbrirKiosk=tableroAbrirKiosk;
 window.tableroKioskStart=tableroKioskStart;
 window.tableroKioskStop=tableroKioskStop;
 window.tableroRefresh=tableroRefresh;
-// Arranque automático por URL (?tablero=1) en el dispositivo de la pantalla (kiosco)
-(function(){
-  function _wantsTablero(){ try{ return /[?&]tablero=1\b/.test(location.search) || location.hash==='#tablero'; }catch(e){ return false; } }
-  if(!_wantsTablero()) return;
-  var _tries=0;
-  var _it=setInterval(function(){
-    _tries++;
-    if(window.DB && DB.ofs && DB.ofs.length){ clearInterval(_it); tableroKioskStart(); }
-    else if(_tries>120){ clearInterval(_it); /* ~3 min: intenta de todos modos */ tableroKioskStart(); }
-  }, 1500);
-})();
+// ¿La URL pide abrir directamente el tablero? (?tablero=1 o #tablero)
+function _tableroWantsKiosk(){ try{ return /[?&]tablero=1\b/.test(location.search) || location.hash==='#tablero'; }catch(e){ return false; } }
+window._tableroWantsKiosk=_tableroWantsKiosk;
+// Lanza el kiosco tras iniciar sesión (lo invoca enterApp). El tablero carga sus
+// propios datos vía ftRptLoad, así que no depende del módulo en que caiga el usuario.
+function tableroAutoStartSiAplica(){
+  if(!_tableroWantsKiosk()) return;
+  setTimeout(function(){ try{ tableroKioskStart(); }catch(e){ console.warn('[Tablero] auto-start', e&&e.message); } }, 500);
+}
+window.tableroAutoStartSiAplica=tableroAutoStartSiAplica;
 
 function ftRptFmtFecha(s){if(!s)return'—';var p=s.split('-');if(p.length<3)return s;return p[2]+'/'+p[1]+'/'+p[0].slice(2);}
 // Fecha (solo día) de inicio/terminación de las operaciones de una fila del reporte.

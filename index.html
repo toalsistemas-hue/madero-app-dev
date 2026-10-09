@@ -2367,6 +2367,9 @@ let pendingAction = null;
 // ═══════════════════════════════════════════════════════
 // MSAL — INICIALIZACIÓN
 // ═══════════════════════════════════════════════════════
+// Marca de "sesión cerrada por el usuario": bloquea la reanudación silenciosa
+// hasta que se inicie sesión explícitamente (permite cambiar de cuenta).
+function _ftSignedOut(){ try{ return localStorage.getItem('ft_signed_out')==='1'; }catch(e){ return false; } }
 // Normaliza el email de la cuenta MSAL (incluye el caso de invitados #EXT#).
 function _emailFromMsalAccount(account){
   var rawEmail = ((account && account.username) || '').toLowerCase();
@@ -2400,10 +2403,12 @@ async function initMsal() {
     if (redirectResult && redirectResult.accessToken) {
       state.token = redirectResult.accessToken;
       await loadUserFromSharePoint(_emailFromMsalAccount(redirectResult.account));
-    } else {
+    } else if (!_ftSignedOut()) {
       // Reanudar sesión ya guardada en ESTE navegador sin pedir contraseña.
       // Mantiene la sesión activa tras recargar/reiniciar; solo volverá a pedir
       // contraseña la primera vez o cuando el token expire y no se pueda renovar.
+      // Si el usuario cerró sesión (marca ft_signed_out), NO se reanuda: así puede
+      // iniciar con otra cuenta.
       try {
         var _accts = (state.msalInstance.getAllAccounts && state.msalInstance.getAllAccounts()) || [];
         if (_accts.length) {
@@ -2443,9 +2448,11 @@ async function loginMicrosoft() {
   btn.disabled = true;
   status.textContent = 'Redirigiendo a Microsoft…';
   try {
+    try{ localStorage.removeItem('ft_signed_out'); }catch(e){}  // inicio explícito → reactiva recordar sesión
     await state.msalInstance.loginRedirect({
       scopes:      CONFIG.scopes,
       redirectUri: window.location.origin + window.location.pathname,
+      prompt:      'select_account',   // permite elegir/entrar con otra cuenta
     });
   } catch(e) {
     status.textContent = '';
@@ -3635,6 +3642,9 @@ function doLogout() {
   document.getElementById('login-error').style.display='none';
   document.getElementById('login-status').textContent='';
   document.getElementById('btn-ms-login').disabled=false;
+  try { localStorage.setItem('ft_signed_out','1'); } catch(e){}   // bloquea reanudación silenciosa hasta próximo login explícito
+  try { localStorage.removeItem('ft_tablero_kiosk'); } catch(e){}
+  try { if (typeof tableroKioskStop==='function') tableroKioskStop(); } catch(e){}
   try { state.msalInstance&&state.msalInstance.clearCache(); } catch(e){}
 }
 

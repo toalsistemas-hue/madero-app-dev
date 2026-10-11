@@ -1354,6 +1354,20 @@ tr:last-child td{border-bottom:none;}
             <option value="45">45 segundos</option>
             <option value="60">60 segundos</option>
           </select>
+
+          <div style="font-weight:700;font-size:.9rem;margin:16px 0 6px;">↕️ Avance dentro del cuadrante</div>
+          <div style="font-size:.74rem;color:var(--dim);margin-bottom:6px;">Si una estación tiene más órdenes de las que caben, el cuadrante avanza a las siguientes mostrando cada página durante:</div>
+          <select id="tablero-desplazamiento" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:6px 10px;font-size:.82rem;">
+            <option value="5">5 segundos</option>
+            <option value="8" selected>8 segundos</option>
+            <option value="10">10 segundos</option>
+            <option value="15">15 segundos</option>
+          </select>
+          <div style="font-size:.74rem;color:var(--dim);margin:10px 0 6px;">Modo de avance / rotación:</div>
+          <select id="tablero-avance-modo" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:6px 10px;font-size:.82rem;">
+            <option value="manual" selected>Manual — la rotación de estaciones usa su propio tiempo</option>
+            <option value="sincronizado">Sincronizado — rota hasta mostrar todas las páginas del cuadrante</option>
+          </select>
           <div id="tablero-status" style="font-size:.76rem;color:var(--green);margin-top:12px;min-height:16px;"></div>
         </div>
 
@@ -17236,11 +17250,13 @@ window.reprogSetEstacion=reprogSetEstacion;
 // ═══════════════════════════════════════════════════════════════════
 // TABLERO DE PRODUCCIÓN (pantalla de piso, modo kiosco) — Coordinador
 // ═══════════════════════════════════════════════════════════════════
-var _TABLERO_CFG_DEFAULT = { estaciones:[], rango:'semana', dias:15, refresh:60, rotacion:20 };
+var _TABLERO_CFG_DEFAULT = { estaciones:[], rango:'semana', dias:15, refresh:60, rotacion:20, desplazamiento:8, avanceModo:'manual' };
 var _tableroCfgCache = null;
 var _tableroTimer = null;
 var _tableroRotTimer = null;
+var _tableroInnerTimer = null;
 var _tableroPage = 0;
+var _tableroInnerPage = 0;
 var _TABLERO_PER_PAGE = 4;
 function _tableroRangeDays(cfg){ if(!cfg) return 7; if(cfg.rango==='todas') return null; if(cfg.rango==='mes') return 30; if(cfg.rango==='dias') return parseInt(cfg.dias)||15; return 7; }
 function _tableroIconoEst(e){
@@ -17254,6 +17270,7 @@ function _tbLiveStatus(ops){
   var low=function(o){return (o.status||'').toLowerCase();};
   if(ops.some(function(o){return low(o)==='running';})) return 'activa';
   if(ops.some(function(o){return low(o)==='validating';})) return 'valcal';
+  if(ops.some(function(o){return low(o)==='op_concluded';})) return 'aguarda';
   var paused=ops.filter(function(o){return low(o)==='paused';});
   if(paused.length){
     var ft=paused.some(function(o){ var pr=o.pauseReason||''; return (o._pauseTipo==='turno')||pr.indexOf('🌙')>=0||pr.indexOf('Fin de turno')>=0; });
@@ -17264,30 +17281,48 @@ function _tbLiveStatus(ops){
   return '';
 }
 var _TB_LIVE_MAP={
-  activa:  {c:'#22c55e', tint:'rgba(34,197,94,.16)',  blink:true},
-  pausa:   {c:'#facc15', tint:'rgba(250,204,21,.16)', blink:true},
-  finturno:{c:'#818cf8', tint:'rgba(129,140,248,.18)',blink:true},
-  valcal:  {c:'#a855f7', tint:'rgba(168,85,247,.16)', blink:true},
-  ok:      {c:'#4ade80', tint:'rgba(74,222,128,.12)', blink:false}
+  activa:  {c:'#22c55e', tint:'rgba(34,197,94,.16)',  blink:true,  ico:'▶'},
+  pausa:   {c:'#facc15', tint:'rgba(250,204,21,.16)', blink:true,  ico:'⏸'},
+  finturno:{c:'#818cf8', tint:'rgba(129,140,248,.18)',blink:true,  ico:'🌙'},
+  valcal:  {c:'#a855f7', tint:'rgba(168,85,247,.16)', blink:true,  ico:'🔍'},
+  aguarda: {c:'#f59e0b', tint:'rgba(245,158,11,.18)', blink:true,  ico:'⏳'},
+  ok:      {c:'#4ade80', tint:'rgba(74,222,128,.12)', blink:false, ico:'✓'}
 };
 
 // ── Persistencia de configuración en SharePoint (lista Configuracion) ──
+// La columna Valor de Configuracion es texto de una sola línea (~255). Para que
+// quepa la config completa (muchas estaciones), se guarda PARTIDA en varios
+// registros: tablero_config (0), tablero_config#1, tablero_config#2, …
+var _TBCFG_KEY='tablero_config';
+var _TBCFG_CHUNK=240;
+function _tbcfgIdx(title){ if(title===_TBCFG_KEY) return 0; var p=title.split('#'); return parseInt(p[1]||'-1'); }
+function _tbcfgIsKey(title){ return title===_TBCFG_KEY || title.indexOf(_TBCFG_KEY+'#')===0; }
 async function _tableroCfgLoad(){
   try{
-    var res=await flowGet('Configuracion','',200).catch(function(){return null;});
+    var res=await flowGet('Configuracion','',500).catch(function(){return null;});
     var items=res&&res.value?res.value:[];
-    var it=items.find(function(i){var f=i.fields||i; return (f.Title||'')==='tablero_config';});
-    if(it){ var f=it.fields||it; try{ return Object.assign({}, _TABLERO_CFG_DEFAULT, JSON.parse(f.Valor||'{}')); }catch(e){} }
+    var parts=items.filter(function(i){ var t=((i.fields||i).Title)||''; return _tbcfgIsKey(t); });
+    if(!parts.length) return Object.assign({}, _TABLERO_CFG_DEFAULT);
+    parts.sort(function(a,b){ return _tbcfgIdx(((a.fields||a).Title)||'') - _tbcfgIdx(((b.fields||b).Title)||''); });
+    var val=parts.map(function(p){ return ((p.fields||p).Valor)||''; }).join('');
+    try{ return Object.assign({}, _TABLERO_CFG_DEFAULT, JSON.parse(val||'{}')); }catch(e){ console.warn('[Tablero] JSON config inválido'); }
   }catch(e){ console.warn('[Tablero] load cfg', e&&e.message); }
   return Object.assign({}, _TABLERO_CFG_DEFAULT);
 }
 async function _tableroCfgSave(cfg){
   var sid=await getSiteId();
   var val=JSON.stringify(cfg);
-  var res=await graphGet('sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=200').catch(function(){return null;});
-  var found=res&&res.value?res.value.find(function(i){return (i.fields&&i.fields.Title||'')==='tablero_config';}):null;
-  if(found){ await graphPatch('sites/'+sid+'/lists/Configuracion/items/'+found.id+'/fields',{Valor:val}); }
-  else { await graphPost('sites/'+sid+'/lists/Configuracion/items',{fields:{Title:'tablero_config',Valor:val}}); }
+  var chunks=[]; for(var i=0;i<val.length;i+=_TBCFG_CHUNK) chunks.push(val.substr(i,_TBCFG_CHUNK));
+  if(!chunks.length) chunks=[''];
+  var res=await graphGet('sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=500').catch(function(){return null;});
+  var byTitle={}; (res&&res.value?res.value:[]).forEach(function(it){ var t=(it.fields&&it.fields.Title)||''; if(_tbcfgIsKey(t)) byTitle[t]=it; });
+  for(var c=0;c<chunks.length;c++){
+    var title=c===0?_TBCFG_KEY:(_TBCFG_KEY+'#'+c);
+    if(byTitle[title]){ await graphPatch('sites/'+sid+'/lists/Configuracion/items/'+byTitle[title].id+'/fields',{Valor:chunks[c]}); }
+    else { await graphPost('sites/'+sid+'/lists/Configuracion/items',{fields:{Title:title,Valor:chunks[c]}}); }
+  }
+  // Limpiar registros sobrantes de una configuración anterior más larga.
+  for(var t2 in byTitle){ if(_tbcfgIdx(t2)>=chunks.length){ try{ await graphPatch('sites/'+sid+'/lists/Configuracion/items/'+byTitle[t2].id+'/fields',{Valor:''}); }catch(e){} } }
 }
 
 // ── Pantalla de gestión ──
@@ -17311,6 +17346,8 @@ async function tableroCfgRender(){
   var diasEl=document.getElementById('tablero-dias'); if(diasEl) diasEl.value=cfg.dias||15;
   var refEl=document.getElementById('tablero-refresh'); if(refEl) refEl.value=String(cfg.refresh||60);
   var rotEl=document.getElementById('tablero-rotacion'); if(rotEl) rotEl.value=String(cfg.rotacion||20);
+  var dsEl=document.getElementById('tablero-desplazamiento'); if(dsEl) dsEl.value=String(cfg.desplazamiento||8);
+  var amEl=document.getElementById('tablero-avance-modo'); if(amEl) amEl.value=(cfg.avanceModo||'manual');
   var st=document.getElementById('tablero-status'); if(st) st.textContent='';
 }
 function tableroSelAll(on){ (document.querySelectorAll('.tablero-est-chk')||[]).forEach(function(c){ c.checked=!!on; }); }
@@ -17323,7 +17360,9 @@ function _tableroLeerUICfg(){
   var dias=parseInt((document.getElementById('tablero-dias')||{}).value)||15;
   var refresh=parseInt((document.getElementById('tablero-refresh')||{}).value)||60;
   var rotacion=parseInt((document.getElementById('tablero-rotacion')||{}).value)||20;
-  return { estaciones:estaciones, rango:rango, dias:dias, refresh:refresh, rotacion:rotacion };
+  var desplazamiento=parseInt((document.getElementById('tablero-desplazamiento')||{}).value)||8;
+  var avanceModo=(document.getElementById('tablero-avance-modo')||{}).value||'manual';
+  return { estaciones:estaciones, rango:rango, dias:dias, refresh:refresh, rotacion:rotacion, desplazamiento:desplazamiento, avanceModo:avanceModo };
 }
 async function tableroGuardarCfg(){
   var cfg=_tableroLeerUICfg();
@@ -17362,7 +17401,9 @@ function _tableroEnsureOverlay(){
     stl.textContent='@keyframes tbPulse{0%,100%{background-color:var(--tbpc,transparent);}50%{background-color:transparent;}}'
       +'#tablero-k-grid tr.tbrow-live{animation:tbPulse 1.3s ease-in-out infinite;}'
       +'#tablero-k-legend span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}'
-      +'#tablero-k-legend i{width:11px;height:11px;border-radius:3px;display:inline-block;}';
+      +'#tablero-k-legend i{width:11px;height:11px;border-radius:3px;display:inline-block;}'
+      +'.tbq-scroll{scrollbar-width:none;-ms-overflow-style:none;}'
+      +'.tbq-scroll::-webkit-scrollbar{display:none;width:0;height:0;}';
     document.head.appendChild(stl);
   }
   var d=document.createElement('div');
@@ -17377,6 +17418,7 @@ function _tableroEnsureOverlay(){
     +'      <span><i style="background:#facc15;"></i>⏸ Pausa</span>'
     +'      <span><i style="background:#818cf8;"></i>🌙 Pausa fin de turno</span>'
     +'      <span><i style="background:#a855f7;"></i>🔍 Val. Calidad</span>'
+    +'      <span><i style="background:#f59e0b;"></i>⏳ Aguarda confirmación</span>'
     +'      <span><i style="background:#4ade80;"></i>✓ OK</span>'
     +'    </div>'
     +'  </div>'
@@ -17412,7 +17454,50 @@ function tableroKioskStop(){
   try{ localStorage.removeItem('ft_tablero_kiosk'); }catch(e){}  // al salir, el dispositivo vuelve al uso normal
   if(_tableroTimer){ clearInterval(_tableroTimer); _tableroTimer=null; }
   if(_tableroRotTimer){ clearInterval(_tableroRotTimer); _tableroRotTimer=null; }
+  if(_tableroInnerTimer){ clearInterval(_tableroInnerTimer); _tableroInnerTimer=null; }
   if(window._tableroClockT){ clearInterval(window._tableroClockT); window._tableroClockT=null; }
+}
+// Avance dentro de cada cuadrante por páginas de filas completas, con índice
+// compartido entre los cuadrantes visibles. Es un timer INDEPENDIENTE del refresco
+// de datos. En modo "sincronizado" la rotación de estaciones espera a que se muestren
+// todas las páginas; en "manual" la rotación va por su propio tiempo (_tableroRotTimer).
+function _tbQuadMetrics(el){
+  var row=el.querySelector('tr'); var rh=(row&&row.offsetHeight)||40;
+  var per=Math.max(1, Math.floor(el.clientHeight/rh));
+  var total=el.querySelectorAll('tr').length;
+  return { rh:rh, per:per, pages:Math.max(1, Math.ceil(total/per)) };
+}
+function _tableroMaxPages(){
+  var grid=document.getElementById('tablero-k-grid'); if(!grid) return 1;
+  var maxP=1;
+  Array.prototype.forEach.call(grid.querySelectorAll('.tbq-scroll'),function(el){ var m=_tbQuadMetrics(el); if(m.pages>maxP) maxP=m.pages; });
+  return maxP;
+}
+function _tableroApplyInnerPage(idx){
+  var grid=document.getElementById('tablero-k-grid'); if(!grid) return;
+  Array.prototype.forEach.call(grid.querySelectorAll('.tbq-scroll'),function(el){
+    var m=_tbQuadMetrics(el);
+    var p=Math.min(idx, m.pages-1);
+    el.scrollTo({top:p*m.per*m.rh, behavior:'smooth'});
+  });
+}
+function _tableroInnerTick(){
+  var sincro=((_tableroCfgCache&&_tableroCfgCache.avanceModo)||'manual')==='sincronizado';
+  var maxPages=_tableroMaxPages();
+  if(_tableroInnerPage < maxPages-1){
+    _tableroInnerPage++;
+    _tableroApplyInnerPage(_tableroInnerPage);
+  } else {
+    // Ya se mostraron todas las páginas de este grupo.
+    if(sincro){
+      _tableroInnerPage=0;
+      _tableroPage++;                       // rota al siguiente grupo de estaciones
+      try{ tableroRender(); }catch(e){}     // tableroRender reinicia _tableroInnerPage a 0
+    } else {
+      _tableroInnerPage=0;
+      _tableroApplyInnerPage(0);            // vuelve al inicio (la rotación va aparte)
+    }
+  }
 }
 async function tableroKioskStart(){
   _tableroEnsureOverlay();
@@ -17437,9 +17522,17 @@ async function tableroKioskStart(){
   await tableroRefresh();
   var secs=(_tableroCfgCache&&_tableroCfgCache.refresh)||60;
   _tableroTimer=setInterval(function(){ _tick(); tableroRefresh(); }, Math.max(15,secs)*1000);
-  // Rotación de cuadrantes (solo re-renderiza con datos en memoria, sin recargar de SP)
-  var rot=(_tableroCfgCache&&_tableroCfgCache.rotacion)||20;
-  _tableroRotTimer=setInterval(function(){ _tick(); _tableroPage++; try{ tableroRender(); }catch(e){} }, Math.max(5,rot)*1000);
+  _tableroInnerPage=0;
+  var _modoSincro=((_tableroCfgCache&&_tableroCfgCache.avanceModo)||'manual')==='sincronizado';
+  // Rotación de cuadrantes: SOLO en modo manual (en sincronizado la rotación la maneja el avance interno)
+  if(!_modoSincro){
+    var rot=(_tableroCfgCache&&_tableroCfgCache.rotacion)||20;
+    _tableroRotTimer=setInterval(function(){ _tick(); _tableroPage++; _tableroInnerPage=0; try{ tableroRender(); }catch(e){} }, Math.max(5,rot)*1000);
+  }
+  // Avance interno de cada cuadrante (independiente del refresco de datos)
+  if(_tableroInnerTimer){ clearInterval(_tableroInnerTimer); }
+  var desp=(_tableroCfgCache&&_tableroCfgCache.desplazamiento)||8;
+  _tableroInnerTimer=setInterval(function(){ _tick(); try{ _tableroInnerTick(); }catch(e){} }, Math.max(3,desp)*1000);
 }
 async function tableroRefresh(){
   try{
@@ -17450,6 +17543,7 @@ async function tableroRefresh(){
 }
 function tableroRender(){
   var grid=document.getElementById('tablero-k-grid'); if(!grid) return;
+  _tableroInnerPage=0;   // cada render reinicia el avance interno al inicio
   var cfg=_tableroCfgCache||_TABLERO_CFG_DEFAULT;
   var ests=(cfg.estaciones||[]).slice();
   if(!ests.length){ grid.style.gridTemplateColumns='1fr'; grid.innerHTML='<div style="align-self:center;text-align:center;color:#8b949e;font-size:1.2rem;">Sin estaciones configuradas. Ve a la pestaña 📺 Tablero y selecciona estaciones.</div>'; return; }
@@ -17488,12 +17582,12 @@ function tableroRender(){
     if(term) h+='<span style="font-size:.9rem;color:#4ade80;">✓ '+term+'</span>';
     h+='<span style="font-size:1.4rem;font-weight:800;color:'+avgCol+';">'+avg+'%</span>';
     h+='</div></div>';
-    h+='<div style="flex:1;overflow:auto;min-height:0;">';
+    h+='<div class="tbq-scroll" style="flex:1;overflow:auto;min-height:0;">';
     if(!rows.length){
       h+='<div style="padding:18px;text-align:center;color:#6e7681;font-size:1rem;">Sin órdenes en el rango.</div>';
     } else {
       h+='<table style="width:100%;border-collapse:collapse;font-size:1rem;">';
-      rows.forEach(function(r){
+      rows.forEach(function(r,ri){
         var col=r.pct>=100?'#4ade80':r.pct>=60?'#60a5fa':r.pct>=30?'#facc15':'#f87171';
         var feIso=_feIso(r.fEntrega);
         var feTxt='—'; var feCol='#8b949e';
@@ -17507,7 +17601,9 @@ function tableroRender(){
         var _trStyle='border-top:1px solid rgba(255,255,255,.06);'+(_lv?('--tbpc:'+_lv.tint+';'+(_lv.blink?'':'background-color:'+_lv.tint+';')):'');
         var _firstBorder=_lv?('border-left:5px solid '+_lv.c+';'):'';
         h+='<tr'+_trClass+' style="'+_trStyle+'">';
-        h+='<td style="padding:7px 10px;'+_firstBorder+'font-family:\'DM Mono\',monospace;color:#58a6ff;white-space:nowrap;font-weight:600;">'+esc(r.of.of_sap||'—')+'</td>';
+        h+='<td style="padding:7px 8px;'+_firstBorder+'color:#6e7681;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums;">'+(ri+1)+'</td>';
+        h+='<td style="padding:7px 6px;text-align:center;white-space:nowrap;color:'+(_lv?_lv.c:'#6e7681')+';font-weight:700;">'+(_lv?_lv.ico:'○')+'</td>';
+        h+='<td style="padding:7px 10px;font-family:\'DM Mono\',monospace;color:#58a6ff;white-space:nowrap;font-weight:600;">'+esc(r.of.of_sap||'—')+'</td>';
         h+='<td style="padding:7px 10px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#c9d1d9;" title="'+esc(r.of.descripcion||'')+'">'+esc(r.of.descripcion||r.of.cliente||'—')+'</td>';
         h+='<td style="padding:7px 10px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#9ca3af;" title="'+esc(_oper)+'">'+(_oper?('👷 '+esc(_oper)):'')+'</td>';
         h+='<td style="padding:7px 10px;white-space:nowrap;color:'+feCol+';font-weight:600;">📅 '+feTxt+'</td>';

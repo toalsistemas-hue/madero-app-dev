@@ -1170,6 +1170,7 @@ tr:last-child td{border-bottom:none;}
               <th style="padding:7px 8px;text-align:left;">Pedido</th>
               <th style="padding:7px 8px;text-align:left;">Cliente</th>
               <th style="padding:7px 8px;text-align:left;">Descripción</th>
+              <th style="padding:7px 8px;text-align:center;">OF Programada</th>
               <th style="padding:7px 8px;text-align:left;">Fecha actual</th>
               <th style="padding:7px 8px;text-align:left;">Nueva fecha</th>
             </tr></thead>
@@ -1331,8 +1332,8 @@ tr:last-child td{border-bottom:none;}
         <div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:14px;">
           <div style="font-weight:700;font-size:.9rem;margin-bottom:10px;">📅 Rango de fechas de entrega</div>
           <div style="font-size:.74rem;color:var(--dim);margin-bottom:10px;">Muestra las órdenes cuya fecha de entrega cae dentro del rango.</div>
-          <label style="display:flex;gap:8px;align-items:center;padding:6px 2px;font-size:.84rem;cursor:pointer;"><input type="radio" name="tablero-rango" value="semana" onchange="tableroRangoChange()"> Próxima semana (7 días)</label>
-          <label style="display:flex;gap:8px;align-items:center;padding:6px 2px;font-size:.84rem;cursor:pointer;"><input type="radio" name="tablero-rango" value="mes" onchange="tableroRangoChange()"> Próximo mes (30 días)</label>
+          <label style="display:flex;gap:8px;align-items:center;padding:6px 2px;font-size:.84rem;cursor:pointer;"><input type="radio" name="tablero-rango" value="semana" onchange="tableroRangoChange()"> Semana actual (Lun a Dom) — avanza sola</label>
+          <label style="display:flex;gap:8px;align-items:center;padding:6px 2px;font-size:.84rem;cursor:pointer;"><input type="radio" name="tablero-rango" value="mes" onchange="tableroRangoChange()"> Mes actual (calendario) — avanza solo</label>
           <label style="display:flex;gap:8px;align-items:center;padding:6px 2px;font-size:.84rem;cursor:pointer;"><input type="radio" name="tablero-rango" value="dias" onchange="tableroRangoChange()"> Próximos <input type="number" id="tablero-dias" min="1" max="365" value="15" style="width:60px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.8rem;"> días</label>
           <label style="display:flex;gap:8px;align-items:center;padding:6px 2px;font-size:.84rem;cursor:pointer;"><input type="radio" name="tablero-rango" value="todas" onchange="tableroRangoChange()"> Todas (sin filtro de fecha)</label>
 
@@ -17059,7 +17060,7 @@ function reprogBuildRows(){
     if(!fa&&!fb) return 0; if(!fa) return 1; if(!fb) return -1;
     return fa<fb?-1:fa>fb?1:0;
   });
-  REPROG_STATE.rows=list.map(function(o){ var f=_reprogIso(o.fecha_entrega); return {of_sap:o.of_sap,pedido:o.pedido||'',cliente:o.cliente||'',descripcion:o.descripcion||'',orig:f,val:f}; });
+  REPROG_STATE.rows=list.map(function(o){ var f=_reprogIso(o.fecha_entrega); return {of_sap:o.of_sap,pedido:o.pedido||'',cliente:o.cliente||'',descripcion:o.descripcion||'',orig:f,val:f,prog:(o.programadoHoy===true)}; });
 }
 function _reprogPoblarEstaciones(){
   var sel=document.getElementById('reprog-estacion-sel'); if(!sel) return;
@@ -17121,11 +17122,14 @@ function reprogRender(){
     h+='<td style="padding:5px 8px;color:var(--dim);white-space:nowrap;">'+esc(r.pedido||'N/A')+'</td>';
     h+='<td style="padding:5px 8px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(r.cliente)+'">'+esc(r.cliente||'—')+'</td>';
     h+='<td style="padding:5px 8px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(r.descripcion)+'">'+esc(r.descripcion||'—')+'</td>';
+    h+='<td style="padding:5px 8px;text-align:center;white-space:nowrap;">'+(r.prog
+        ?'<span style="background:rgba(46,160,67,.15);color:var(--green);border:1px solid rgba(46,160,67,.3);border-radius:10px;padding:1px 8px;font-size:.68rem;">✓ Sí</span>'
+        :'<span style="background:rgba(148,163,184,.12);color:var(--dim);border:1px solid rgba(148,163,184,.2);border-radius:10px;padding:1px 8px;font-size:.68rem;">○ No</span>')+'</td>';
     h+='<td style="padding:5px 8px;white-space:nowrap;'+(changed?'color:var(--dim);text-decoration:line-through;':'')+'">'+_reprogFmt(r.orig)+'</td>';
     h+='<td style="padding:5px 8px;white-space:nowrap;"><input type="date" id="reprog-fe-'+cssId+'" value="'+(r.val||'')+'" onchange="reprogFechaChange(\''+esc(r.of_sap)+'\')" style="background:rgba(255,255,255,.06);border:1px solid '+(changed?'var(--yellow)':'var(--border)')+';border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;"></td>';
     h+='</tr>';
   });
-  tb.innerHTML=h||'<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--dim);">Sin órdenes para mostrar.</td></tr>';
+  tb.innerHTML=h||'<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--dim);">Sin órdenes para mostrar.</td></tr>';
   _reprogUpdateCount();
 }
 function _reprogMarkRow(idx){
@@ -17259,6 +17263,33 @@ var _tableroPage = 0;
 var _tableroInnerPage = 0;
 var _TABLERO_PER_PAGE = 4;
 function _tableroRangeDays(cfg){ if(!cfg) return 7; if(cfg.rango==='todas') return null; if(cfg.rango==='mes') return 30; if(cfg.rango==='dias') return parseInt(cfg.dias)||15; return 7; }
+// Rango de fechas efectivo según el tipo elegido. Devuelve {start,end} en 'YYYY-MM-DD'.
+//  - semana: semana calendario actual (Lunes a Domingo) — avanza sola cada semana.
+//  - mes:    mes calendario actual (día 1 al último) — avanza solo cada mes.
+//  - dias:   desde hoy hasta hoy+N.
+//  - todas:  sin filtro.
+function _tableroRango(cfg){
+  cfg=cfg||_TABLERO_CFG_DEFAULT;
+  var modo=cfg.rango||'semana';
+  function _iso(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  if(modo==='todas') return {start:null,end:null};
+  var now=new Date(); now.setHours(0,0,0,0);
+  if(modo==='semana'){
+    var dow=now.getDay();                 // 0=Dom .. 6=Sáb
+    var diffMon=(dow===0?-6:1-dow);        // mover a Lunes
+    var mon=new Date(now); mon.setDate(now.getDate()+diffMon);
+    var sun=new Date(mon); sun.setDate(mon.getDate()+6);
+    return {start:_iso(mon), end:_iso(sun)};
+  }
+  if(modo==='mes'){
+    var first=new Date(now.getFullYear(), now.getMonth(), 1);
+    var last=new Date(now.getFullYear(), now.getMonth()+1, 0);
+    return {start:_iso(first), end:_iso(last)};
+  }
+  var dias=parseInt(cfg.dias)||15;
+  var endd=new Date(now); endd.setDate(now.getDate()+dias);
+  return {start:_iso(now), end:_iso(endd)};
+}
 function _tableroIconoEst(e){
   var ic={'Lavado':'💧','Pintura':'🎨','PINTURA':'🎨','Grabado':'✏️','CNC':'⚙️','Laser':'🔆','TIG':'🔥','MIG':'🔥','Torno':'🔩','Fresadora':'🔩','Electron':'⚡','Sierra':'🪚','Equipo':'🔌','Ensamble':'🧩','Rolado':'🌀','Doblez':'📐','Corte':'✂️','Ayudantes':'🤝'};
   if(!e||e==='Sin estación') return '📭'; var k=Object.keys(ic).find(function(k){return e.indexOf(k)>=0;}); return k?ic[k]:'🏗️';
@@ -17420,6 +17451,7 @@ function _tableroEnsureOverlay(){
     +'      <span><i style="background:#a855f7;"></i>🔍 Val. Calidad</span>'
     +'      <span><i style="background:#f59e0b;"></i>⏳ Aguarda confirmación</span>'
     +'      <span><i style="background:#4ade80;"></i>✓ OK</span>'
+    +'      <span id="tablero-k-rango" style="color:#58a6ff;font-weight:700;"></span>'
     +'    </div>'
     +'  </div>'
     +'  <div style="display:flex;align-items:center;gap:16px;">'
@@ -17548,10 +17580,21 @@ function tableroRender(){
   var ests=(cfg.estaciones||[]).slice();
   if(!ests.length){ grid.style.gridTemplateColumns='1fr'; grid.innerHTML='<div style="align-self:center;text-align:center;color:#8b949e;font-size:1.2rem;">Sin estaciones configuradas. Ve a la pestaña 📺 Tablero y selecciona estaciones.</div>'; return; }
   var built=(typeof ftRptBuildData==='function')?ftRptBuildData().porEstacion:{};
-  var rangeDays=_tableroRangeDays(cfg);
-  var cutoff=null;
-  if(rangeDays!=null){ var d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+rangeDays); var y=d.getFullYear(),m=('0'+(d.getMonth()+1)).slice(-2),dd=('0'+d.getDate()).slice(-2); cutoff=y+'-'+m+'-'+dd; }
+  var _rango=_tableroRango(cfg);
+  var rStart=_rango.start, rEnd=_rango.end;
   function _feIso(s){ return (s||'').split('T')[0]; }
+  // Mostrar el rango activo en el encabezado
+  (function(){
+    var el=document.getElementById('tablero-k-rango'); if(!el) return;
+    var lbl='Todas las fechas';
+    if(rStart&&rEnd){
+      var ms=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+      function dm(iso){ var p=iso.split('-'); return p[2]+'/'+p[1]; }
+      if((cfg.rango||'')==='mes'){ var mp=rStart.split('-'); lbl=ms[parseInt(mp[1])-1]+' '+mp[0]; }
+      else { lbl=dm(rStart)+' – '+dm(rEnd)+'/'+rEnd.split('-')[0]; }
+    }
+    el.textContent='📅 '+lbl;
+  })();
   // Paginación: máximo 4 cuadrantes por pantalla; si hay más, se rotan.
   var n=ests.length;
   var pages=Math.max(1, Math.ceil(n/_TABLERO_PER_PAGE));
@@ -17566,8 +17609,17 @@ function tableroRender(){
   var h='';
   pageEsts.forEach(function(est){
     var rows=(built[est]||[]).slice();
-    // Filtro por rango de fecha de entrega
-    if(cutoff){ rows=rows.filter(function(r){ var f=_feIso(r.fEntrega); return f && f<=cutoff; }); }
+    // Filtro por rango de fecha de entrega (semana/mes calendario o N días).
+    // - Se muestran las órdenes con fecha ≤ fin del rango.
+    // - Las ya COMPLETADAS (100%) con fecha ANTERIOR al inicio del rango se ocultan.
+    // - Las NO terminadas vencidas sí se siguen mostrando (trabajo pendiente).
+    if(rEnd){ rows=rows.filter(function(r){
+      var f=_feIso(r.fEntrega);
+      if(!f) return false;
+      if(f>rEnd) return false;
+      if(r.pct>=100 && rStart && f<rStart) return false;
+      return true;
+    }); }
     rows.sort(function(a,b){ var fa=_feIso(a.fEntrega)||'', fb=_feIso(b.fEntrega)||''; if(!fa&&!fb)return 0; if(!fa)return 1; if(!fb)return -1; return fa<fb?-1:fa>fb?1:0; });
     var avg=rows.length?Math.round(rows.reduce(function(s,r){return s+r.pct;},0)/rows.length):0;
     var enP=rows.filter(function(r){return r.opStatus==='En Proceso';}).length;

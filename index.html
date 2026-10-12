@@ -2249,6 +2249,16 @@ tr:last-child td{border-bottom:none;}
   </iframe>
 </div>
 
+<!-- PAGE: PLANEACIÓN CALIDAD -->
+<div class="page" id="page-PlaneacionCalidad" style="padding:0;margin:0;position:relative;">
+  <iframe
+    id="pcal-iframe"
+    src="planeacion-calidad.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
+    title="Planeación Calidad">
+  </iframe>
+</div>
+
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
@@ -3316,6 +3326,29 @@ function navigateToPantalla(pantallaID) {
     if (cotzIfrm) cotzIfrm.style.display = 'none';
     var cdocIfrm = document.getElementById('cdoc-iframe');
     if (cdocIfrm) cdocIfrm.style.display = 'none';
+    var pcalIfrm = document.getElementById('pcal-iframe');
+    if (pcalIfrm) pcalIfrm.style.display = 'none';
+
+    if (pantallaID==='PlaneacionCalidad') {
+      if (pcalIfrm) {
+        pcalIfrm.style.display = 'block';
+        setTimeout(function() {
+          if (pcalIfrm && pcalIfrm.contentWindow) {
+            pcalIfrm.contentWindow.postMessage({
+              type: 'SGD_AUTH',
+              user: {
+                nombre: state.currentUser ? state.currentUser.nombre : '',
+                correo: state.currentUser ? (state.currentUser.email || '') : '',
+                puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+                puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+                esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+              },
+              isDemoMode: state.isDemoMode || false
+            }, '*');
+          }
+        }, 400);
+      }
+    }
 
     if (pantallaID==='Cotizaciones') {
       if (cotzIfrm) {
@@ -3659,6 +3692,10 @@ function doLogout() {
   if (bpmIfrm) bpmIfrm.style.display = 'none';
   var cotzIfrm = document.getElementById('cotz-iframe');
   if (cotzIfrm) cotzIfrm.style.display = 'none';
+  var cdocIfrmL = document.getElementById('cdoc-iframe');
+  if (cdocIfrmL) cdocIfrmL.style.display = 'none';
+  var pcalIfrmL = document.getElementById('pcal-iframe');
+  if (pcalIfrmL) pcalIfrmL.style.display = 'none';
   document.getElementById('login-email').value='';
   document.getElementById('login-pass').value='';
   document.getElementById('login-error').style.display='none';

@@ -26,7 +26,9 @@ button{font-family:inherit;cursor:pointer;}
 .login-status{margin-top:12px;color:var(--dim);font-size:.8rem;}
 
 /* App shell */
-#app{display:block;height:100vh;}
+#app{display:flex;flex-direction:column;height:100vh;}
+.topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 18px;border-bottom:1px solid var(--border);background:var(--panel);}
+.board-sel{min-width:230px;font-weight:600;font-size:.88rem;}
 .shell{display:flex;height:100vh;}
 .sidebar{width:270px;flex:0 0 270px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
 .sb-head{padding:16px 16px 10px;}
@@ -128,31 +130,14 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
 <body>
 
 <div id="app">
-  <div class="shell">
-    <div class="sidebar">
-      <div class="sb-head">
-        <div class="ttl">🗂️ Planeación Calidad</div>
-        <div class="sub">Tableros del equipo</div>
-      </div>
-      <div class="sb-boards" id="sb-boards"></div>
-      <div class="sb-foot">
-        <button class="btn btn-primary btn-block" onclick="openBoardModal()">＋ Nuevo tablero</button>
-        <div class="user-row"><div class="avatar" id="u-ini">?</div><div style="flex:1" id="u-name">Conectando…</div></div>
-      </div>
-    </div>
-
-    <div class="main">
-      <div class="main-head">
-        <div>
-          <div class="b-ttl" id="b-ttl">Selecciona un tablero</div>
-          <div class="b-sub" id="b-sub"></div>
-        </div>
-        <div class="main-tools" id="b-tools"></div>
-      </div>
-      <div class="main-body" id="b-body">
-        <div class="empty">Crea o selecciona un tablero para comenzar.</div>
-      </div>
-    </div>
+  <div class="topbar">
+    <select class="inp board-sel" id="board-sel" onchange="selectBoard(this.value)"><option value="">Cargando…</option></select>
+    <button class="btn btn-primary btn-sm" onclick="openBoardModal()">＋ Nuevo tablero</button>
+    <span class="b-sub" id="b-sub"></span>
+    <div class="main-tools" id="b-tools" style="margin-left:auto;"></div>
+  </div>
+  <div class="main-body" id="b-body">
+    <div class="empty">Crea o selecciona un tablero para comenzar.</div>
   </div>
 </div>
 
@@ -272,16 +257,14 @@ function onAuth(d){
   if(d && d.isDemoMode){ document.getElementById('b-body').innerHTML='<div class="empty">No disponible en modo demo (sin sesión real de Microsoft).</div>'; return; }
   var correo=(u.correo||'').toLowerCase();
   S.user={ email:correo, nombre:u.nombre||correo||'Usuario', esAdmin:!!u.esAdmin };
-  document.getElementById('u-ini').textContent=ini(S.user.nombre);
-  document.getElementById('u-name').textContent=S.user.nombre;
-  if(!S._loaded){ S._loaded=true; loadData().catch(function(e){ toast('Error al cargar datos: '+(e.message||e)); document.getElementById('sb-boards').innerHTML='<div style="padding:14px;color:#fca5a5;font-size:.8rem;">No se pudieron cargar los datos. ¿Existen las listas PCAL_Tableros y PCAL_Tareas?</div>'; }); }
+  if(!S._loaded){ S._loaded=true; loadData().catch(function(e){ toast('Error al cargar datos: '+(e.message||e)); var bb=document.getElementById('b-body'); if(bb) bb.innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existen las listas PCAL_Tableros y PCAL_Tareas con sus columnas?</div>'; }); }
 }
 
 // ═══════════════ DATOS ═══════════════
 function _pj(s,def){ try{ return JSON.parse(s||''); }catch(e){ return def; } }
 function _iso(s){ return (s||'').split('T')[0]; }
 async function loadData(){
-  var tb=document.getElementById('sb-boards'); tb.innerHTML='<div style="padding:14px;color:var(--dim);font-size:.8rem;"><span class="spin"></span> Cargando…</div>';
+  var bb=document.getElementById('b-body'); if(bb) bb.innerHTML='<div class="empty"><span class="spin"></span> Cargando…</div>';
   var bs = await listGet(L_TABLEROS);
   S.boards = bs.map(function(i){ var f=i.fields||{}; return {
     id:i.id, nombre:f.Title||'(sin nombre)', tipo:f.PcTipo||'compartido', descripcion:f.PcDescripcion||'',
@@ -294,39 +277,37 @@ async function loadData(){
     ini:_iso(f.PcFechaInicio), fin:_iso(f.PcFechaFin), progreso:parseInt(f.PcProgreso||0)||0,
     dependencias:_pj(f.PcDependencias,[]), esHito:(f.PcEsHito==='Si'||f.PcEsHito===true), etiquetas:f.PcEtiquetas||'', orden:f.PcOrden||0
   }; });
-  renderSidebar();
   if(S.curBoard && !S.boards.find(function(b){return b.id===S.curBoard;})) S.curBoard=null;
   if(!S.curBoard && S.boards.length) S.curBoard=S.boards[0].id;
+  renderBoardSelector();
   renderBoard();
 }
 
-// ═══════════════ SIDEBAR ═══════════════
+// ═══════════════ SELECTOR DE TABLERO ═══════════════
 function _tipoLbl(t){ return t==='proyecto'?'📊 Proyecto (Gantt)':t==='individual'?'🧑 Individuales':'🗂️ Compartidas'; }
-function renderSidebar(){
-  var el=document.getElementById('sb-boards'); var h='';
-  ['compartido','individual','proyecto'].forEach(function(tp){
-    var list=S.boards.filter(function(b){return b.tipo===tp;});
+function renderBoardSelector(){
+  var sel=document.getElementById('board-sel'); if(!sel) return;
+  if(!S.boards.length){ sel.innerHTML='<option value="">— Sin tableros —</option>'; return; }
+  var h='';
+  [['compartido','🗂️ Compartidas'],['individual','🧑 Individuales'],['proyecto','📊 Proyecto (Gantt)']].forEach(function(g){
+    var list=S.boards.filter(function(b){return b.tipo===g[0];});
     if(!list.length) return;
-    h+='<div class="sb-group-lbl">'+_tipoLbl(tp)+'</div>';
-    list.forEach(function(b){
-      h+='<div class="board-item'+(b.id===S.curBoard?' active':'')+'" onclick="selectBoard(\''+b.id+'\')">'
-        +'<span class="board-dot" style="background:'+b.color+'"></span>'
-        +'<span class="nm">'+esc(b.nombre)+'</span></div>';
-    });
+    h+='<optgroup label="'+g[1]+'">';
+    list.forEach(function(b){ h+='<option value="'+b.id+'"'+(b.id===S.curBoard?' selected':'')+'>'+esc(b.nombre)+'</option>'; });
+    h+='</optgroup>';
   });
-  el.innerHTML = h || '<div style="padding:14px;color:var(--muted);font-size:.8rem;">Aún no hay tableros.</div>';
+  sel.innerHTML=h;
 }
-function selectBoard(id){ S.curBoard=id; S.soloMias=false; renderSidebar(); renderBoard(); }
+function selectBoard(id){ if(!id) return; S.curBoard=id; S.soloMias=false; renderBoardSelector(); renderBoard(); }
 
 // ═══════════════ RENDER TABLERO ═══════════════
 function curBoardObj(){ return S.boards.find(function(b){return b.id===S.curBoard;})||null; }
 function boardTasks(){ var b=curBoardObj(); if(!b) return []; var t=S.tasks.filter(function(x){return x.tableroID===b.id;}); if(S.soloMias){ t=t.filter(function(x){return (x.asignados||[]).indexOf(S.user.email)>=0;}); } return t; }
 function renderBoard(){
   var b=curBoardObj();
-  var ttl=document.getElementById('b-ttl'), sub=document.getElementById('b-sub'), tools=document.getElementById('b-tools'), body=document.getElementById('b-body');
-  if(!b){ ttl.textContent='Selecciona un tablero'; sub.textContent=''; tools.innerHTML=''; body.innerHTML='<div class="empty">Crea o selecciona un tablero para comenzar.</div>'; return; }
-  ttl.innerHTML='<span class="board-dot" style="background:'+b.color+'"></span> '+esc(b.nombre);
-  sub.innerHTML='<span class="chip">'+_tipoLbl(b.tipo)+'</span> '+(b.descripcion?esc(b.descripcion):'')+' · '+(b.participantes.length)+' participante(s)';
+  var sub=document.getElementById('b-sub'), tools=document.getElementById('b-tools'), body=document.getElementById('b-body');
+  if(!b){ sub.textContent=''; tools.innerHTML=''; body.innerHTML='<div class="empty">Crea o selecciona un tablero para comenzar.</div>'; return; }
+  sub.innerHTML='<span class="chip">'+_tipoLbl(b.tipo)+'</span> '+(b.participantes.length)+' participante(s)';
   tools.innerHTML=''
     +'<label style="font-size:.74rem;color:var(--dim);display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" '+(S.soloMias?'checked':'')+' onchange="S.soloMias=this.checked;renderBoard();"> Solo mis tareas</label>'
     +'<button class="btn btn-sm" onclick="openBoardModal(\''+b.id+'\')">⚙ Editar tablero</button>'

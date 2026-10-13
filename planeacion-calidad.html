@@ -298,7 +298,7 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
 
 <script>
 // ═══════════════ CONFIG ═══════════════
-var L_TABLEROS='PCAL_Tableros', L_TAREAS='PCAL_Tareas', L_REUNIONES='PCAL_Reuniones';
+var L_TABLEROS='PCAL_Tableros', L_TAREAS='PCAL_Tareas', L_REUNIONES='PCAL_Reuniones', L_NOTIF='PCAL_Notificaciones';
 var ESTATUS=['Sin iniciar','En proceso','En revisión','Bloqueada','Completada'];
 var ST_COLOR={'Sin iniciar':'#6e7681','En proceso':'#58a6ff','En revisión':'#a855f7','Bloqueada':'#ef4444','Completada':'#2ea043'};
 
@@ -356,6 +356,14 @@ async function listGet(lista){ var r=await spCall('list',{lista:lista, queryPara
 async function listCreate(lista, fields){ var r=await spCall('create',{lista:lista, fields:fields}); return { id:(r&&r.id!=null)?r.id:null }; }
 async function listUpdate(lista, id, fields){ return spCall('update',{lista:lista, itemId:id, fields:fields}); }
 async function listDelete(lista, id){ return spCall('delete',{lista:lista, itemId:id}); }
+// Escribe un aviso en PCAL_Notificaciones; un flujo de Power Automate envía el correo.
+async function notif(para, asunto, cuerpoHtml, tipo, cc){
+  var dest = Array.isArray(para) ? para.filter(Boolean).join(';') : (para||'');
+  if(!dest) return;
+  try{ await listCreate(L_NOTIF, { Title:asunto, PcPara:dest, PcCC:cc||'', PcCuerpo:cuerpoHtml, PcTipo:tipo||'', PcEnviado:'' }); }
+  catch(e){ console.warn('[notif] no se pudo registrar (¿existe PCAL_Notificaciones?)', e&&e.message); }
+}
+function _chg(label, a, b){ if((a==null?'':a)===(b==null?'':b)) return ''; return '• <strong>'+label+':</strong> '+esc(a||'—')+' → '+esc(b||'—')+'<br>'; }
 
 function boot(){
   var par=_parent();
@@ -397,7 +405,8 @@ async function loadData(){
   var bs = await listGet(L_TABLEROS);
   S.boards = bs.map(function(i){ var f=i.fields||{}; return {
     id:i.id, nombre:f.Title||'(sin nombre)', tipo:f.PcTipo||'compartido', descripcion:f.PcDescripcion||'',
-    participantes:_pj(f.PcParticipantes,[]), color:f.PcColor||'#58a6ff', estatus:f.PcEstatus||'activo', orden:f.PcOrden||0
+    participantes:_pj(f.PcParticipantes,[]), color:f.PcColor||'#58a6ff', estatus:f.PcEstatus||'activo', orden:f.PcOrden||0,
+    responsable:(f.PcResponsable||'').toLowerCase()
   }; }).filter(function(b){ return b.estatus!=='archivado'; });
   var ts = await listGet(L_TAREAS);
   S.tasks = ts.map(function(i){ var f=i.fields||{}; return {
@@ -608,12 +617,23 @@ function _readParts(){
 async function saveBoard(){
   var nombre=document.getElementById('bd-nombre').value.trim();
   if(!nombre){ toast('Escribe un nombre'); return; }
+  var parts=_readParts();
+  var resp=(S.editBoard && S.editBoard.responsable) ? S.editBoard.responsable : S.user.email;
   var fields={ Title:nombre, PcTipo:document.getElementById('bd-tipo').value, PcDescripcion:document.getElementById('bd-desc').value.trim(),
-    PcParticipantes:JSON.stringify(_readParts()), PcEstatus:'activo', PcColor:(S.editBoard?S.editBoard.color:pickColor()) };
+    PcParticipantes:JSON.stringify(parts), PcEstatus:'activo', PcColor:(S.editBoard?S.editBoard.color:pickColor()), PcResponsable:resp };
+  // Participantes NUEVOS (para notificarlos)
+  var prev=(S.editBoard?S.editBoard.participantes:[])||[];
+  var nuevos=parts.filter(function(p){ return p.correo && prev.map(function(x){return x.correo;}).indexOf(p.correo)<0; });
   var btn=document.getElementById('bd-save'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
   try{
     if(S.editBoard){ await listUpdate(L_TABLEROS,S.editBoard.id,fields); }
     else { var r=await listCreate(L_TABLEROS,fields); S.curBoard=r.id; }
+    // Notificación individual a cada nuevo integrante
+    for(var i=0;i<nuevos.length;i++){
+      var p=nuevos[i];
+      var cuerpo='Hola '+esc(p.nombre)+',<br><br>Has sido integrado(a) al tablero <strong>'+esc(nombre)+'</strong> ('+_tipoLbl(fields.PcTipo)+') en Planeación Calidad.<br><br>Saludos.';
+      await notif([p.correo], 'Planeación Calidad — Te integraron al tablero: '+nombre, cuerpo, 'tablero');
+    }
     closeModal('m-board'); await loadData(); toast('Tablero guardado');
   }catch(e){ toast('Error: '+(e.message||e)); }
   finally{ btn.disabled=false; btn.textContent='Guardar'; }
@@ -836,6 +856,50 @@ async function saveTask(){
     if(!soloEstatus && isSGD && S._sgdPick && asg.length){
       var p=(b.participantes||[]).find(function(x){return x.correo===asg[0];});
       if(p){ try{ await listUpdate('SGD_Solicitudes', S._sgdPick.id, { Analista_Asignado:p.nombre, Analista_Correo:p.correo }); S.sgdCache=null; }catch(e){ console.warn('SGD update',e); } }
+    }
+    // ── Notificaciones por correo ──
+    var old=S.editTask;
+    if(soloEstatus){
+      // El responsable actualizó → avisar al Coordinador
+      var coord=b.responsable||'';
+      if(coord){
+        var ch='';
+        ch+=_chg('Estatus', old&&old.estatus, document.getElementById('tk-estatus').value);
+        ch+=_chg('Avance', old?(old.progreso+'%'):'', prog+'%');
+        ch+=_chg('Fecha compromiso (responsable)', old&&old.fCompromisoAsig?fmtD(old.fCompromisoAsig):'', fcompA?fmtD(fcompA):'');
+        if(ch){
+          var cu='El responsable <strong>'+esc(S.user.nombre)+'</strong> actualizó la tarea <strong>'+esc(old?old.nombre:nombre)+'</strong>:<br><br>'+ch+'<br>Avance actual: <strong>'+prog+'%</strong>.';
+          var ccResp = (S.user.email && S.user.email!==coord) ? S.user.email : '';
+          await notif([coord], 'Planeación Calidad — Actualización de tarea: '+(old?old.nombre:nombre), cu, 'tarea_actualizada', ccResp);
+        }
+      }
+    } else if(!S.editTask){
+      // Nueva tarea → avisar a los responsables (individual = 1, compartida = todos, en un mismo correo)
+      if(asg.length){
+        var det='Se te asignó una nueva tarea en Planeación Calidad.<br><br>'
+          +'<strong>Tarea:</strong> '+esc(nombre)+'<br>'
+          +'<strong>Tablero:</strong> '+esc(b.nombre)+' ('+_tipoLbl(b.tipo)+')<br>'
+          +'<strong>Prioridad:</strong> '+esc(document.getElementById('tk-prioridad').value)+'<br>'
+          +(ini?('<strong>Inicio:</strong> '+fmtD(ini)+'<br>'):'')
+          +(fin?('<strong>Entrega/fin:</strong> '+fmtD(fin)+'<br>'):(fcomp?('<strong>Fecha compromiso:</strong> '+fmtD(fcomp)+'<br>'):'<strong>Fin:</strong> abierto (defínelo con tu compromiso)<br>'))
+          +(document.getElementById('tk-desc').value.trim()?('<br>'+esc(document.getElementById('tk-desc').value.trim())):'');
+        await notif(asg, 'Planeación Calidad — Nueva tarea asignada: '+nombre, det, 'tarea_nueva');
+      }
+    } else {
+      // El Coordinador editó → avisar a los responsables qué cambió
+      var ch2='';
+      ch2+=_chg('Nombre', old.nombre, nombre);
+      ch2+=_chg('Estatus', old.estatus, document.getElementById('tk-estatus').value);
+      ch2+=_chg('Prioridad', old.prioridad, document.getElementById('tk-prioridad').value);
+      ch2+=_chg('Fecha inicio', old.ini?fmtD(old.ini):'', ini?fmtD(ini):'');
+      ch2+=_chg('Fecha entrega/fin', old.fin?fmtD(old.fin):'', fin?fmtD(fin):'');
+      ch2+=_chg('Fecha compromiso (líder)', old.fCompromiso?fmtD(old.fCompromiso):'', fcomp?fmtD(fcomp):'');
+      var oldAsg=(old.asignados||[]).map(nameOf).join(', '), newAsg=asg.map(nameOf).join(', ');
+      ch2+=_chg('Asignados', oldAsg, newAsg);
+      if(ch2 && asg.length){
+        var cu2='El Coordinador actualizó la tarea <strong>'+esc(nombre)+'</strong> ('+esc(b.nombre)+'):<br><br>'+ch2;
+        await notif(asg, 'Planeación Calidad — Tarea actualizada: '+nombre, cu2, 'tarea_editada');
+      }
     }
     closeModal('m-task'); await loadData(); toast('Tarea guardada');
   }catch(e){ toast('Error: '+(e.message||e)); }

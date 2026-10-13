@@ -150,6 +150,7 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
     <select class="inp board-sel" id="board-sel" onchange="selectBoard(this.value)"><option value="">Cargando…</option></select>
     <button class="btn btn-sm" id="btn-refresh" onclick="refrescar()" title="Actualizar datos">🔄 Actualizar</button>
     <button class="btn btn-sm" id="btn-kpi" onclick="openKpi()" title="KPIs de desempeño">📊 KPIs</button>
+    <button class="btn btn-sm" id="btn-reuniones" onclick="openMisReuniones()" title="Mis reuniones programadas" style="display:none;">📅 Reuniones</button>
     <button class="btn btn-primary btn-sm" id="btn-new-board" onclick="openBoardModal()" style="display:none;">＋ Nuevo tablero</button>
     <span class="b-sub" id="b-sub"></span>
     <div class="main-tools" id="b-tools" style="margin-left:auto;"></div>
@@ -237,6 +238,11 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
       <button class="btn btn-sm" id="tk-cats-add" onclick="tkAddCat()" style="margin-top:6px;">＋ Agregar categoría</button>
       <div style="margin-top:8px;font-size:.8rem;">Avance: <strong id="tk-prog-view" style="color:var(--green-l);">0%</strong></div>
     </div>
+    <div class="fld" id="tk-meet-sec" style="display:none;border-top:1px solid var(--border);padding-top:12px;">
+      <label>📅 Reuniones de revisión</label>
+      <div id="tk-meet-list" style="font-size:.78rem;"></div>
+      <button class="btn btn-sm" id="tk-meet-add" onclick="openMeetModal()" style="margin-top:6px;display:none;">＋ Programar reunión</button>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-danger" id="tk-del" onclick="deleteTask()" style="display:none;">🗑 Eliminar</button>
       <div style="display:flex;gap:8px;margin-left:auto;">
@@ -247,11 +253,42 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
   </div>
 </div>
 
+<!-- Modal Programar reunión -->
+<div class="modal-bg" id="m-meet">
+  <div class="modal" style="width:520px;">
+    <h3>📅 Programar reunión de revisión</h3>
+    <div class="fld"><label>Asunto</label><input class="inp" id="mt-asunto"></div>
+    <div class="row2">
+      <div class="fld"><label>Fecha</label><input type="date" class="inp" id="mt-fecha"></div>
+      <div class="fld"><label>Hora</label><input type="time" class="inp" id="mt-hora"></div>
+    </div>
+    <div class="fld"><label>Duración (min)</label><select class="inp" id="mt-dur"><option>15</option><option selected>30</option><option>45</option><option>60</option></select></div>
+    <div class="fld"><label>Responsables (asistentes)</label><div class="chk-list" id="mt-asist"></div></div>
+    <div style="font-size:.72rem;color:var(--dim);">Al confirmar se guarda la reunión; un flujo de Power Automate puede crear el evento en Outlook e invitar a los responsables (con copia al líder).</div>
+    <div class="modal-actions">
+      <div style="display:flex;gap:8px;margin-left:auto;">
+        <button class="btn btn-ghost" onclick="closeModal('m-meet')">Cancelar</button>
+        <button class="btn btn-primary" id="mt-save" onclick="saveMeet()">Confirmar reunión</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Mis reuniones -->
+<div class="modal-bg" id="m-meets">
+  <div class="modal" style="width:620px;">
+    <h3>📅 Mis reuniones programadas</h3>
+    <div id="meets-list" style="max-height:60vh;overflow:auto;"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" style="margin-left:auto;" onclick="closeModal('m-meets')">Cerrar</button></div>
+  </div>
+</div>
+
 <!-- Vista KPIs -->
 <div class="kpi-view" id="kpi-view">
   <div class="kpi-head">
     <div style="font-size:1.1rem;font-weight:800;">📊 KPIs de desempeño — Bono de productividad</div>
     <input type="month" id="kpi-mes" class="inp" onchange="renderKpi()" style="width:170px;">
+    <button class="btn btn-sm" id="kpi-refresh" onclick="kpiRefrescar()" title="Actualizar datos">🔄 Actualizar</button>
     <button class="btn btn-sm" style="margin-left:auto;" onclick="closeKpi()">✕ Cerrar</button>
   </div>
   <div class="kpi-body" id="kpi-body"></div>
@@ -261,11 +298,11 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
 
 <script>
 // ═══════════════ CONFIG ═══════════════
-var L_TABLEROS='PCAL_Tableros', L_TAREAS='PCAL_Tareas';
+var L_TABLEROS='PCAL_Tableros', L_TAREAS='PCAL_Tareas', L_REUNIONES='PCAL_Reuniones';
 var ESTATUS=['Sin iniciar','En proceso','En revisión','Bloqueada','Completada'];
 var ST_COLOR={'Sin iniciar':'#6e7681','En proceso':'#58a6ff','En revisión':'#a855f7','Bloqueada':'#ef4444','Completada':'#2ea043'};
 
-var S = { user:null, completo:false, boards:[], tasks:[], kpis:{}, curBoard:null, soloMias:false, editBoard:null, editTask:null, _loaded:false, catDraft:[], sgdCache:null };
+var S = { user:null, completo:false, boards:[], tasks:[], kpis:{}, reuniones:[], curBoard:null, soloMias:false, editBoard:null, editTask:null, _loaded:false, catDraft:[], sgdCache:null, meetTaskId:null };
 var FREQ_DIAS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 // ¿El usuario puede editar esta tarea? Completo siempre; lector solo si es su tarea
 // (asignado) o es un tablero compartido donde participa.
@@ -379,6 +416,12 @@ async function loadData(){
         calidad:(f.PcCalidad!=null&&f.PcCalidad!=='')?parseInt(f.PcCalidad):null,
         confirmado:(f.PcCumplConfirmado==='Si'), meta:parseInt(f.PcMeta||90)||90, comentario:f.PcComentario||'' }; });
   }catch(e){ S.kpis={}; }
+  // Reuniones de revisión. La lista puede no existir aún.
+  try{
+    var rs=await listGet(L_REUNIONES);
+    S.reuniones=rs.map(function(i){ var f=i.fields||{}; return { id:i.id, asunto:f.Title||'Reunión', tareaID:f.PcTareaID||'', tareaNombre:f.PcTareaNombre||'', fecha:_iso(f.PcFecha), hora:f.PcHora||'', duracion:parseInt(f.PcDuracion||30)||30, organizador:(f.PcOrganizador||'').toLowerCase(), asistentes:_pj(f.PcAsistentes,[]), estatus:f.PcEstatus||'programada' }; })
+      .filter(function(r){ return r.estatus!=='cancelada'; });
+  }catch(e){ S.reuniones=[]; }
   if(S.curBoard && !S.boards.find(function(b){return b.id===S.curBoard;})) S.curBoard=null;
   if(!S.curBoard && S.boards.length) S.curBoard=S.boards[0].id;
   renderBoardSelector();
@@ -411,6 +454,7 @@ function renderBoard(){
   var sub=document.getElementById('b-sub'), tools=document.getElementById('b-tools'), body=document.getElementById('b-body');
   if(!b){ sub.textContent=''; tools.innerHTML=''; body.innerHTML='<div class="empty">Crea o selecciona un tablero para comenzar.</div>'; return; }
   var nb=document.getElementById('btn-new-board'); if(nb) nb.style.display=S.completo?'inline-block':'none';
+  var rb=document.getElementById('btn-reuniones'); if(rb) rb.style.display=S.completo?'inline-block':'none';
   sub.innerHTML='<span class="chip">'+_tipoLbl(b.tipo)+'</span> '+(b.participantes.length)+' participante(s)';
   tools.innerHTML=''
     +'<label style="font-size:.74rem;color:var(--dim);display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" '+(S.soloMias?'checked':'')+' onchange="S.soloMias=this.checked;renderBoard();"> Solo mis tareas</label>'
@@ -642,6 +686,10 @@ function openTaskModal(id){
   // fecha compromiso del asignado: la puede poner el asignado (o completo)
   var puedeAsig = full || (t && (t.asignados||[]).indexOf(S.user.email)>=0);
   document.getElementById('tk-fcomp-asig').disabled=!puedeAsig;
+  // Reuniones de revisión (solo en tareas existentes)
+  var meetSec=document.getElementById('tk-meet-sec');
+  if(t){ meetSec.style.display='block'; renderTaskMeetings(t); document.getElementById('tk-meet-add').style.display=full?'inline-block':'none'; }
+  else { meetSec.style.display='none'; }
   openModal('m-task');
 }
 function tkRenderAsignados(b, sel, isSGD){
@@ -919,7 +967,89 @@ async function kpiSave(correo){
     toast('Evaluación guardada'); await loadData(); renderKpi();
   }catch(e){ toast('Error (¿existe la lista PCAL_KPI?): '+(e.message||e)); }
 }
-window.openKpi=openKpi; window.closeKpi=closeKpi; window.renderKpi=renderKpi; window.kpiSave=kpiSave;
+async function kpiRefrescar(){ var b=document.getElementById('kpi-refresh'); if(b){b.disabled=true;b.textContent='⏳';} try{ S.sgdCache=null; await loadData(); renderKpi(); }catch(e){ toast('Error al actualizar'); } finally{ if(b){b.disabled=false;b.textContent='🔄 Actualizar';} } }
+window.openKpi=openKpi; window.closeKpi=closeKpi; window.renderKpi=renderKpi; window.kpiSave=kpiSave; window.kpiRefrescar=kpiRefrescar;
+
+// ═══════════════ REUNIONES ═══════════════
+function renderTaskMeetings(t){
+  var cont=document.getElementById('tk-meet-list'); if(!cont) return;
+  var ms=S.reuniones.filter(function(r){return r.tareaID===t.id;}).sort(function(a,b){return (a.fecha+a.hora)<(b.fecha+b.hora)?-1:1;});
+  if(!ms.length){ cont.innerHTML='<span style="color:var(--muted);">Sin reuniones programadas.</span>'; return; }
+  var h='';
+  ms.forEach(function(r){
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--border);">'
+      +'<span>📅 <strong>'+fmtD(r.fecha)+'</strong> '+esc(r.hora)+' <span style="color:var(--dim);">('+r.duracion+' min)</span></span>'
+      +'<span style="color:var(--dim);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(r.asunto)+'</span>'
+      +(S.completo?('<button class="btn btn-sm btn-ghost" onclick="cancelMeet(\''+r.id+'\')" title="Cancelar">✕</button>'):'')+'</div>';
+  });
+  cont.innerHTML=h;
+}
+function openMeetModal(){
+  var t=S.editTask, b=curBoardObj(); if(!t||!b||!S.completo) return;
+  S.meetTaskId=t.id;
+  document.getElementById('mt-asunto').value='Revisión de avances: '+t.nombre;
+  var d=new Date(); d.setDate(d.getDate()+1);
+  document.getElementById('mt-fecha').value=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+  document.getElementById('mt-hora').value='10:00';
+  document.getElementById('mt-dur').value='30';
+  var cont=document.getElementById('mt-asist'); cont.innerHTML='';
+  (b.participantes||[]).forEach(function(p){
+    var checked=(t.asignados||[]).indexOf(p.correo)>=0;
+    var lab=document.createElement('label'); lab.className='chk-item';
+    lab.innerHTML='<input type="checkbox" class="mt-asist-chk" value="'+(p.correo||'').replace(/"/g,'&quot;')+'" '+(checked?'checked':'')+'> '+esc(p.nombre);
+    cont.appendChild(lab);
+  });
+  if(!(b.participantes||[]).length) cont.innerHTML='<span style="color:var(--muted);font-size:.78rem;">El tablero no tiene participantes.</span>';
+  openModal('m-meet');
+}
+async function saveMeet(){
+  if(!S.completo) return;
+  var t=S.tasks.find(function(x){return x.id===S.meetTaskId;}); if(!t){ toast('Guarda la tarea primero'); return; }
+  var fecha=document.getElementById('mt-fecha').value, hora=document.getElementById('mt-hora').value;
+  if(!fecha||!hora){ toast('Indica fecha y hora'); return; }
+  var asist=[]; document.querySelectorAll('.mt-asist-chk').forEach(function(c){ if(c.checked) asist.push(c.value); });
+  if(!asist.length){ toast('Elige al menos un responsable'); return; }
+  var fields={ Title:(document.getElementById('mt-asunto').value.trim()||('Revisión: '+t.nombre)),
+    PcTareaID:t.id, PcTareaNombre:t.nombre, PcFecha:fecha+'T12:00:00Z', PcHora:hora,
+    PcDuracion:(parseInt(document.getElementById('mt-dur').value)||30),
+    PcOrganizador:S.user.email, PcAsistentes:JSON.stringify(asist), PcEstatus:'programada', PcEventoNotificado:'' };
+  var btn=document.getElementById('mt-save'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  try{
+    await listCreate(L_REUNIONES, fields);
+    closeModal('m-meet'); await loadData();
+    var t2=S.tasks.find(function(x){return x.id===S.meetTaskId;}); if(t2 && document.getElementById('m-task').classList.contains('show')) renderTaskMeetings(t2);
+    toast('Reunión programada');
+  }catch(e){ toast('Error (¿existe la lista PCAL_Reuniones?): '+(e.message||e)); }
+  finally{ btn.disabled=false; btn.textContent='Confirmar reunión'; }
+}
+async function cancelMeet(id){
+  if(!S.completo) return; if(!confirm('¿Cancelar esta reunión?')) return;
+  try{ await listUpdate(L_REUNIONES, id, {PcEstatus:'cancelada'}); await loadData();
+    if(S.editTask && document.getElementById('m-task').classList.contains('show')) renderTaskMeetings(S.editTask);
+    if(document.getElementById('m-meets').classList.contains('show')) renderMisReuniones();
+    toast('Reunión cancelada');
+  }catch(e){ toast('Error: '+(e.message||e)); }
+}
+function openMisReuniones(){ renderMisReuniones(); openModal('m-meets'); }
+function renderMisReuniones(){
+  var cont=document.getElementById('meets-list');
+  var ms=S.reuniones.filter(function(r){ return S.completo ? (r.organizador===S.user.email) : ((r.asistentes||[]).indexOf(S.user.email)>=0); })
+    .sort(function(a,b){return (a.fecha+a.hora)<(b.fecha+b.hora)?-1:1;});
+  if(!ms.length){ cont.innerHTML='<div class="empty">Sin reuniones programadas.</div>'; return; }
+  var hoy=new Date(); hoy.setHours(0,0,0,0); var h='';
+  ms.forEach(function(r){
+    var past = r.fecha && new Date(r.fecha+'T00:00:00')<hoy;
+    var nombres=(r.asistentes||[]).map(nameOf).join(', ');
+    h+='<div class="pcard" style="opacity:'+(past?'.6':'1')+';"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+      +'<div style="font-size:1rem;font-weight:700;">📅 '+fmtD(r.fecha)+' · '+esc(r.hora)+'</div>'
+      +'<span class="chip">'+r.duracion+' min</span>'
+      +'<span style="flex:1;color:var(--dim);min-width:120px;">'+esc(r.asunto)+'</span>'
+      +(S.completo?('<button class="btn btn-sm btn-ghost" onclick="cancelMeet(\''+r.id+'\')">✕ Cancelar</button>'):'')+'</div>'
+      +'<div style="font-size:.74rem;color:var(--dim);margin-top:4px;">👥 '+esc(nombres||'—')+'</div></div>';
+  });
+  cont.innerHTML=h;
+}
+window.openMeetModal=openMeetModal; window.saveMeet=saveMeet; window.cancelMeet=cancelMeet; window.openMisReuniones=openMisReuniones; window.renderMisReuniones=renderMisReuniones;
 
 // init
 boot();

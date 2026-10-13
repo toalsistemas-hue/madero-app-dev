@@ -132,6 +132,7 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
 <div id="app">
   <div class="topbar">
     <select class="inp board-sel" id="board-sel" onchange="selectBoard(this.value)"><option value="">Cargando…</option></select>
+    <button class="btn btn-sm" id="btn-refresh" onclick="refrescar()" title="Actualizar datos">🔄 Actualizar</button>
     <button class="btn btn-primary btn-sm" id="btn-new-board" onclick="openBoardModal()" style="display:none;">＋ Nuevo tablero</button>
     <span class="b-sub" id="b-sub"></span>
     <div class="main-tools" id="b-tools" style="margin-left:auto;"></div>
@@ -172,6 +173,8 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
 <div class="modal-bg" id="m-task">
   <div class="modal" style="width:640px;">
     <h3 id="m-task-ttl">Nueva tarea</h3>
+    <div id="tk-sgd-banner" style="display:none;background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.3);color:#c4b5fd;border-radius:8px;padding:8px 10px;font-size:.78rem;margin-bottom:10px;"></div>
+    <div id="tk-ro-banner" style="display:none;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.25);color:var(--dim);border-radius:8px;padding:8px 10px;font-size:.78rem;margin-bottom:10px;">👁 Solo lectura — esta tarea no está asignada a ti.</div>
     <div class="fld" id="tk-sgd-row">
       <label style="display:flex;align-items:center;gap:7px;cursor:pointer;"><input type="checkbox" id="tk-sgd-chk" onchange="tkToggleSGD()"> Desde SGD (ligar a una solicitud de documento)</label>
       <div id="tk-sgd-wrap" style="display:none;margin-top:6px;">
@@ -204,6 +207,11 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
       <label>Frecuencia</label>
       <select class="inp" id="tk-frec-tipo" onchange="tkFrecChange()"><option value="ninguna">Sin frecuencia</option><option value="dia">Diaria</option><option value="semana">Semanal</option><option value="mes">Mensual</option></select>
       <div id="tk-frec-dias" style="display:none;margin-top:6px;" class="chk-list"></div>
+      <div id="tk-frec-cat" style="display:none;margin-top:8px;">
+        <div style="font-size:.74rem;color:var(--dim);margin-bottom:4px;">Avance de cumplimiento:</div>
+        <label class="chk-item"><input type="radio" name="tk-catmode" value="manual" onchange="tkCatModeChange(false)"> Marcar categorías manualmente</label>
+        <label class="chk-item"><input type="radio" name="tk-catmode" value="auto" onchange="tkCatModeChange(true)"> No requiere marcar (se marcan solas)</label>
+      </div>
     </div>
     <div class="fld" id="tk-hito-row"><label>¿Es hito?</label><select class="inp" id="tk-hito"><option value="No">No</option><option value="Si">Sí</option></select></div>
     <div class="fld">
@@ -299,8 +307,20 @@ function onAuth(d){
   var correo=(u.correo||'').toLowerCase();
   S.user={ email:correo, nombre:u.nombre||correo||'Usuario', esAdmin:!!u.esAdmin };
   S.completo = (d && d.nivel==='completo') || !!u.esAdmin;   // acceso completo vs solo lectura
-  if(!S._loaded){ S._loaded=true; loadData().catch(function(e){ toast('Error al cargar datos: '+(e.message||e)); var bb=document.getElementById('b-body'); if(bb) bb.innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existen las listas PCAL_Tableros y PCAL_Tareas con sus columnas?</div>'; }); }
+  if(!S._loaded){
+    S._loaded=true;
+    loadData().catch(function(e){ toast('Error al cargar datos: '+(e.message||e)); var bb=document.getElementById('b-body'); if(bb) bb.innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existen las listas PCAL_Tableros y PCAL_Tareas con sus columnas?</div>'; });
+    // Auto-refresco: refleja cambios del líder u otros usuarios sin tener que recargar.
+    if(!S._autoT){ S._autoT=setInterval(function(){ if(S.user && !document.querySelector('.modal-bg.show')){ loadData().catch(function(){}); } }, 60000); }
+  }
 }
+// Botón Actualizar (con spinner breve)
+async function refrescar(){
+  var btn=document.getElementById('btn-refresh'); if(btn){ btn.disabled=true; btn.textContent='⏳'; }
+  try{ S.sgdCache=null; await loadData(); }catch(e){ toast('Error al actualizar'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='🔄 Actualizar'; } }
+}
+window.refrescar=refrescar;
 
 // ═══════════════ DATOS ═══════════════
 function _pj(s,def){ try{ return JSON.parse(s||''); }catch(e){ return def; } }
@@ -526,13 +546,18 @@ function pickColor(){ var c=['#58a6ff','#2ea043','#a855f7','#f59e0b','#ef4444','
 function openTaskModal(id){
   var b=curBoardObj(); if(!b){ toast('Selecciona un tablero'); return; }
   var t = id ? S.tasks.find(function(t){return t.id===id;}) : null;
-  if(t && !canEditTask(t)){ toast('No tienes permiso para editar esta tarea'); return; }
   if(!t && !S.completo){ toast('Solo un usuario con acceso completo puede crear tareas'); return; }
   S.editTask=t;
   var esNueva=!id;
-  var soloEstatus = !S.completo; // lector: solo estatus + categorías (check)
-  document.getElementById('m-task-ttl').textContent=id?'Editar tarea':'Nueva tarea';
-  document.getElementById('tk-del').style.display=(id && S.completo)?'inline-block':'none';
+  var full=S.completo;                       // acceso completo (líder)
+  var canEdit=full || (t && canEditTask(t)); // puede editar (líder, asignado, o compartido donde participa)
+  var soloVista=!!t && !canEdit;             // puede abrir pero no editar
+  var esInd=(b.tipo==='individual');
+  S._full=full; S._canEdit=canEdit;
+  document.getElementById('m-task-ttl').textContent=esNueva?'Nueva tarea':(soloVista?'Ver tarea':'Editar tarea');
+  document.getElementById('tk-del').style.display=(id && full)?'inline-block':'none';
+  document.getElementById('tk-save').style.display=canEdit?'inline-block':'none';
+  document.getElementById('tk-ro-banner').style.display=soloVista?'block':'none';
   document.getElementById('tk-nombre').value=t?t.nombre:'';
   document.getElementById('tk-desc').value=t?t.descripcion:'';
   document.getElementById('tk-estatus').value=t?t.estatus:'Sin iniciar';
@@ -542,29 +567,40 @@ function openTaskModal(id){
   document.getElementById('tk-fcomp').value=t?t.fCompromiso:'';
   document.getElementById('tk-fcomp-asig').value=t?t.fCompromisoAsig:'';
   document.getElementById('tk-hito').value=(t&&t.esHito)?'Si':'No';
-  // SGD
+  // Banner SGD (visible para todos si la tarea proviene del SGD)
   var isSGD=!!(t&&t.solicitudID);
+  var sgdBan=document.getElementById('tk-sgd-banner');
+  if(isSGD){ sgdBan.style.display='block'; sgdBan.innerHTML='📄 Esta tarea proviene de una <strong>solicitud del SGD</strong>.'; }
+  else sgdBan.style.display='none';
+  // Opción "Desde SGD" (solo al crear/editar con acceso completo)
   document.getElementById('tk-sgd-chk').checked=isSGD;
-  document.getElementById('tk-sgd-row').style.display=(S.completo)?'block':'none';
+  document.getElementById('tk-sgd-row').style.display=full?'block':'none';
   document.getElementById('tk-sgd-wrap').style.display=isSGD?'block':'none';
-  if(esNueva) S._sgdPick=null; else S._sgdPick = t&&t.solicitudID ? {id:t.solicitudID} : null;
+  S._sgdPick = (t&&t.solicitudID) ? {id:t.solicitudID} : null;
   tkToggleSGD(true);
-  // frecuencia
-  var fr=(t&&t.frecuencia)||{tipo:'ninguna',dias:[]};
+  // frecuencia (solo tableros individuales)
+  document.getElementById('tk-frec-row').style.display=esInd?'block':'none';
+  var fr=(t&&t.frecuencia)||{tipo:'ninguna',dias:[],catAuto:false};
+  S.catAuto=(fr.catAuto===true);
   document.getElementById('tk-frec-tipo').value=fr.tipo||'ninguna';
-  tkRenderFrecDias(fr.dias||[]); tkFrecChange(true);
+  tkRenderFrecDias(fr.dias||[]);
+  (document.querySelectorAll('input[name="tk-catmode"]')||[]).forEach(function(r){ r.checked=(r.value===(S.catAuto?'auto':'manual')); });
+  tkFrecChange();
   // asignados
   tkRenderAsignados(b, (t?t.asignados:[])||[], isSGD);
   // categorías
   S.catDraft = (t&&t.categorias?JSON.parse(JSON.stringify(t.categorias)):[]);
-  tkRenderCats(soloEstatus);
-  // permisos: para lector deshabilitar todo menos estatus y checks de categoría
-  ['tk-nombre','tk-desc','tk-prioridad','tk-ini','tk-fin','tk-fcomp','tk-hito','tk-frec-tipo','tk-sgd-chk','tk-sgd-sel'].forEach(function(cid){ var el=document.getElementById(cid); if(el) el.disabled=soloEstatus; });
-  document.getElementById('tk-cats-add').style.display=soloEstatus?'none':'inline-block';
-  document.querySelectorAll('.tk-asg-chk').forEach(function(c){ c.disabled=soloEstatus; });
-  document.querySelectorAll('#tk-frec-dias input').forEach(function(c){ c.disabled=soloEstatus; });
-  // fecha compromiso del asignado: la puede editar el asignado (o completo)
-  var puedeAsig = S.completo || (t && (t.asignados||[]).indexOf(S.user.email)>=0);
+  S._soloEstatus=(canEdit && !full);
+  tkRenderCats();
+  // Habilitar/deshabilitar según permisos
+  ['tk-nombre','tk-desc','tk-prioridad','tk-ini','tk-fin','tk-fcomp','tk-hito','tk-frec-tipo','tk-sgd-chk','tk-sgd-sel'].forEach(function(cid){ var el=document.getElementById(cid); if(el) el.disabled=!full; });
+  document.getElementById('tk-estatus').disabled=!canEdit;
+  document.getElementById('tk-cats-add').style.display=full?'inline-block':'none';
+  document.querySelectorAll('.tk-asg-chk').forEach(function(c){ c.disabled=!full; });
+  document.querySelectorAll('#tk-frec-dias input').forEach(function(c){ c.disabled=!full; });
+  document.querySelectorAll('input[name="tk-catmode"]').forEach(function(c){ c.disabled=!full; });
+  // fecha compromiso del asignado: la puede poner el asignado (o completo)
+  var puedeAsig = full || (t && (t.asignados||[]).indexOf(S.user.email)>=0);
   document.getElementById('tk-fcomp-asig').disabled=!puedeAsig;
   openModal('m-task');
 }
@@ -592,8 +628,10 @@ async function _loadSGD(){
   var selEl=document.getElementById('tk-sgd-sel');
   if(S.sgdCache){ _fillSGD(); return; }
   try{
+    var ESTOK={'Abierta':1,'Pendiente':1,'En proceso':1};
     var items=await listGet('SGD_Solicitudes');
-    S.sgdCache=items.map(function(i){ var f=i.fields||i; return { id:i.id, titulo:f.Title||f.Título||'(sin título)', codigo:f.Codigo_Documento||'', analista:f.Analista_Asignado||'', analistaCorreo:f.Analista_Correo||'', estatus:f.Estatus||'' }; });
+    S.sgdCache=items.map(function(i){ var f=i.fields||i; return { id:i.id, titulo:f.Title||f.Título||'(sin título)', codigo:f.Codigo_Documento||'', analista:f.Analista_Asignado||'', analistaCorreo:f.Analista_Correo||'', estatus:f.Estatus||'' }; })
+      .filter(function(s){ return ESTOK[s.estatus]===1; });   // solo Abierta / Pendiente / En proceso
     _fillSGD();
   }catch(e){ selEl.innerHTML='<option value="">No se pudieron cargar las solicitudes</option>'; }
 }
@@ -601,7 +639,7 @@ function _fillSGD(){
   var selEl=document.getElementById('tk-sgd-sel');
   var cur=(S._sgdPick&&S._sgdPick.id)||'';
   var h='<option value="">— Elige una solicitud —</option>';
-  (S.sgdCache||[]).forEach(function(s){ h+='<option value="'+s.id+'"'+(s.id===cur?' selected':'')+'>'+esc((s.codigo?('['+s.codigo+'] '):'')+s.titulo)+'</option>'; });
+  (S.sgdCache||[]).forEach(function(s){ h+='<option value="'+s.id+'"'+(s.id===cur?' selected':'')+'>'+esc((s.codigo?('['+s.codigo+'] '):'')+s.titulo+(s.estatus?('  ·  '+s.estatus):''))+'</option>'; });
   selEl.innerHTML=h;
   tkPickSGD(true);
 }
@@ -612,11 +650,21 @@ function tkPickSGD(noName){
   S._sgdPick = s?{id:s.id}:null;
   if(!s){ info.textContent=''; return; }
   if(!noName){ document.getElementById('tk-nombre').value = (s.codigo?(s.codigo+' — '):'')+s.titulo; }
-  info.innerHTML = s.analista ? ('Analista actual en SGD: <strong>'+esc(s.analista)+'</strong> — al guardar se reemplazará por el asignado.') : 'Sin analista asignado en SGD. Al guardar se asignará el analista elegido.';
+  var est = s.estatus?('<span class="chip" style="color:#58a6ff;">Estatus SGD: '+esc(s.estatus)+'</span> '):'';
+  info.innerHTML = est + (s.analista ? ('· Analista actual: <strong>'+esc(s.analista)+'</strong> (se reemplazará al guardar).') : '· Sin analista; se asignará el elegido.');
+  // reflejar estatus también en el banner
+  var sgdBan=document.getElementById('tk-sgd-banner');
+  if(sgdBan){ sgdBan.style.display='block'; sgdBan.innerHTML='📄 Tarea ligada a solicitud del SGD'+(s.estatus?(' · Estatus: <strong>'+esc(s.estatus)+'</strong>'):'')+'.'; }
 }
 function tkFrecChange(init){
   var tipo=document.getElementById('tk-frec-tipo').value;
   document.getElementById('tk-frec-dias').style.display=(tipo==='semana')?'flex':'none';
+  document.getElementById('tk-frec-cat').style.display=(tipo!=='ninguna')?'block':'none';
+}
+function tkCatModeChange(auto){
+  S.catAuto=!!auto;
+  if(auto){ S.catDraft.forEach(function(c){ c.hecho=true; }); }
+  tkRenderCats();
 }
 function tkRenderFrecDias(dias){
   var el=document.getElementById('tk-frec-dias'); el.innerHTML='';
@@ -627,25 +675,26 @@ function tkRenderFrecDias(dias){
   });
 }
 function _catRemaining(){ var s=0; S.catDraft.forEach(function(c){ s+=(parseInt(c.pct)||0); }); return 100-s; }
-function tkRenderCats(soloCheck){
+function tkRenderCats(){
+  var full=S._full, canEdit=S._canEdit, auto=S.catAuto;
   var cont=document.getElementById('tk-cats'); cont.innerHTML='';
-  if(!S.catDraft.length){ cont.innerHTML='<div style="color:var(--muted);font-size:.76rem;">Sin categorías. '+(soloCheck?'':'Agrega categorías para medir el avance.')+'</div>'; }
+  if(!S.catDraft.length){ cont.innerHTML='<div style="color:var(--muted);font-size:.76rem;">Sin categorías.'+(full?' Agrega categorías para medir el avance.':'')+'</div>'; tkCatsRem(); return; }
+  var checkDis = auto || !canEdit;   // checkbox 'hecho' deshabilitado si es automático o no puede editar
   S.catDraft.forEach(function(c,idx){
     var row=document.createElement('div'); row.className='part-row'; row.style.alignItems='center';
-    if(soloCheck){
-      row.innerHTML='<label class="chk-item" style="flex:1;"><input type="checkbox" class="tk-cat-done" data-i="'+idx+'" '+(c.hecho?'checked':'')+' onchange="tkCatToggle('+idx+',this.checked)"> '+esc(c.nombre)+' <span style="color:var(--dim);margin-left:4px;">('+(parseInt(c.pct)||0)+'%)</span></label>';
-    } else {
+    if(full){
       row.innerHTML='<input class="inp tk-cat-nm" placeholder="Categoría" value="'+(c.nombre||'').replace(/"/g,'&quot;')+'" oninput="S.catDraft['+idx+'].nombre=this.value" style="flex:1;">'
         +'<input type="number" class="inp tk-cat-pct" min="0" max="100" value="'+(parseInt(c.pct)||0)+'" oninput="S.catDraft['+idx+'].pct=parseInt(this.value)||0;tkCatsRem();" style="width:80px;">'
         +'<span style="font-size:.72rem;color:var(--dim);">%</span>'
-        +'<label class="chk-item" title="Marcar como realizada"><input type="checkbox" '+(c.hecho?'checked':'')+' onchange="S.catDraft['+idx+'].hecho=this.checked;tkCatsRem();"> hecho</label>'
-        +'<button class="btn btn-sm btn-ghost" onclick="S.catDraft.splice('+idx+',1);tkRenderCats(false);">✕</button>';
+        +'<label class="chk-item" title="Marcar como realizada"><input type="checkbox" '+(c.hecho?'checked':'')+(checkDis?' disabled':'')+' onchange="S.catDraft['+idx+'].hecho=this.checked;tkCatsRem();"> hecho</label>'
+        +'<button class="btn btn-sm btn-ghost" onclick="S.catDraft.splice('+idx+',1);tkRenderCats();">✕</button>';
+    } else {
+      row.innerHTML='<label class="chk-item" style="flex:1;"><input type="checkbox" '+(c.hecho?'checked':'')+(checkDis?' disabled':'')+' onchange="S.catDraft['+idx+'].hecho=this.checked;tkCatsRem();"> '+esc(c.nombre)+' <span style="color:var(--dim);margin-left:4px;">('+(parseInt(c.pct)||0)+'%)</span></label>';
     }
     cont.appendChild(row);
   });
   tkCatsRem();
 }
-function tkCatToggle(idx,val){ S.catDraft[idx].hecho=val; tkCatsRem(); }
 function tkCatsRem(){
   var rem=_catRemaining();
   var remEl=document.getElementById('tk-cats-rem');
@@ -653,10 +702,11 @@ function tkCatsRem(){
   var prog=0; S.catDraft.forEach(function(c){ if(c.hecho) prog+=(parseInt(c.pct)||0); });
   var pv=document.getElementById('tk-prog-view'); if(pv){ pv.textContent=Math.min(100,prog)+'%'; pv.style.color=semColorSolid(prog); }
 }
-function tkAddCat(){ S.catDraft.push({nombre:'',pct:_catRemaining()>0?_catRemaining():0,hecho:false}); tkRenderCats(false); }
+function tkAddCat(){ S.catDraft.push({nombre:'',pct:_catRemaining()>0?_catRemaining():0,hecho:!!S.catAuto}); tkRenderCats(); }
 
 async function saveTask(){
   var b=curBoardObj(); if(!b) return;
+  if(S.editTask && !S._canEdit){ toast('No tienes permiso para editar esta tarea'); return; }
   var soloEstatus=!S.completo;
   var nombre=document.getElementById('tk-nombre').value.trim();
   if(!nombre){ toast('Escribe el nombre de la tarea'); return; }
@@ -664,10 +714,15 @@ async function saveTask(){
   var asg=[]; document.querySelectorAll('.tk-asg-chk').forEach(function(c){ if(c.checked) asg.push(c.value); });
   var isSGD=document.getElementById('tk-sgd-chk').checked;
   if(isSGD && asg.length>1) asg=[asg[0]];
-  // frecuencia
-  var ftipo=document.getElementById('tk-frec-tipo').value, fdias=[];
-  document.querySelectorAll('.tk-frec-dia').forEach(function(c){ if(c.checked) fdias.push(parseInt(c.value)); });
-  var frec={tipo:ftipo, dias:(ftipo==='semana'?fdias:[])};
+  // frecuencia (solo tableros individuales)
+  var frec={tipo:'ninguna', dias:[], catAuto:false};
+  if(b.tipo==='individual'){
+    var ftipo=document.getElementById('tk-frec-tipo').value, fdias=[];
+    document.querySelectorAll('.tk-frec-dia').forEach(function(c){ if(c.checked) fdias.push(parseInt(c.value)); });
+    frec={tipo:ftipo, dias:(ftipo==='semana'?fdias:[]), catAuto:(ftipo!=='ninguna' && !!S.catAuto)};
+  }
+  // si es automático, marcar todas las categorías como hechas
+  if(frec.catAuto){ (S.catDraft||[]).forEach(function(c){ c.hecho=true; }); }
   // progreso desde categorías
   var prog=0; (S.catDraft||[]).forEach(function(c){ if(c.hecho) prog+=(parseInt(c.pct)||0); }); prog=Math.min(100,prog);
   var ini=document.getElementById('tk-ini').value, fin=document.getElementById('tk-fin').value;
@@ -703,7 +758,7 @@ async function deleteTask(){
   try{ await listDelete(L_TAREAS,S.editTask.id); closeModal('m-task'); await loadData(); toast('Tarea eliminada'); }
   catch(e){ toast('Error: '+(e.message||e)); }
 }
-window.tkToggleSGD=tkToggleSGD; window.tkPickSGD=tkPickSGD; window.tkFrecChange=tkFrecChange; window.tkAddCat=tkAddCat; window.tkCatToggle=tkCatToggle; window.tkCatsRem=tkCatsRem; window.tkRenderCats=tkRenderCats;
+window.tkToggleSGD=tkToggleSGD; window.tkPickSGD=tkPickSGD; window.tkFrecChange=tkFrecChange; window.tkAddCat=tkAddCat; window.tkCatModeChange=tkCatModeChange; window.tkCatsRem=tkCatsRem; window.tkRenderCats=tkRenderCats;
 
 // ═══════════════ UTILES ═══════════════
 function openModal(id){ document.getElementById(id).classList.add('show'); }

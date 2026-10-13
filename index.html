@@ -3334,6 +3334,8 @@ function navigateToPantalla(pantallaID) {
         pcalIfrm.style.display = 'block';
         setTimeout(function() {
           if (pcalIfrm && pcalIfrm.contentWindow) {
+            var nivelPcal = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas['PlaneacionCalidad'] || '') : '';
+            if (state.currentUser && state.currentUser.esAdmin) nivelPcal = 'completo';
             pcalIfrm.contentWindow.postMessage({
               type: 'SGD_AUTH',
               user: {
@@ -3343,6 +3345,7 @@ function navigateToPantalla(pantallaID) {
                 puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
                 esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
               },
+              nivel: nivelPcal,
               isDemoMode: state.isDemoMode || false
             }, '*');
           }
@@ -6560,6 +6563,26 @@ window.addEventListener('message', function (e) {
         esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
       },
       nivel: nivelCd,
+      isDemoMode: state.isDemoMode || false
+    }, '*');
+  } catch (_) {}
+});
+
+window.addEventListener('message', function (e) {
+  if (!e.data || e.data.type !== 'PCAL_READY') return;
+  try {
+    var nivelPc = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas['PlaneacionCalidad'] || '') : '';
+    if (state.currentUser && state.currentUser.esAdmin) nivelPc = 'completo';
+    if (e.source) e.source.postMessage({
+      type: 'SGD_AUTH',
+      user: {
+        nombre: state.currentUser ? state.currentUser.nombre : '',
+        correo: state.currentUser ? (state.currentUser.email || '') : '',
+        puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+        puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+        esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+      },
+      nivel: nivelPc,
       isDemoMode: state.isDemoMode || false
     }, '*');
   } catch (_) {}

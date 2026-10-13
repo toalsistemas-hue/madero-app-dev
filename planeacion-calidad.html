@@ -132,7 +132,7 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
 <div id="app">
   <div class="topbar">
     <select class="inp board-sel" id="board-sel" onchange="selectBoard(this.value)"><option value="">Cargando…</option></select>
-    <button class="btn btn-primary btn-sm" onclick="openBoardModal()">＋ Nuevo tablero</button>
+    <button class="btn btn-primary btn-sm" id="btn-new-board" onclick="openBoardModal()" style="display:none;">＋ Nuevo tablero</button>
     <span class="b-sub" id="b-sub"></span>
     <div class="main-tools" id="b-tools" style="margin-left:auto;"></div>
   </div>
@@ -170,8 +170,15 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
 
 <!-- Modal Tarea -->
 <div class="modal-bg" id="m-task">
-  <div class="modal">
+  <div class="modal" style="width:640px;">
     <h3 id="m-task-ttl">Nueva tarea</h3>
+    <div class="fld" id="tk-sgd-row">
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;"><input type="checkbox" id="tk-sgd-chk" onchange="tkToggleSGD()"> Desde SGD (ligar a una solicitud de documento)</label>
+      <div id="tk-sgd-wrap" style="display:none;margin-top:6px;">
+        <select class="inp" id="tk-sgd-sel" style="width:100%;" onchange="tkPickSGD()"><option value="">Cargando solicitudes…</option></select>
+        <div id="tk-sgd-info" style="font-size:.72rem;color:var(--dim);margin-top:4px;"></div>
+      </div>
+    </div>
     <div class="fld"><label>Nombre de la tarea</label><input class="inp" id="tk-nombre"></div>
     <div class="fld"><label>Descripción</label><textarea class="inp" id="tk-desc"></textarea></div>
     <div class="row2">
@@ -184,15 +191,27 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
         <select class="inp" id="tk-prioridad"><option>Alta</option><option selected>Media</option><option>Baja</option></select>
       </div>
     </div>
+    <div class="fld"><label id="tk-asg-lbl">Asignados</label><div class="chk-list" id="tk-asg"></div></div>
     <div class="row2">
       <div class="fld"><label>Fecha inicio</label><input type="date" class="inp" id="tk-ini"></div>
       <div class="fld"><label>Fecha entrega / fin</label><input type="date" class="inp" id="tk-fin"></div>
     </div>
     <div class="row2">
-      <div class="fld"><label>Progreso (%)</label><input type="number" class="inp" id="tk-prog" min="0" max="100" value="0"></div>
-      <div class="fld"><label>¿Es hito?</label><select class="inp" id="tk-hito"><option value="No">No</option><option value="Si">Sí</option></select></div>
+      <div class="fld"><label>📌 Fecha compromiso (asigna el líder)</label><input type="date" class="inp" id="tk-fcomp"></div>
+      <div class="fld"><label>✍ Fecha compromiso (tú, asignado)</label><input type="date" class="inp" id="tk-fcomp-asig"></div>
     </div>
-    <div class="fld"><label>Asignados</label><div class="chk-list" id="tk-asg"></div></div>
+    <div class="fld" id="tk-frec-row">
+      <label>Frecuencia</label>
+      <select class="inp" id="tk-frec-tipo" onchange="tkFrecChange()"><option value="ninguna">Sin frecuencia</option><option value="dia">Diaria</option><option value="semana">Semanal</option><option value="mes">Mensual</option></select>
+      <div id="tk-frec-dias" style="display:none;margin-top:6px;" class="chk-list"></div>
+    </div>
+    <div class="fld" id="tk-hito-row"><label>¿Es hito?</label><select class="inp" id="tk-hito"><option value="No">No</option><option value="Si">Sí</option></select></div>
+    <div class="fld">
+      <label>Progreso por categorías <span id="tk-cats-rem" style="color:var(--yellow);font-weight:400;"></span></label>
+      <div id="tk-cats"></div>
+      <button class="btn btn-sm" id="tk-cats-add" onclick="tkAddCat()" style="margin-top:6px;">＋ Agregar categoría</button>
+      <div style="margin-top:8px;font-size:.8rem;">Avance: <strong id="tk-prog-view" style="color:var(--green-l);">0%</strong></div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-danger" id="tk-del" onclick="deleteTask()" style="display:none;">🗑 Eliminar</button>
       <div style="display:flex;gap:8px;margin-left:auto;">
@@ -211,7 +230,29 @@ var L_TABLEROS='PCAL_Tableros', L_TAREAS='PCAL_Tareas';
 var ESTATUS=['Sin iniciar','En proceso','En revisión','Bloqueada','Completada'];
 var ST_COLOR={'Sin iniciar':'#6e7681','En proceso':'#58a6ff','En revisión':'#a855f7','Bloqueada':'#ef4444','Completada':'#2ea043'};
 
-var S = { user:null, boards:[], tasks:[], curBoard:null, soloMias:false, editBoard:null, editTask:null, _loaded:false };
+var S = { user:null, completo:false, boards:[], tasks:[], curBoard:null, soloMias:false, editBoard:null, editTask:null, _loaded:false, catDraft:[], sgdCache:null };
+var FREQ_DIAS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+// ¿El usuario puede editar esta tarea? Completo siempre; lector solo si es su tarea
+// (asignado) o es un tablero compartido donde participa.
+function canEditTask(t){
+  if(S.completo) return true;
+  if(!t||!S.user) return false;
+  if((t.asignados||[]).indexOf(S.user.email)>=0) return true;
+  var b=S.boards.find(function(x){return x.id===t.tableroID;});
+  if(b && b.tipo==='compartido' && (b.participantes||[]).some(function(p){return p.correo===S.user.email;})) return true;
+  return false;
+}
+// Avance (%) calculado a partir de las categorías marcadas (hecho). Si no hay
+// categorías, usa el progreso guardado.
+function calcProgreso(t){
+  var cats=(t&&t.categorias)||[];
+  if(!cats.length) return t?(t.progreso||0):0;
+  var s=0; cats.forEach(function(c){ if(c.hecho) s+=(parseInt(c.pct)||0); });
+  return Math.min(100,s);
+}
+// Semáforo de avance con tonos suaves (para la barra del Gantt).
+function semColor(pct){ if(pct>=100) return '#bbf7d0'; if(pct>=67) return '#bfdbfe'; if(pct>=34) return '#fde68a'; if(pct>0) return '#fecaca'; return '#334155'; }
+function semColorSolid(pct){ if(pct>=100) return '#4ade80'; if(pct>=67) return '#60a5fa'; if(pct>=34) return '#facc15'; if(pct>0) return '#f87171'; return '#6e7681'; }
 
 // ═══════════════ BRIDGE con el portal (index.html) ═══════════════
 // La pantalla va embebida en un iframe. No tiene login propio: usa la sesión del
@@ -248,15 +289,16 @@ function boot(){
     return;
   }
   // Solicitar la sesión al portal (reintenta por si el padre aún no está listo)
-  par.postMessage({ type:'SGD_READY' }, '*');
-  setTimeout(function(){ if(!S.user){ par.postMessage({ type:'SGD_READY' }, '*'); } }, 1200);
-  setTimeout(function(){ if(!S.user){ par.postMessage({ type:'SGD_READY' }, '*'); } }, 3000);
+  par.postMessage({ type:'PCAL_READY' }, '*');
+  setTimeout(function(){ if(!S.user){ par.postMessage({ type:'PCAL_READY' }, '*'); } }, 1200);
+  setTimeout(function(){ if(!S.user){ par.postMessage({ type:'PCAL_READY' }, '*'); } }, 3000);
 }
 function onAuth(d){
   var u=(d&&d.user)||{};
   if(d && d.isDemoMode){ document.getElementById('b-body').innerHTML='<div class="empty">No disponible en modo demo (sin sesión real de Microsoft).</div>'; return; }
   var correo=(u.correo||'').toLowerCase();
   S.user={ email:correo, nombre:u.nombre||correo||'Usuario', esAdmin:!!u.esAdmin };
+  S.completo = (d && d.nivel==='completo') || !!u.esAdmin;   // acceso completo vs solo lectura
   if(!S._loaded){ S._loaded=true; loadData().catch(function(e){ toast('Error al cargar datos: '+(e.message||e)); var bb=document.getElementById('b-body'); if(bb) bb.innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existen las listas PCAL_Tableros y PCAL_Tareas con sus columnas?</div>'; }); }
 }
 
@@ -275,7 +317,9 @@ async function loadData(){
     id:i.id, nombre:f.Title||'(sin nombre)', tableroID:f.PcTableroID||'', descripcion:f.PcDescripcion||'',
     asignados:_pj(f.PcAsignados,[]), estatus:f.PcEstatus||'Sin iniciar', prioridad:f.PcPrioridad||'Media',
     ini:_iso(f.PcFechaInicio), fin:_iso(f.PcFechaFin), progreso:parseInt(f.PcProgreso||0)||0,
-    dependencias:_pj(f.PcDependencias,[]), esHito:(f.PcEsHito==='Si'||f.PcEsHito===true), etiquetas:f.PcEtiquetas||'', orden:f.PcOrden||0
+    dependencias:_pj(f.PcDependencias,[]), esHito:(f.PcEsHito==='Si'||f.PcEsHito===true), etiquetas:f.PcEtiquetas||'', orden:f.PcOrden||0,
+    categorias:_pj(f.PcCategorias,[]), frecuencia:_pj(f.PcFrecuencia,null), solicitudID:f.PcSolicitudID||'',
+    fCompromiso:_iso(f.PcFechaCompromiso), fCompromisoAsig:_iso(f.PcFechaCompromisoAsig)
   }; });
   if(S.curBoard && !S.boards.find(function(b){return b.id===S.curBoard;})) S.curBoard=null;
   if(!S.curBoard && S.boards.length) S.curBoard=S.boards[0].id;
@@ -307,11 +351,12 @@ function renderBoard(){
   var b=curBoardObj();
   var sub=document.getElementById('b-sub'), tools=document.getElementById('b-tools'), body=document.getElementById('b-body');
   if(!b){ sub.textContent=''; tools.innerHTML=''; body.innerHTML='<div class="empty">Crea o selecciona un tablero para comenzar.</div>'; return; }
+  var nb=document.getElementById('btn-new-board'); if(nb) nb.style.display=S.completo?'inline-block':'none';
   sub.innerHTML='<span class="chip">'+_tipoLbl(b.tipo)+'</span> '+(b.participantes.length)+' participante(s)';
   tools.innerHTML=''
     +'<label style="font-size:.74rem;color:var(--dim);display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" '+(S.soloMias?'checked':'')+' onchange="S.soloMias=this.checked;renderBoard();"> Solo mis tareas</label>'
-    +'<button class="btn btn-sm" onclick="openBoardModal(\''+b.id+'\')">⚙ Editar tablero</button>'
-    +'<button class="btn btn-sm btn-primary" onclick="openTaskModal()">＋ Nueva tarea</button>';
+    +(S.completo?('<button class="btn btn-sm" onclick="openBoardModal(\''+b.id+'\')">⚙ Editar tablero</button>'
+    +'<button class="btn btn-sm btn-primary" onclick="openTaskModal()">＋ Nueva tarea</button>'):'');
   if(b.tipo==='compartido') renderKanban(body,b);
   else if(b.tipo==='individual') renderIndividual(body,b);
   else renderGantt(body,b);
@@ -336,16 +381,26 @@ function taskCard(t){
   h+='<span class="tag prio-'+t.prioridad+'">'+t.prioridad+'</span>';
   (t.asignados||[]).slice(0,3).forEach(function(a){ h+='<span class="asg">👤 '+esc(nameOf(a))+'</span>'; });
   if(t.fin){ h+='<span class="'+dateCls(t)+'">📅 '+fmtD(t.fin)+'</span>'; }
+  if(t.solicitudID){ h+='<span class="tag" style="background:rgba(168,85,247,.15);color:#c4b5fd;">SGD</span>'; }
   h+='</div>';
-  if(t.progreso>0){ h+='<div class="progbar"><div style="width:'+t.progreso+'%;background:'+ST_COLOR[t.estatus]+'"></div></div>'; }
+  var _p=calcProgreso(t);
+  if(_p>0){ h+='<div class="progbar"><div style="width:'+_p+'%;background:'+semColorSolid(_p)+'"></div></div>'; }
   h+='</div>';
   return h;
+}
+function freqLabel(t){
+  var f=t&&t.frecuencia; if(!f||!f.tipo||f.tipo==='ninguna') return '';
+  if(f.tipo==='dia') return '🔁 Diaria';
+  if(f.tipo==='mes') return '🔁 Mensual';
+  if(f.tipo==='semana'){ var ds=(f.dias||[]).map(function(i){return FREQ_DIAS[i];}).join(', '); return '🔁 Semanal'+(ds?(' ('+ds+')'):''); }
+  return '';
 }
 
 // ---- Individual ----
 function renderIndividual(body,b){
   var ts=boardTasks();
   var parts=b.participantes.length?b.participantes:[{nombre:'Sin asignar',correo:''}];
+  if(S.soloMias){ parts=parts.filter(function(p){return p.correo===S.user.email;}); }
   var h='';
   parts.forEach(function(p){
     var mine=ts.filter(function(t){return (t.asignados||[]).indexOf(p.correo)>=0;})
@@ -355,18 +410,20 @@ function renderIndividual(body,b){
     if(!mine.length){ h+='<div style="padding:10px 14px;color:var(--muted);font-size:.8rem;">Sin tareas.</div>'; }
     mine.forEach(function(t){
       var periodo = (t.ini&&t.fin)?(fmtD(t.ini)+' → '+fmtD(t.fin)):(t.fin?('Entrega '+fmtD(t.fin)):'Sin fecha');
+      var fl=freqLabel(t);
       h+='<div class="itask" onclick="openTaskModal(\''+t.id+'\')">'
         +'<span class="st-dot" style="background:'+ST_COLOR[t.estatus]+'"></span>'
-        +'<span class="i-nm">'+(t.esHito?'◆ ':'')+esc(t.nombre)+'</span>'
+        +'<span class="i-nm">'+(t.esHito?'◆ ':'')+esc(t.nombre)+(t.solicitudID?' <span class="tag" style="background:rgba(168,85,247,.15);color:#c4b5fd;">SGD</span>':'')+'</span>'
         +'<span class="tag prio-'+t.prioridad+'">'+t.prioridad+'</span>'
+        +(fl?'<span class="t-date" style="color:#93c5fd;">'+fl+'</span>':'')
         +'<span class="'+dateCls(t)+'">📅 '+periodo+'</span>'
         +'<span class="chip" style="color:'+ST_COLOR[t.estatus]+'">'+t.estatus+'</span>'
-        +'<span class="t-date">'+t.progreso+'%</span></div>';
+        +'<span class="t-date">'+calcProgreso(t)+'%</span></div>';
     });
     h+='</div>';
   });
-  // Tareas sin asignar
-  var sinAsg=ts.filter(function(t){return !(t.asignados&&t.asignados.length);});
+  // Tareas sin asignar (no se muestran en "Solo mis tareas")
+  var sinAsg=S.soloMias?[]:ts.filter(function(t){return !(t.asignados&&t.asignados.length);});
   if(sinAsg.length){
     h+='<div class="person-sec"><div class="person-hd">📭 Sin asignar <span class="chip">'+sinAsg.length+'</span></div>';
     sinAsg.forEach(function(t){ h+='<div class="itask" onclick="openTaskModal(\''+t.id+'\')"><span class="st-dot" style="background:'+ST_COLOR[t.estatus]+'"></span><span class="i-nm">'+esc(t.nombre)+'</span><span class="'+dateCls(t)+'">📅 '+(t.fin?fmtD(t.fin):'Sin fecha')+'</span></div>'; });
@@ -403,13 +460,14 @@ function renderGantt(body,b){
     var s=t.ini||t.fin, e=t.fin||t.ini;
     var x=xOf(s), w=Math.max(pxDay, xOf(e)-xOf(s)+pxDay);
     var asg=(t.asignados||[]).map(nameOf).join(', ');
-    rows+='<div class="g-row"><div class="g-label"><div>'+esc(t.nombre)+'</div><div class="g-asg">'+esc(asg||'—')+' · '+t.progreso+'%</div></div>';
+    var _p=calcProgreso(t);
+    rows+='<div class="g-row"><div class="g-label"><div>'+esc(t.nombre)+'</div><div class="g-asg">'+esc(asg||'—')+' · '+_p+'%</div></div>';
     rows+='<div class="g-track" style="width:'+trackW+'px" onclick="openTaskModal(\''+t.id+'\')">';
-    if(t.esHito){ rows+='<div class="g-milestone" style="left:'+x+'px;background:'+ST_COLOR[t.estatus]+'" title="'+esc(t.nombre)+'"></div>'; }
+    if(t.esHito){ rows+='<div class="g-milestone" style="left:'+x+'px;background:'+semColorSolid(_p)+'" title="'+esc(t.nombre)+'"></div>'; }
     else {
-      rows+='<div class="g-bar" style="left:'+x+'px;width:'+w+'px;background:'+ST_COLOR[t.estatus]+'" title="'+esc(t.nombre)+'">'
-        +'<div style="position:absolute;left:0;top:0;bottom:0;background:rgba(255,255,255,.25);width:'+(t.progreso)+'%"></div>'
-        +'<span style="position:relative;">'+t.progreso+'%</span></div>';
+      rows+='<div class="g-bar" style="left:'+x+'px;width:'+w+'px;background:'+semColor(_p)+';color:#0b1220;" title="'+esc(t.nombre)+'">'
+        +'<div style="position:absolute;left:0;top:0;bottom:0;background:'+semColorSolid(_p)+';opacity:.45;width:'+_p+'%"></div>'
+        +'<span style="position:relative;">'+_p+'%</span></div>';
     }
     rows+='</div></div>';
   });
@@ -467,52 +525,185 @@ function pickColor(){ var c=['#58a6ff','#2ea043','#a855f7','#f59e0b','#ef4444','
 // ═══════════════ MODAL TAREA ═══════════════
 function openTaskModal(id){
   var b=curBoardObj(); if(!b){ toast('Selecciona un tablero'); return; }
-  S.editTask = id ? S.tasks.find(function(t){return t.id===id;}) : null;
-  var t=S.editTask;
+  var t = id ? S.tasks.find(function(t){return t.id===id;}) : null;
+  if(t && !canEditTask(t)){ toast('No tienes permiso para editar esta tarea'); return; }
+  if(!t && !S.completo){ toast('Solo un usuario con acceso completo puede crear tareas'); return; }
+  S.editTask=t;
+  var esNueva=!id;
+  var soloEstatus = !S.completo; // lector: solo estatus + categorías (check)
   document.getElementById('m-task-ttl').textContent=id?'Editar tarea':'Nueva tarea';
-  document.getElementById('tk-del').style.display=id?'inline-block':'none';
+  document.getElementById('tk-del').style.display=(id && S.completo)?'inline-block':'none';
   document.getElementById('tk-nombre').value=t?t.nombre:'';
   document.getElementById('tk-desc').value=t?t.descripcion:'';
   document.getElementById('tk-estatus').value=t?t.estatus:'Sin iniciar';
   document.getElementById('tk-prioridad').value=t?t.prioridad:'Media';
   document.getElementById('tk-ini').value=t?t.ini:'';
   document.getElementById('tk-fin').value=t?t.fin:'';
-  document.getElementById('tk-prog').value=t?t.progreso:0;
+  document.getElementById('tk-fcomp').value=t?t.fCompromiso:'';
+  document.getElementById('tk-fcomp-asig').value=t?t.fCompromisoAsig:'';
   document.getElementById('tk-hito').value=(t&&t.esHito)?'Si':'No';
+  // SGD
+  var isSGD=!!(t&&t.solicitudID);
+  document.getElementById('tk-sgd-chk').checked=isSGD;
+  document.getElementById('tk-sgd-row').style.display=(S.completo)?'block':'none';
+  document.getElementById('tk-sgd-wrap').style.display=isSGD?'block':'none';
+  if(esNueva) S._sgdPick=null; else S._sgdPick = t&&t.solicitudID ? {id:t.solicitudID} : null;
+  tkToggleSGD(true);
+  // frecuencia
+  var fr=(t&&t.frecuencia)||{tipo:'ninguna',dias:[]};
+  document.getElementById('tk-frec-tipo').value=fr.tipo||'ninguna';
+  tkRenderFrecDias(fr.dias||[]); tkFrecChange(true);
   // asignados
-  var asg=document.getElementById('tk-asg'); asg.innerHTML='';
-  var sel=(t?t.asignados:[])||[];
-  (b.participantes||[]).forEach(function(p){
-    var lab=document.createElement('label'); lab.className='chk-item';
-    lab.innerHTML='<input type="checkbox" class="tk-asg-chk" value="'+(p.correo||'').replace(/"/g,'&quot;')+'" '+(sel.indexOf(p.correo)>=0?'checked':'')+'> '+esc(p.nombre);
-    asg.appendChild(lab);
-  });
-  if(!(b.participantes||[]).length) asg.innerHTML='<span style="color:var(--muted);font-size:.78rem;">Agrega participantes al tablero (⚙ Editar tablero) para poder asignar.</span>';
+  tkRenderAsignados(b, (t?t.asignados:[])||[], isSGD);
+  // categorías
+  S.catDraft = (t&&t.categorias?JSON.parse(JSON.stringify(t.categorias)):[]);
+  tkRenderCats(soloEstatus);
+  // permisos: para lector deshabilitar todo menos estatus y checks de categoría
+  ['tk-nombre','tk-desc','tk-prioridad','tk-ini','tk-fin','tk-fcomp','tk-hito','tk-frec-tipo','tk-sgd-chk','tk-sgd-sel'].forEach(function(cid){ var el=document.getElementById(cid); if(el) el.disabled=soloEstatus; });
+  document.getElementById('tk-cats-add').style.display=soloEstatus?'none':'inline-block';
+  document.querySelectorAll('.tk-asg-chk').forEach(function(c){ c.disabled=soloEstatus; });
+  document.querySelectorAll('#tk-frec-dias input').forEach(function(c){ c.disabled=soloEstatus; });
+  // fecha compromiso del asignado: la puede editar el asignado (o completo)
+  var puedeAsig = S.completo || (t && (t.asignados||[]).indexOf(S.user.email)>=0);
+  document.getElementById('tk-fcomp-asig').disabled=!puedeAsig;
   openModal('m-task');
 }
+function tkRenderAsignados(b, sel, isSGD){
+  var asg=document.getElementById('tk-asg'); asg.innerHTML='';
+  document.getElementById('tk-asg-lbl').textContent=isSGD?'Asignado (analista) — solo uno':'Asignados';
+  if(!(b.participantes||[]).length){ asg.innerHTML='<span style="color:var(--muted);font-size:.78rem;">Agrega participantes al tablero (⚙ Editar tablero) para poder asignar.</span>'; return; }
+  (b.participantes||[]).forEach(function(p){
+    var lab=document.createElement('label'); lab.className='chk-item';
+    var tipo=isSGD?'radio':'checkbox';
+    lab.innerHTML='<input type="'+tipo+'" name="tk-asg-grp" class="tk-asg-chk" value="'+(p.correo||'').replace(/"/g,'&quot;')+'" '+(sel.indexOf(p.correo)>=0?'checked':'')+'> '+esc(p.nombre);
+    asg.appendChild(lab);
+  });
+}
+function tkToggleSGD(skipClear){
+  var on=document.getElementById('tk-sgd-chk').checked;
+  document.getElementById('tk-sgd-wrap').style.display=on?'block':'none';
+  var b=curBoardObj();
+  // re-render asignados en modo single/multi
+  var sel=[]; document.querySelectorAll('.tk-asg-chk').forEach(function(c){ if(c.checked) sel.push(c.value); });
+  if(b) tkRenderAsignados(b, sel, on);
+  if(on){ _loadSGD(); }
+}
+async function _loadSGD(){
+  var selEl=document.getElementById('tk-sgd-sel');
+  if(S.sgdCache){ _fillSGD(); return; }
+  try{
+    var items=await listGet('SGD_Solicitudes');
+    S.sgdCache=items.map(function(i){ var f=i.fields||i; return { id:i.id, titulo:f.Title||f.Título||'(sin título)', codigo:f.Codigo_Documento||'', analista:f.Analista_Asignado||'', analistaCorreo:f.Analista_Correo||'', estatus:f.Estatus||'' }; });
+    _fillSGD();
+  }catch(e){ selEl.innerHTML='<option value="">No se pudieron cargar las solicitudes</option>'; }
+}
+function _fillSGD(){
+  var selEl=document.getElementById('tk-sgd-sel');
+  var cur=(S._sgdPick&&S._sgdPick.id)||'';
+  var h='<option value="">— Elige una solicitud —</option>';
+  (S.sgdCache||[]).forEach(function(s){ h+='<option value="'+s.id+'"'+(s.id===cur?' selected':'')+'>'+esc((s.codigo?('['+s.codigo+'] '):'')+s.titulo)+'</option>'; });
+  selEl.innerHTML=h;
+  tkPickSGD(true);
+}
+function tkPickSGD(noName){
+  var id=document.getElementById('tk-sgd-sel').value;
+  var info=document.getElementById('tk-sgd-info');
+  var s=(S.sgdCache||[]).find(function(x){return x.id===id;});
+  S._sgdPick = s?{id:s.id}:null;
+  if(!s){ info.textContent=''; return; }
+  if(!noName){ document.getElementById('tk-nombre').value = (s.codigo?(s.codigo+' — '):'')+s.titulo; }
+  info.innerHTML = s.analista ? ('Analista actual en SGD: <strong>'+esc(s.analista)+'</strong> — al guardar se reemplazará por el asignado.') : 'Sin analista asignado en SGD. Al guardar se asignará el analista elegido.';
+}
+function tkFrecChange(init){
+  var tipo=document.getElementById('tk-frec-tipo').value;
+  document.getElementById('tk-frec-dias').style.display=(tipo==='semana')?'flex':'none';
+}
+function tkRenderFrecDias(dias){
+  var el=document.getElementById('tk-frec-dias'); el.innerHTML='';
+  FREQ_DIAS.forEach(function(d,idx){
+    var lab=document.createElement('label'); lab.className='chk-item';
+    lab.innerHTML='<input type="checkbox" class="tk-frec-dia" value="'+idx+'" '+(dias.indexOf(idx)>=0?'checked':'')+'> '+d;
+    el.appendChild(lab);
+  });
+}
+function _catRemaining(){ var s=0; S.catDraft.forEach(function(c){ s+=(parseInt(c.pct)||0); }); return 100-s; }
+function tkRenderCats(soloCheck){
+  var cont=document.getElementById('tk-cats'); cont.innerHTML='';
+  if(!S.catDraft.length){ cont.innerHTML='<div style="color:var(--muted);font-size:.76rem;">Sin categorías. '+(soloCheck?'':'Agrega categorías para medir el avance.')+'</div>'; }
+  S.catDraft.forEach(function(c,idx){
+    var row=document.createElement('div'); row.className='part-row'; row.style.alignItems='center';
+    if(soloCheck){
+      row.innerHTML='<label class="chk-item" style="flex:1;"><input type="checkbox" class="tk-cat-done" data-i="'+idx+'" '+(c.hecho?'checked':'')+' onchange="tkCatToggle('+idx+',this.checked)"> '+esc(c.nombre)+' <span style="color:var(--dim);margin-left:4px;">('+(parseInt(c.pct)||0)+'%)</span></label>';
+    } else {
+      row.innerHTML='<input class="inp tk-cat-nm" placeholder="Categoría" value="'+(c.nombre||'').replace(/"/g,'&quot;')+'" oninput="S.catDraft['+idx+'].nombre=this.value" style="flex:1;">'
+        +'<input type="number" class="inp tk-cat-pct" min="0" max="100" value="'+(parseInt(c.pct)||0)+'" oninput="S.catDraft['+idx+'].pct=parseInt(this.value)||0;tkCatsRem();" style="width:80px;">'
+        +'<span style="font-size:.72rem;color:var(--dim);">%</span>'
+        +'<label class="chk-item" title="Marcar como realizada"><input type="checkbox" '+(c.hecho?'checked':'')+' onchange="S.catDraft['+idx+'].hecho=this.checked;tkCatsRem();"> hecho</label>'
+        +'<button class="btn btn-sm btn-ghost" onclick="S.catDraft.splice('+idx+',1);tkRenderCats(false);">✕</button>';
+    }
+    cont.appendChild(row);
+  });
+  tkCatsRem();
+}
+function tkCatToggle(idx,val){ S.catDraft[idx].hecho=val; tkCatsRem(); }
+function tkCatsRem(){
+  var rem=_catRemaining();
+  var remEl=document.getElementById('tk-cats-rem');
+  if(remEl) remEl.textContent = S.catDraft.length ? ('· '+rem+'% restante por definir') : '';
+  var prog=0; S.catDraft.forEach(function(c){ if(c.hecho) prog+=(parseInt(c.pct)||0); });
+  var pv=document.getElementById('tk-prog-view'); if(pv){ pv.textContent=Math.min(100,prog)+'%'; pv.style.color=semColorSolid(prog); }
+}
+function tkAddCat(){ S.catDraft.push({nombre:'',pct:_catRemaining()>0?_catRemaining():0,hecho:false}); tkRenderCats(false); }
+
 async function saveTask(){
   var b=curBoardObj(); if(!b) return;
+  var soloEstatus=!S.completo;
   var nombre=document.getElementById('tk-nombre').value.trim();
   if(!nombre){ toast('Escribe el nombre de la tarea'); return; }
+  // asignados
   var asg=[]; document.querySelectorAll('.tk-asg-chk').forEach(function(c){ if(c.checked) asg.push(c.value); });
+  var isSGD=document.getElementById('tk-sgd-chk').checked;
+  if(isSGD && asg.length>1) asg=[asg[0]];
+  // frecuencia
+  var ftipo=document.getElementById('tk-frec-tipo').value, fdias=[];
+  document.querySelectorAll('.tk-frec-dia').forEach(function(c){ if(c.checked) fdias.push(parseInt(c.value)); });
+  var frec={tipo:ftipo, dias:(ftipo==='semana'?fdias:[])};
+  // progreso desde categorías
+  var prog=0; (S.catDraft||[]).forEach(function(c){ if(c.hecho) prog+=(parseInt(c.pct)||0); }); prog=Math.min(100,prog);
   var ini=document.getElementById('tk-ini').value, fin=document.getElementById('tk-fin').value;
-  var fields={ Title:nombre, PcTableroID:b.id, PcDescripcion:document.getElementById('tk-desc').value.trim(),
-    PcAsignados:JSON.stringify(asg), PcEstatus:document.getElementById('tk-estatus').value, PcPrioridad:document.getElementById('tk-prioridad').value,
-    PcFechaInicio: ini?(ini+'T12:00:00Z'):null, PcFechaFin: fin?(fin+'T12:00:00Z'):null,
-    PcProgreso: parseInt(document.getElementById('tk-prog').value)||0, PcEsHito:document.getElementById('tk-hito').value };
+  var fcomp=document.getElementById('tk-fcomp').value, fcompA=document.getElementById('tk-fcomp-asig').value;
+  var fields;
+  if(soloEstatus){
+    // El lector solo actualiza estatus, categorías (hecho), progreso y su fecha compromiso
+    fields={ PcEstatus:document.getElementById('tk-estatus').value, PcCategorias:JSON.stringify(S.catDraft||[]), PcProgreso:prog };
+    if(!document.getElementById('tk-fcomp-asig').disabled) fields.PcFechaCompromisoAsig = fcompA?(fcompA+'T12:00:00Z'):null;
+  } else {
+    fields={ Title:nombre, PcTableroID:b.id, PcDescripcion:document.getElementById('tk-desc').value.trim(),
+      PcAsignados:JSON.stringify(asg), PcEstatus:document.getElementById('tk-estatus').value, PcPrioridad:document.getElementById('tk-prioridad').value,
+      PcFechaInicio: ini?(ini+'T12:00:00Z'):null, PcFechaFin: fin?(fin+'T12:00:00Z'):null,
+      PcFechaCompromiso: fcomp?(fcomp+'T12:00:00Z'):null, PcFechaCompromisoAsig: fcompA?(fcompA+'T12:00:00Z'):null,
+      PcEsHito:document.getElementById('tk-hito').value, PcCategorias:JSON.stringify(S.catDraft||[]), PcProgreso:prog,
+      PcFrecuencia:JSON.stringify(frec), PcSolicitudID: (isSGD && S._sgdPick)?S._sgdPick.id:'' };
+  }
   var btn=document.getElementById('tk-save'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
   try{
     if(S.editTask){ await listUpdate(L_TAREAS,S.editTask.id,fields); }
     else { await listCreate(L_TAREAS,fields); }
+    // Si es desde SGD y completo: escribir el analista en la solicitud
+    if(!soloEstatus && isSGD && S._sgdPick && asg.length){
+      var p=(b.participantes||[]).find(function(x){return x.correo===asg[0];});
+      if(p){ try{ await listUpdate('SGD_Solicitudes', S._sgdPick.id, { Analista_Asignado:p.nombre, Analista_Correo:p.correo }); S.sgdCache=null; }catch(e){ console.warn('SGD update',e); } }
+    }
     closeModal('m-task'); await loadData(); toast('Tarea guardada');
   }catch(e){ toast('Error: '+(e.message||e)); }
   finally{ btn.disabled=false; btn.textContent='Guardar'; }
 }
 async function deleteTask(){
-  if(!S.editTask) return; if(!confirm('¿Eliminar esta tarea?')) return;
+  if(!S.editTask || !S.completo) return; if(!confirm('¿Eliminar esta tarea?')) return;
   try{ await listDelete(L_TAREAS,S.editTask.id); closeModal('m-task'); await loadData(); toast('Tarea eliminada'); }
   catch(e){ toast('Error: '+(e.message||e)); }
 }
+window.tkToggleSGD=tkToggleSGD; window.tkPickSGD=tkPickSGD; window.tkFrecChange=tkFrecChange; window.tkAddCat=tkAddCat; window.tkCatToggle=tkCatToggle; window.tkCatsRem=tkCatsRem; window.tkRenderCats=tkRenderCats;
 
 // ═══════════════ UTILES ═══════════════
 function openModal(id){ document.getElementById(id).classList.add('show'); }

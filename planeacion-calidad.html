@@ -381,12 +381,19 @@ function onAuth(d){
   if(d && d.isDemoMode){ document.getElementById('b-body').innerHTML='<div class="empty">No disponible en modo demo (sin sesión real de Microsoft).</div>'; return; }
   var correo=(u.correo||'').toLowerCase();
   S.user={ email:correo, nombre:u.nombre||correo||'Usuario', esAdmin:!!u.esAdmin };
+  var antes=S.completo;
   S.completo = (d && d.nivel==='completo') || !!u.esAdmin;   // acceso completo vs solo lectura
+  // Actualizar botones de líder SIEMPRE que llegue la sesión (puede llegar en 2 mensajes)
+  var nb=document.getElementById('btn-new-board'); if(nb) nb.style.display=S.completo?'inline-block':'none';
+  var rb=document.getElementById('btn-reuniones'); if(rb) rb.style.display=S.completo?'inline-block':'none';
   if(!S._loaded){
     S._loaded=true;
     loadData().catch(function(e){ toast('Error al cargar datos: '+(e.message||e)); var bb=document.getElementById('b-body'); if(bb) bb.innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existen las listas PCAL_Tableros y PCAL_Tareas con sus columnas?</div>'; });
     // Auto-refresco: refleja cambios del líder u otros usuarios sin tener que recargar.
     if(!S._autoT){ S._autoT=setInterval(function(){ if(S.user && !document.querySelector('.modal-bg.show')){ loadData().catch(function(){}); } }, 60000); }
+  } else if(antes!==S.completo){
+    // Llegó un segundo mensaje que cambió el nivel → redibujar para reflejar permisos
+    try{ renderBoard(); }catch(e){}
   }
 }
 // Botón Actualizar (con spinner breve)

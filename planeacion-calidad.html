@@ -122,6 +122,22 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
 .modal-actions{display:flex;justify-content:space-between;gap:8px;margin-top:16px;}
 .part-row{display:flex;gap:8px;margin-bottom:6px;}
 .part-row .inp{flex:1;}
+.kpi-view{position:fixed;inset:0;background:var(--bg);z-index:450;display:none;flex-direction:column;}
+.kpi-view.show{display:flex;}
+.kpi-head{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border);background:var(--panel);flex-wrap:wrap;}
+.kpi-body{flex:1;overflow:auto;padding:16px 20px;}
+.kpi-cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;}
+.kpi-kard{flex:1;min-width:160px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+.kpi-kard .v{font-size:1.6rem;font-weight:800;}
+.kpi-kard .l{font-size:.72rem;color:var(--dim);}
+.kpi-sec{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px;}
+.kpi-sec h4{font-size:.9rem;margin-bottom:10px;}
+.pbar{height:16px;background:rgba(255,255,255,.08);border-radius:8px;overflow:hidden;position:relative;}
+.pbar>div{height:100%;border-radius:8px;}
+.pbar .meta{position:absolute;top:-3px;bottom:-3px;width:2px;background:#e6edf3;opacity:.7;}
+.pcard{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;}
+.pcard-hd{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.kgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 18px;font-size:.84rem;z-index:900;display:none;}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent-l);border-radius:50%;animation:sp .8s linear infinite;vertical-align:-3px;}
 @keyframes sp{to{transform:rotate(360deg);}}
@@ -133,6 +149,7 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
   <div class="topbar">
     <select class="inp board-sel" id="board-sel" onchange="selectBoard(this.value)"><option value="">Cargando…</option></select>
     <button class="btn btn-sm" id="btn-refresh" onclick="refrescar()" title="Actualizar datos">🔄 Actualizar</button>
+    <button class="btn btn-sm" id="btn-kpi" onclick="openKpi()" title="KPIs de desempeño">📊 KPIs</button>
     <button class="btn btn-primary btn-sm" id="btn-new-board" onclick="openBoardModal()" style="display:none;">＋ Nuevo tablero</button>
     <span class="b-sub" id="b-sub"></span>
     <div class="main-tools" id="b-tools" style="margin-left:auto;"></div>
@@ -197,7 +214,7 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
     <div class="fld"><label id="tk-asg-lbl">Asignados</label><div class="chk-list" id="tk-asg"></div></div>
     <div class="row2">
       <div class="fld"><label>Fecha inicio</label><input type="date" class="inp" id="tk-ini"></div>
-      <div class="fld"><label>Fecha entrega / fin</label><input type="date" class="inp" id="tk-fin"></div>
+      <div class="fld"><label>Fecha entrega / fin <span style="color:var(--dim);font-weight:400;">(si la dejas vacía, la define el responsable con su compromiso)</span></label><input type="date" class="inp" id="tk-fin"></div>
     </div>
     <div class="row2">
       <div class="fld"><label>📌 Fecha compromiso (asigna el líder)</label><input type="date" class="inp" id="tk-fcomp"></div>
@@ -230,6 +247,16 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
   </div>
 </div>
 
+<!-- Vista KPIs -->
+<div class="kpi-view" id="kpi-view">
+  <div class="kpi-head">
+    <div style="font-size:1.1rem;font-weight:800;">📊 KPIs de desempeño — Bono de productividad</div>
+    <input type="month" id="kpi-mes" class="inp" onchange="renderKpi()" style="width:170px;">
+    <button class="btn btn-sm" style="margin-left:auto;" onclick="closeKpi()">✕ Cerrar</button>
+  </div>
+  <div class="kpi-body" id="kpi-body"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -238,7 +265,7 @@ var L_TABLEROS='PCAL_Tableros', L_TAREAS='PCAL_Tareas';
 var ESTATUS=['Sin iniciar','En proceso','En revisión','Bloqueada','Completada'];
 var ST_COLOR={'Sin iniciar':'#6e7681','En proceso':'#58a6ff','En revisión':'#a855f7','Bloqueada':'#ef4444','Completada':'#2ea043'};
 
-var S = { user:null, completo:false, boards:[], tasks:[], curBoard:null, soloMias:false, editBoard:null, editTask:null, _loaded:false, catDraft:[], sgdCache:null };
+var S = { user:null, completo:false, boards:[], tasks:[], kpis:{}, curBoard:null, soloMias:false, editBoard:null, editTask:null, _loaded:false, catDraft:[], sgdCache:null };
 var FREQ_DIAS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 // ¿El usuario puede editar esta tarea? Completo siempre; lector solo si es su tarea
 // (asignado) o es un tablero compartido donde participa.
@@ -261,6 +288,9 @@ function calcProgreso(t){
 // Semáforo de avance con tonos suaves (para la barra del Gantt).
 function semColor(pct){ if(pct>=100) return '#bbf7d0'; if(pct>=67) return '#bfdbfe'; if(pct>=34) return '#fde68a'; if(pct>0) return '#fecaca'; return '#334155'; }
 function semColorSolid(pct){ if(pct>=100) return '#4ade80'; if(pct>=67) return '#60a5fa'; if(pct>=34) return '#facc15'; if(pct>0) return '#f87171'; return '#6e7681'; }
+// Fecha fin EFECTIVA: manda la del líder (t.fin); si la dejó abierta, vale la
+// fecha compromiso del responsable (t.fCompromisoAsig). Aplica a los 3 tableros.
+function effFin(t){ if(!t) return ''; return t.fin ? t.fin : (t.fCompromisoAsig||''); }
 
 // ═══════════════ BRIDGE con el portal (index.html) ═══════════════
 // La pantalla va embebida en un iframe. No tiene login propio: usa la sesión del
@@ -341,10 +371,19 @@ async function loadData(){
     categorias:_pj(f.PcCategorias,[]), frecuencia:_pj(f.PcFrecuencia,null), solicitudID:f.PcSolicitudID||'',
     fCompromiso:_iso(f.PcFechaCompromiso), fCompromisoAsig:_iso(f.PcFechaCompromisoAsig)
   }; });
+  // KPIs (evaluaciones del líder). La lista puede no existir aún.
+  try{
+    var ks=await listGet('PCAL_KPI'); S.kpis={};
+    ks.forEach(function(i){ var f=i.fields||{}; var key=(f.PcPeriodo||'')+'|'+((f.PcPersona||'').toLowerCase());
+      S.kpis[key]={ id:i.id, periodo:f.PcPeriodo||'', persona:(f.PcPersona||'').toLowerCase(),
+        calidad:(f.PcCalidad!=null&&f.PcCalidad!=='')?parseInt(f.PcCalidad):null,
+        confirmado:(f.PcCumplConfirmado==='Si'), meta:parseInt(f.PcMeta||90)||90, comentario:f.PcComentario||'' }; });
+  }catch(e){ S.kpis={}; }
   if(S.curBoard && !S.boards.find(function(b){return b.id===S.curBoard;})) S.curBoard=null;
   if(!S.curBoard && S.boards.length) S.curBoard=S.boards[0].id;
   renderBoardSelector();
   renderBoard();
+  if(document.getElementById('kpi-view').classList.contains('show')) renderKpi();
 }
 
 // ═══════════════ SELECTOR DE TABLERO ═══════════════
@@ -400,7 +439,7 @@ function taskCard(t){
   h+='<div class="t-nm">'+(t.esHito?'◆ ':'')+esc(t.nombre)+'</div><div class="t-meta">';
   h+='<span class="tag prio-'+t.prioridad+'">'+t.prioridad+'</span>';
   (t.asignados||[]).slice(0,3).forEach(function(a){ h+='<span class="asg">👤 '+esc(nameOf(a))+'</span>'; });
-  if(t.fin){ h+='<span class="'+dateCls(t)+'">📅 '+fmtD(t.fin)+'</span>'; }
+  var _ef=effFin(t); if(_ef){ h+='<span class="'+dateCls(t)+'">📅 '+fmtD(_ef)+(!t.fin?' (comp.)':'')+'</span>'; }
   if(t.solicitudID){ h+='<span class="tag" style="background:rgba(168,85,247,.15);color:#c4b5fd;">SGD</span>'; }
   h+='</div>';
   var _p=calcProgreso(t);
@@ -424,12 +463,13 @@ function renderIndividual(body,b){
   var h='';
   parts.forEach(function(p){
     var mine=ts.filter(function(t){return (t.asignados||[]).indexOf(p.correo)>=0;})
-      .sort(function(a,c){ return (a.fin||'9999')<(c.fin||'9999')?-1:1; });
+      .sort(function(a,c){ return (effFin(a)||'9999')<(effFin(c)||'9999')?-1:1; });
     var pend=mine.filter(function(t){return t.estatus!=='Completada';}).length;
     h+='<div class="person-sec"><div class="person-hd"><div class="avatar">'+ini(p.nombre)+'</div>'+esc(p.nombre)+' <span class="chip">'+mine.length+' tarea(s) · '+pend+' pend.</span></div>';
     if(!mine.length){ h+='<div style="padding:10px 14px;color:var(--muted);font-size:.8rem;">Sin tareas.</div>'; }
     mine.forEach(function(t){
-      var periodo = (t.ini&&t.fin)?(fmtD(t.ini)+' → '+fmtD(t.fin)):(t.fin?('Entrega '+fmtD(t.fin)):'Sin fecha');
+      var _ef=effFin(t);
+      var periodo = (t.ini&&_ef)?(fmtD(t.ini)+' → '+fmtD(_ef)+(!t.fin?' (comp.)':'')):(_ef?('Entrega '+fmtD(_ef)+(!t.fin?' (comp.)':'')):'Fin abierto');
       var fl=freqLabel(t);
       h+='<div class="itask" onclick="openTaskModal(\''+t.id+'\')">'
         +'<span class="st-dot" style="background:'+ST_COLOR[t.estatus]+'"></span>'
@@ -446,7 +486,7 @@ function renderIndividual(body,b){
   var sinAsg=S.soloMias?[]:ts.filter(function(t){return !(t.asignados&&t.asignados.length);});
   if(sinAsg.length){
     h+='<div class="person-sec"><div class="person-hd">📭 Sin asignar <span class="chip">'+sinAsg.length+'</span></div>';
-    sinAsg.forEach(function(t){ h+='<div class="itask" onclick="openTaskModal(\''+t.id+'\')"><span class="st-dot" style="background:'+ST_COLOR[t.estatus]+'"></span><span class="i-nm">'+esc(t.nombre)+'</span><span class="'+dateCls(t)+'">📅 '+(t.fin?fmtD(t.fin):'Sin fecha')+'</span></div>'; });
+    sinAsg.forEach(function(t){ var _ef=effFin(t); h+='<div class="itask" onclick="openTaskModal(\''+t.id+'\')"><span class="st-dot" style="background:'+ST_COLOR[t.estatus]+'"></span><span class="i-nm">'+esc(t.nombre)+'</span><span class="'+dateCls(t)+'">📅 '+(_ef?fmtD(_ef):'Fin abierto')+'</span></div>'; });
     h+='</div>';
   }
   body.innerHTML=h||'<div class="empty">Sin tareas todavía.</div>';
@@ -454,9 +494,9 @@ function renderIndividual(body,b){
 
 // ---- Gantt ----
 function renderGantt(body,b){
-  var ts=boardTasks().filter(function(t){return t.ini||t.fin;});
+  var ts=boardTasks().filter(function(t){return t.ini||effFin(t);});
   if(!ts.length){ body.innerHTML='<div class="empty">Agrega tareas con fechas para ver el Gantt.</div>'; return; }
-  var dates=[]; ts.forEach(function(t){ if(t.ini)dates.push(t.ini); if(t.fin)dates.push(t.fin); });
+  var dates=[]; ts.forEach(function(t){ if(t.ini)dates.push(t.ini); var _e=effFin(t); if(_e)dates.push(_e); });
   var min=dates.reduce(function(a,c){return c<a?c:a;}), max=dates.reduce(function(a,c){return c>a?c:a;});
   var d0=new Date(min+'T00:00:00'), d1=new Date(max+'T00:00:00');
   d0.setDate(d0.getDate()-2); d1.setDate(d1.getDate()+2);
@@ -475,9 +515,9 @@ function renderGantt(body,b){
   if(hoy>=d0&&hoy<=d1){ head+='<div class="g-today" style="left:'+Math.round((hoy-d0)/86400000)*pxDay+'px"></div>'; }
   head+='</div></div>';
   var rows='';
-  ts.sort(function(a,c){ return (a.ini||a.fin||'')<(c.ini||c.fin||'')?-1:1; });
+  ts.sort(function(a,c){ return (a.ini||effFin(a)||'')<(c.ini||effFin(c)||'')?-1:1; });
   ts.forEach(function(t){
-    var s=t.ini||t.fin, e=t.fin||t.ini;
+    var s=t.ini||effFin(t), e=effFin(t)||t.ini;
     var x=xOf(s), w=Math.max(pxDay, xOf(e)-xOf(s)+pxDay);
     var asg=(t.asignados||[]).map(nameOf).join(', ');
     var _p=calcProgreso(t);
@@ -767,8 +807,119 @@ function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,
 function nameOf(correo){ var b=curBoardObj(); if(b){ var p=(b.participantes||[]).find(function(x){return x.correo===correo;}); if(p) return p.nombre; } return correo||'—'; }
 function ini(n){ return (n||'?').split(' ').map(function(x){return x[0];}).join('').slice(0,2).toUpperCase(); }
 function fmtD(iso){ if(!iso) return '—'; var p=iso.split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0].slice(2)):iso; }
-function dateCls(t){ if(!t.fin) return 't-date'; var hoy=new Date(); hoy.setHours(0,0,0,0); var f=new Date(t.fin+'T00:00:00'); var dd=Math.round((f-hoy)/86400000); if(t.estatus==='Completada') return 't-date'; if(dd<0) return 't-date over'; if(dd<=2) return 't-date soon'; return 't-date'; }
+function dateCls(t){ var ef=effFin(t); if(!ef) return 't-date'; var hoy=new Date(); hoy.setHours(0,0,0,0); var f=new Date(ef+'T00:00:00'); var dd=Math.round((f-hoy)/86400000); if(t.estatus==='Completada') return 't-date'; if(dd<0) return 't-date over'; if(dd<=2) return 't-date soon'; return 't-date'; }
 function toast(m){ var t=document.getElementById('toast'); t.textContent=m; t.style.display='block'; clearTimeout(window._tt); window._tt=setTimeout(function(){t.style.display='none';},2600); }
+
+// ═══════════════ KPIs ═══════════════
+function _cid(s){ return String(s).replace(/[^a-z0-9]/gi,'_'); }
+function _inMonth(iso, per){ return !!iso && iso.slice(0,7)===per; }
+function kpiTeam(){
+  var map={};
+  S.boards.forEach(function(b){ (b.participantes||[]).forEach(function(p){ if(p.correo) map[p.correo]={nombre:p.nombre||p.correo, correo:p.correo}; }); });
+  var arr=Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return (a.nombre||'')<(b.nombre||'')?-1:1;});
+  if(!S.completo){ arr=arr.filter(function(p){return p.correo===S.user.email;}); if(!arr.length && S.user && S.user.email) arr=[{nombre:S.user.nombre,correo:S.user.email}]; }
+  return arr;
+}
+function kpiCalc(correo, per){
+  var hoy=new Date(); hoy.setHours(0,0,0,0);
+  var tasks=S.tasks.filter(function(t){ return (t.asignados||[]).indexOf(correo)>=0 && _inMonth(effFin(t), per); });
+  var total=tasks.length;
+  var comp=tasks.filter(function(t){return t.estatus==='Completada';}).length;
+  var venc=tasks.filter(function(t){ var ef=effFin(t); return ef && t.estatus!=='Completada' && (new Date(ef+'T00:00:00')<hoy); }).length;
+  var enproc=tasks.filter(function(t){return t.estatus!=='Completada' && calcProgreso(t)>0;}).length;
+  var avance = total? Math.round(tasks.reduce(function(s,t){return s+calcProgreso(t);},0)/total) : 0;
+  var aTiempo = total? Math.round((total-venc)/total*100) : 100;
+  var cumpl = avance;
+  var k=S.kpis[per+'|'+correo]||{};
+  var calidad=(k.calidad!=null)?k.calidad:null;
+  var meta=k.meta||90, confirmado=!!k.confirmado, comentario=k.comentario||'';
+  var fin = (calidad!=null)? Math.round(cumpl*0.7 + calidad*0.3) : cumpl;
+  return {tasks:tasks,total:total,comp:comp,venc:venc,enproc:enproc,avance:avance,aTiempo:aTiempo,cumpl:cumpl,calidad:calidad,meta:meta,confirmado:confirmado,comentario:comentario,fin:fin};
+}
+function kpiEstado(fin,meta){ if(fin>=meta) return {t:'En camino al bono ✅',c:'#4ade80'}; if(fin>=meta-15) return {t:'En riesgo ⚠',c:'#facc15'}; return {t:'No alcanza ✖',c:'#f87171'}; }
+function _gauge(pct,color){
+  return '<div style="width:92px;height:92px;border-radius:50%;background:conic-gradient('+color+' 0% '+pct+'%, rgba(255,255,255,.1) '+pct+'% 100%);display:flex;align-items:center;justify-content:center;flex:0 0 auto;">'
+    +'<div style="width:68px;height:68px;border-radius:50%;background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;">'
+    +'<div style="font-size:1.1rem;font-weight:800;color:'+color+';">'+pct+'%</div><div style="font-size:.56rem;color:var(--dim);">meta</div></div></div>';
+}
+function openKpi(){ var m=document.getElementById('kpi-mes'); if(!m.value){ var d=new Date(); m.value=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); } document.getElementById('kpi-view').classList.add('show'); renderKpi(); }
+function closeKpi(){ document.getElementById('kpi-view').classList.remove('show'); }
+function renderKpi(){
+  var per=document.getElementById('kpi-mes').value || (new Date().getFullYear()+'-'+('0'+(new Date().getMonth()+1)).slice(-2));
+  var body=document.getElementById('kpi-body');
+  var team=kpiTeam();
+  if(!team.length){ body.innerHTML='<div class="empty">No hay participantes. Agrega participantes a los tableros.</div>'; return; }
+  var calc={}; team.forEach(function(p){ calc[p.correo]=kpiCalc(p.correo, per); });
+  var h='';
+  // Resumen (solo líder)
+  if(S.completo){
+    var prom=Math.round(team.reduce(function(s,p){return s+calc[p.correo].cumpl;},0)/team.length);
+    var enCamino=team.filter(function(p){return calc[p.correo].fin>=calc[p.correo].meta;}).length;
+    var sinCal=team.filter(function(p){return calc[p.correo].calidad==null;}).length;
+    h+='<div class="kpi-cards">'
+      +'<div class="kpi-kard"><div class="v" style="color:var(--accent-l);">'+team.length+'</div><div class="l">Participantes</div></div>'
+      +'<div class="kpi-kard"><div class="v" style="color:'+semColorSolid(prom)+';">'+prom+'%</div><div class="l">Cumplimiento promedio</div></div>'
+      +'<div class="kpi-kard"><div class="v" style="color:#4ade80;">'+enCamino+'</div><div class="l">En camino al bono</div></div>'
+      +'<div class="kpi-kard"><div class="v" style="color:#facc15;">'+sinCal+'</div><div class="l">Calidad por evaluar</div></div>'
+      +'</div>';
+    // Gráfica de cumplimiento por persona
+    h+='<div class="kpi-sec"><h4>📈 Cumplimiento por persona — '+per+'</h4>';
+    team.forEach(function(p){ var c=calc[p.correo];
+      h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+        +'<div style="width:150px;font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(p.nombre)+'</div>'
+        +'<div class="pbar" style="flex:1;"><div style="width:'+c.cumpl+'%;background:'+semColorSolid(c.cumpl)+';"></div><div class="meta" style="left:'+c.meta+'%"></div></div>'
+        +'<div style="width:42px;text-align:right;font-weight:700;color:'+semColorSolid(c.cumpl)+';">'+c.cumpl+'%</div></div>';
+    });
+    h+='<div style="font-size:.68rem;color:var(--dim);margin-top:4px;">La línea blanca marca la meta de cada persona.</div></div>';
+  }
+  // Tarjetas por persona
+  h+='<div class="kgrid">';
+  team.forEach(function(p){
+    var c=calc[p.correo]; var est=kpiEstado(c.fin,c.meta); var cid=_cid(p.correo);
+    h+='<div class="pcard">';
+    h+='<div class="pcard-hd"><div class="avatar">'+ini(p.nombre)+'</div><div style="flex:1;"><div style="font-weight:700;">'+esc(p.nombre)+'</div><div style="font-size:.7rem;color:'+est.c+';font-weight:600;">'+est.t+'</div></div></div>';
+    h+='<div style="display:flex;gap:14px;align-items:center;margin-bottom:10px;">'+_gauge(c.fin, est.c)
+      +'<div style="flex:1;font-size:.76rem;line-height:1.7;">'
+      +'Tareas del mes: <strong>'+c.total+'</strong><br>'
+      +'Completadas: <strong style="color:#4ade80;">'+c.comp+'</strong> · En proceso: <strong style="color:#58a6ff;">'+c.enproc+'</strong> · Vencidas: <strong style="color:'+(c.venc?'#f87171':'var(--dim)')+';">'+c.venc+'</strong><br>'
+      +'A tiempo: <strong>'+c.aTiempo+'%</strong></div></div>';
+    // KPI 1 Cumplimiento
+    h+='<div style="font-size:.74rem;color:var(--dim);margin-bottom:2px;">Cumplimiento (automático)'+(c.confirmado?' · <span style="color:#4ade80;">confirmado</span>':'')+'</div>';
+    h+='<div class="pbar" style="margin-bottom:10px;"><div style="width:'+c.cumpl+'%;background:'+semColorSolid(c.cumpl)+';"></div><div class="meta" style="left:'+c.meta+'%"></div></div>';
+    // KPI 2 Calidad
+    h+='<div style="font-size:.74rem;color:var(--dim);margin-bottom:2px;">Calidad en entregables'+(c.calidad==null?' · <span style="color:#facc15;">pendiente</span>':'')+'</div>';
+    h+='<div class="pbar" style="margin-bottom:10px;"><div style="width:'+(c.calidad||0)+'%;background:'+semColorSolid(c.calidad||0)+';"></div></div>';
+    if(S.completo){
+      h+='<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px;">'
+        +'<div class="row2"><div class="fld"><label>Calidad (0-100)</label><input type="number" class="inp" id="kpi-cal-'+cid+'" min="0" max="100" value="'+(c.calidad!=null?c.calidad:'')+'"></div>'
+        +'<div class="fld"><label>Meta (%)</label><input type="number" class="inp" id="kpi-meta-'+cid+'" min="0" max="100" value="'+c.meta+'"></div></div>'
+        +'<label style="display:flex;align-items:center;gap:7px;font-size:.78rem;margin:4px 0 8px;cursor:pointer;"><input type="checkbox" id="kpi-conf-'+cid+'" '+(c.confirmado?'checked':'')+'> Confirmar cumplimiento (avance correcto)</label>'
+        +'<input class="inp" id="kpi-com-'+cid+'" placeholder="Comentario / retroalimentación" value="'+(c.comentario||'').replace(/"/g,'&quot;')+'" style="width:100%;margin-bottom:8px;">'
+        +'<button class="btn btn-sm btn-primary" onclick="kpiSave(\''+p.correo+'\')">Guardar evaluación</button></div>';
+    } else if(c.comentario){
+      h+='<div style="font-size:.74rem;color:var(--dim);border-top:1px solid var(--border);padding-top:8px;">💬 '+esc(c.comentario)+'</div>';
+    }
+    h+='</div>';
+  });
+  h+='</div>';
+  body.innerHTML=h;
+}
+async function kpiSave(correo){
+  if(!S.completo) return;
+  var per=document.getElementById('kpi-mes').value; var cid=_cid(correo);
+  var cal=document.getElementById('kpi-cal-'+cid).value;
+  var conf=document.getElementById('kpi-conf-'+cid).checked;
+  var meta=document.getElementById('kpi-meta-'+cid).value;
+  var com=document.getElementById('kpi-com-'+cid).value;
+  var key=per+'|'+correo;
+  var fields={ Title:key, PcPeriodo:per, PcPersona:correo, PcCalidad:(cal===''?null:(parseInt(cal)||0)), PcCumplConfirmado:(conf?'Si':'No'), PcMeta:(parseInt(meta)||90), PcComentario:com };
+  try{
+    var ex=S.kpis[key];
+    if(ex&&ex.id){ await listUpdate('PCAL_KPI', ex.id, fields); } else { await listCreate('PCAL_KPI', fields); }
+    toast('Evaluación guardada'); await loadData(); renderKpi();
+  }catch(e){ toast('Error (¿existe la lista PCAL_KPI?): '+(e.message||e)); }
+}
+window.openKpi=openKpi; window.closeKpi=closeKpi; window.renderKpi=renderKpi; window.kpiSave=kpiSave;
 
 // init
 boot();

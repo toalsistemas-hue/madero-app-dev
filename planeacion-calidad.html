@@ -298,11 +298,11 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
 
 <script>
 // ═══════════════ CONFIG ═══════════════
-var L_TABLEROS='PCAL_Tableros', L_TAREAS='PCAL_Tareas', L_REUNIONES='PCAL_Reuniones', L_NOTIF='PCAL_Notificaciones';
+var L_TABLEROS='PCAL_Tableros', L_TAREAS='PCAL_Tareas', L_REUNIONES='PCAL_Reuniones', L_NOTIF='PCAL_Notificaciones', L_ENTREG='PCAL_Entregables';
 var ESTATUS=['Sin iniciar','En proceso','En revisión','Bloqueada','Completada'];
 var ST_COLOR={'Sin iniciar':'#6e7681','En proceso':'#58a6ff','En revisión':'#a855f7','Bloqueada':'#ef4444','Completada':'#2ea043'};
 
-var S = { user:null, completo:false, boards:[], tasks:[], kpis:{}, reuniones:[], curBoard:null, soloMias:false, editBoard:null, editTask:null, _loaded:false, catDraft:[], sgdCache:null, meetTaskId:null };
+var S = { user:null, completo:false, boards:[], tasks:[], kpis:{}, reuniones:[], entregables:[], curBoard:null, soloMias:false, editBoard:null, editTask:null, _loaded:false, catDraft:[], sgdCache:null, meetTaskId:null };
 var FREQ_DIAS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 // ¿El usuario puede editar esta tarea? Completo siempre; lector solo si es su tarea
 // (asignado) o es un tablero compartido donde participa.
@@ -364,6 +364,23 @@ async function notif(para, asunto, cuerpoHtml, tipo, cc){
   catch(e){ console.warn('[notif] no se pudo registrar (¿existe PCAL_Notificaciones?)', e&&e.message); }
 }
 function _chg(label, a, b){ if((a==null?'':a)===(b==null?'':b)) return ''; return '• <strong>'+label+':</strong> '+esc(a||'—')+' → '+esc(b||'—')+'<br>'; }
+// Sincroniza las filas de PCAL_Entregables de una tarea (una por categoría con fecha,
+// o una a nivel tarea si no hay categorías con fecha). Lo usa el flujo de alertas diarias.
+async function syncEntregables(task, board){
+  try{
+    var old=(S.entregables||[]).filter(function(e){return e.tareaID===task.id;});
+    for(var i=0;i<old.length;i++){ try{ await listDelete(L_ENTREG, old[i].id); }catch(e){} }
+    var resp=(task.asignados||[]).join(';');
+    var coord=board?(board.responsable||''):'';
+    var filas=[];
+    var cats=(task.categorias||[]).filter(function(c){return c.fecha;});
+    if(cats.length){ cats.forEach(function(c){ filas.push({ Title:task.nombre+' · '+c.nombre, cat:c.nombre, fecha:c.fecha, hecho:c.hecho?'Si':'No' }); }); }
+    else { var ef=effFin(task); if(ef) filas.push({ Title:task.nombre, cat:'', fecha:ef, hecho:(task.estatus==='Completada')?'Si':'No' }); }
+    for(var j=0;j<filas.length;j++){ var r=filas[j];
+      await listCreate(L_ENTREG, { Title:r.Title, PcTareaID:task.id, PcTareaNombre:task.nombre, PcCategoria:r.cat, PcFecha:r.fecha+'T12:00:00Z', PcHecho:r.hecho, PcResponsables:resp, PcCoordinador:coord });
+    }
+  }catch(e){ console.warn('[entregables] sync', e&&e.message); }
+}
 
 function boot(){
   var par=_parent();
@@ -438,6 +455,8 @@ async function loadData(){
     S.reuniones=rs.map(function(i){ var f=i.fields||{}; return { id:i.id, asunto:f.Title||'Reunión', tareaID:f.PcTareaID||'', tareaNombre:f.PcTareaNombre||'', fecha:_iso(f.PcFecha), hora:f.PcHora||'', duracion:parseInt(f.PcDuracion||30)||30, organizador:(f.PcOrganizador||'').toLowerCase(), asistentes:_pj(f.PcAsistentes,[]), estatus:f.PcEstatus||'programada' }; })
       .filter(function(r){ return r.estatus!=='cancelada'; });
   }catch(e){ S.reuniones=[]; }
+  // Entregables (una fila por categoría/tarea con fecha) para el flujo de alertas. Puede no existir aún.
+  try{ var es=await listGet(L_ENTREG); S.entregables=es.map(function(i){ var f=i.fields||{}; return {id:i.id, tareaID:f.PcTareaID||''}; }); }catch(e){ S.entregables=[]; }
   if(S.curBoard && !S.boards.find(function(b){return b.id===S.curBoard;})) S.curBoard=null;
   if(!S.curBoard && S.boards.length) S.curBoard=S.boards[0].id;
   renderBoardSelector();
@@ -799,13 +818,16 @@ function tkRenderCats(){
   S.catDraft.forEach(function(c,idx){
     var row=document.createElement('div'); row.className='part-row'; row.style.alignItems='center';
     if(full){
-      row.innerHTML='<input class="inp tk-cat-nm" placeholder="Categoría" value="'+(c.nombre||'').replace(/"/g,'&quot;')+'" oninput="S.catDraft['+idx+'].nombre=this.value" style="flex:1;">'
-        +'<input type="number" class="inp tk-cat-pct" min="0" max="100" value="'+(parseInt(c.pct)||0)+'" oninput="S.catDraft['+idx+'].pct=parseInt(this.value)||0;tkCatsRem();" style="width:80px;">'
+      row.style.flexWrap='wrap';
+      row.innerHTML='<input class="inp tk-cat-nm" placeholder="Categoría" value="'+(c.nombre||'').replace(/"/g,'&quot;')+'" oninput="S.catDraft['+idx+'].nombre=this.value" style="flex:1;min-width:120px;">'
+        +'<input type="number" class="inp tk-cat-pct" min="0" max="100" value="'+(parseInt(c.pct)||0)+'" oninput="S.catDraft['+idx+'].pct=parseInt(this.value)||0;tkCatsRem();" style="width:62px;" title="% de avance">'
         +'<span style="font-size:.72rem;color:var(--dim);">%</span>'
+        +'<input type="date" class="inp" value="'+(c.fecha||'')+'" oninput="S.catDraft['+idx+'].fecha=this.value" title="Fecha de entrega de la categoría" style="width:140px;">'
         +'<label class="chk-item" title="Marcar como realizada"><input type="checkbox" '+(c.hecho?'checked':'')+(checkDis?' disabled':'')+' onchange="S.catDraft['+idx+'].hecho=this.checked;tkCatsRem();"> hecho</label>'
         +'<button class="btn btn-sm btn-ghost" onclick="S.catDraft.splice('+idx+',1);tkRenderCats();">✕</button>';
     } else {
-      row.innerHTML='<label class="chk-item" style="flex:1;"><input type="checkbox" '+(c.hecho?'checked':'')+(checkDis?' disabled':'')+' onchange="S.catDraft['+idx+'].hecho=this.checked;tkCatsRem();"> '+esc(c.nombre)+' <span style="color:var(--dim);margin-left:4px;">('+(parseInt(c.pct)||0)+'%)</span></label>';
+      var fct=c.fecha?(' · 📅 '+fmtD(c.fecha)):'';
+      row.innerHTML='<label class="chk-item" style="flex:1;"><input type="checkbox" '+(c.hecho?'checked':'')+(checkDis?' disabled':'')+' onchange="S.catDraft['+idx+'].hecho=this.checked;tkCatsRem();"> '+esc(c.nombre)+' <span style="color:var(--dim);margin-left:4px;">('+(parseInt(c.pct)||0)+'%)'+fct+'</span></label>';
     }
     cont.appendChild(row);
   });
@@ -818,7 +840,7 @@ function tkCatsRem(){
   var prog=0; S.catDraft.forEach(function(c){ if(c.hecho) prog+=(parseInt(c.pct)||0); });
   var pv=document.getElementById('tk-prog-view'); if(pv){ pv.textContent=Math.min(100,prog)+'%'; pv.style.color=semColorSolid(prog); }
 }
-function tkAddCat(){ S.catDraft.push({nombre:'',pct:_catRemaining()>0?_catRemaining():0,hecho:!!S.catAuto}); tkRenderCats(); }
+function tkAddCat(){ S.catDraft.push({nombre:'',pct:_catRemaining()>0?_catRemaining():0,hecho:!!S.catAuto,fecha:''}); tkRenderCats(); }
 
 async function saveTask(){
   var b=curBoardObj(); if(!b) return;
@@ -857,9 +879,10 @@ async function saveTask(){
       PcFrecuencia:JSON.stringify(frec), PcSolicitudID: (isSGD && S._sgdPick)?S._sgdPick.id:'' };
   }
   var btn=document.getElementById('tk-save'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  var savedId = S.editTask ? S.editTask.id : null;
   try{
     if(S.editTask){ await listUpdate(L_TAREAS,S.editTask.id,fields); }
-    else { await listCreate(L_TAREAS,fields); }
+    else { var _r=await listCreate(L_TAREAS,fields); savedId=_r&&_r.id; }
     // Si es desde SGD y completo: escribir el analista en la solicitud
     if(!soloEstatus && isSGD && S._sgdPick && asg.length){
       var p=(b.participantes||[]).find(function(x){return x.correo===asg[0];});
@@ -909,14 +932,23 @@ async function saveTask(){
         await notif(asg, 'Planeación Calidad — Tarea actualizada: '+nombre, cu2, 'tarea_editada');
       }
     }
-    closeModal('m-task'); await loadData(); toast('Tarea guardada');
+    closeModal('m-task'); await loadData();
+    // Sincronizar entregables (para el flujo de alertas diarias)
+    var tSaved=S.tasks.find(function(x){return x.id===savedId;});
+    if(tSaved){ await syncEntregables(tSaved, S.boards.find(function(bb){return bb.id===tSaved.tableroID;})); }
+    toast('Tarea guardada');
   }catch(e){ toast('Error: '+(e.message||e)); }
   finally{ btn.disabled=false; btn.textContent='Guardar'; }
 }
 async function deleteTask(){
   if(!S.editTask || !S.completo) return; if(!confirm('¿Eliminar esta tarea?')) return;
-  try{ await listDelete(L_TAREAS,S.editTask.id); closeModal('m-task'); await loadData(); toast('Tarea eliminada'); }
-  catch(e){ toast('Error: '+(e.message||e)); }
+  var tid=S.editTask.id;
+  try{
+    await listDelete(L_TAREAS,tid);
+    var ents=(S.entregables||[]).filter(function(e){return e.tareaID===tid;});
+    for(var i=0;i<ents.length;i++){ try{ await listDelete(L_ENTREG, ents[i].id); }catch(e){} }
+    closeModal('m-task'); await loadData(); toast('Tarea eliminada');
+  }catch(e){ toast('Error: '+(e.message||e)); }
 }
 window.tkToggleSGD=tkToggleSGD; window.tkPickSGD=tkPickSGD; window.tkFrecChange=tkFrecChange; window.tkAddCat=tkAddCat; window.tkCatModeChange=tkCatModeChange; window.tkCatsRem=tkCatsRem; window.tkRenderCats=tkRenderCats;
 
@@ -940,21 +972,35 @@ function kpiTeam(){
   if(!S.completo){ arr=arr.filter(function(p){return p.correo===S.user.email;}); if(!arr.length && S.user && S.user.email) arr=[{nombre:S.user.nombre,correo:S.user.email}]; }
   return arr;
 }
+// Entregables de una persona en un mes: cada categoría CON fecha cuenta en el mes de su
+// fecha; las tareas sin categorías con fecha cuentan como 1 entregable en el mes de su fin.
+function _deliverables(correo, per){
+  var out=[];
+  S.tasks.filter(function(t){return (t.asignados||[]).indexOf(correo)>=0;}).forEach(function(t){
+    var cats=(t.categorias||[]).filter(function(c){return c.fecha;});
+    if(cats.length){
+      cats.forEach(function(c){ if(_inMonth(c.fecha,per)) out.push({ due:c.fecha, done:!!c.hecho, nombre:t.nombre+' · '+c.nombre, pct:(parseInt(c.pct)||0) }); });
+    } else {
+      var ef=effFin(t); if(_inMonth(ef,per)) out.push({ due:ef, done:(t.estatus==='Completada'||calcProgreso(t)>=100), nombre:t.nombre, pct:100 });
+    }
+  });
+  return out;
+}
 function kpiCalc(correo, per){
   var hoy=new Date(); hoy.setHours(0,0,0,0);
-  var tasks=S.tasks.filter(function(t){ return (t.asignados||[]).indexOf(correo)>=0 && _inMonth(effFin(t), per); });
-  var total=tasks.length;
-  var comp=tasks.filter(function(t){return t.estatus==='Completada';}).length;
-  var venc=tasks.filter(function(t){ var ef=effFin(t); return ef && t.estatus!=='Completada' && (new Date(ef+'T00:00:00')<hoy); }).length;
-  var enproc=tasks.filter(function(t){return t.estatus!=='Completada' && calcProgreso(t)>0;}).length;
-  var avance = total? Math.round(tasks.reduce(function(s,t){return s+calcProgreso(t);},0)/total) : 0;
+  var del=_deliverables(correo, per);
+  var total=del.length;
+  var comp=del.filter(function(d){return d.done;}).length;
+  var venc=del.filter(function(d){ return !d.done && d.due && (new Date(d.due+'T00:00:00')<hoy); }).length;
+  var enproc=Math.max(0, total-comp-venc);
+  var avance = total? Math.round(comp/total*100) : 0;   // % de entregables del mes completados
   var aTiempo = total? Math.round((total-venc)/total*100) : 100;
   var cumpl = avance;
   var k=S.kpis[per+'|'+correo]||{};
   var calidad=(k.calidad!=null)?k.calidad:null;
   var meta=k.meta||90, confirmado=!!k.confirmado, comentario=k.comentario||'';
   var fin = (calidad!=null)? Math.round(cumpl*0.7 + calidad*0.3) : cumpl;
-  return {tasks:tasks,total:total,comp:comp,venc:venc,enproc:enproc,avance:avance,aTiempo:aTiempo,cumpl:cumpl,calidad:calidad,meta:meta,confirmado:confirmado,comentario:comentario,fin:fin};
+  return {del:del,total:total,comp:comp,venc:venc,enproc:enproc,avance:avance,aTiempo:aTiempo,cumpl:cumpl,calidad:calidad,meta:meta,confirmado:confirmado,comentario:comentario,fin:fin};
 }
 function kpiEstado(fin,meta){ if(fin>=meta) return {t:'En camino al bono ✅',c:'#4ade80'}; if(fin>=meta-15) return {t:'En riesgo ⚠',c:'#facc15'}; return {t:'No alcanza ✖',c:'#f87171'}; }
 function _gauge(pct,color){
@@ -1000,8 +1046,8 @@ function renderKpi(){
     h+='<div class="pcard-hd"><div class="avatar">'+ini(p.nombre)+'</div><div style="flex:1;"><div style="font-weight:700;">'+esc(p.nombre)+'</div><div style="font-size:.7rem;color:'+est.c+';font-weight:600;">'+est.t+'</div></div></div>';
     h+='<div style="display:flex;gap:14px;align-items:center;margin-bottom:10px;">'+_gauge(c.fin, est.c)
       +'<div style="flex:1;font-size:.76rem;line-height:1.7;">'
-      +'Tareas del mes: <strong>'+c.total+'</strong><br>'
-      +'Completadas: <strong style="color:#4ade80;">'+c.comp+'</strong> · En proceso: <strong style="color:#58a6ff;">'+c.enproc+'</strong> · Vencidas: <strong style="color:'+(c.venc?'#f87171':'var(--dim)')+';">'+c.venc+'</strong><br>'
+      +'Entregables del mes: <strong>'+c.total+'</strong> <span style="color:var(--dim);font-size:.66rem;">(categorías/tareas con fecha en el mes)</span><br>'
+      +'Completados: <strong style="color:#4ade80;">'+c.comp+'</strong> · Pendientes: <strong style="color:#58a6ff;">'+c.enproc+'</strong> · Vencidos: <strong style="color:'+(c.venc?'#f87171':'var(--dim)')+';">'+c.venc+'</strong><br>'
       +'A tiempo: <strong>'+c.aTiempo+'%</strong></div></div>';
     // KPI 1 Cumplimiento
     h+='<div style="font-size:.74rem;color:var(--dim);margin-bottom:2px;">Cumplimiento (automático)'+(c.confirmado?' · <span style="color:#4ade80;">confirmado</span>':'')+'</div>';

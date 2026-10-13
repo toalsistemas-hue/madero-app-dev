@@ -461,9 +461,10 @@ function boardTasks(){ var b=curBoardObj(); if(!b) return []; var t=S.tasks.filt
 function renderBoard(){
   var b=curBoardObj();
   var sub=document.getElementById('b-sub'), tools=document.getElementById('b-tools'), body=document.getElementById('b-body');
-  if(!b){ sub.textContent=''; tools.innerHTML=''; body.innerHTML='<div class="empty">Crea o selecciona un tablero para comenzar.</div>'; return; }
+  // Botones de líder: visibles siempre que sea acceso completo (aunque aún no haya tableros)
   var nb=document.getElementById('btn-new-board'); if(nb) nb.style.display=S.completo?'inline-block':'none';
   var rb=document.getElementById('btn-reuniones'); if(rb) rb.style.display=S.completo?'inline-block':'none';
+  if(!b){ sub.textContent=''; tools.innerHTML=''; body.innerHTML='<div class="empty">'+(S.completo?'Crea un tablero con “＋ Nuevo tablero” para comenzar.':'Aún no hay tableros asignados a ti.')+'</div>'; return; }
   sub.innerHTML='<span class="chip">'+_tipoLbl(b.tipo)+'</span> '+(b.participantes.length)+' participante(s)';
   tools.innerHTML=''
     +'<label style="font-size:.74rem;color:var(--dim);display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" '+(S.soloMias?'checked':'')+' onchange="S.soloMias=this.checked;renderBoard();"> Solo mis tareas</label>'

@@ -424,8 +424,10 @@ window.refrescar=refrescar;
 // ═══════════════ DATOS ═══════════════
 function _pj(s,def){ try{ return JSON.parse(s||''); }catch(e){ return def; } }
 function _iso(s){ return (s||'').split('T')[0]; }
-async function loadData(){
-  var bb=document.getElementById('b-body'); if(bb) bb.innerHTML='<div class="empty"><span class="spin"></span> Cargando…</div>';
+async function loadData(silent){
+  var bb=document.getElementById('b-body');
+  // El spinner solo en la PRIMERA carga; los refrescos no borran la vista (evita el salto del Gantt).
+  if(bb && !S._everLoaded) bb.innerHTML='<div class="empty"><span class="spin"></span> Cargando…</div>';
   var bs = await listGet(L_TABLEROS);
   S.boards = bs.map(function(i){ var f=i.fields||{}; return {
     id:i.id, nombre:f.Title||'(sin nombre)', tipo:f.PcTipo||'compartido', descripcion:f.PcDescripcion||'',
@@ -459,6 +461,7 @@ async function loadData(){
   try{ var es=await listGet(L_ENTREG); S.entregables=es.map(function(i){ var f=i.fields||{}; return {id:i.id, tareaID:f.PcTareaID||''}; }); }catch(e){ S.entregables=[]; }
   if(S.curBoard && !S.boards.find(function(b){return b.id===S.curBoard;})) S.curBoard=null;
   if(!S.curBoard && S.boards.length) S.curBoard=S.boards[0].id;
+  S._everLoaded=true;
   renderBoardSelector();
   renderBoard();
   if(document.getElementById('kpi-view').classList.contains('show')) renderKpi();
@@ -496,9 +499,12 @@ function renderBoard(){
     +'<label style="font-size:.74rem;color:var(--dim);display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" '+(S.soloMias?'checked':'')+' onchange="S.soloMias=this.checked;renderBoard();"> Solo mis tareas</label>'
     +(S.completo?('<button class="btn btn-sm" onclick="openBoardModal(\''+b.id+'\')">⚙ Editar tablero</button>'
     +'<button class="btn btn-sm btn-primary" onclick="openTaskModal()">＋ Nueva tarea</button>'):'');
+  // Preservar la posición de scroll (sobre todo el Gantt) al re-dibujar por refresco
+  var _sl=body.scrollLeft, _st=body.scrollTop;
   if(b.tipo==='compartido') renderKanban(body,b);
   else if(b.tipo==='individual') renderIndividual(body,b);
   else renderGantt(body,b);
+  try{ body.scrollLeft=_sl; body.scrollTop=_st; }catch(e){}
 }
 
 // ---- Kanban ----

@@ -99,6 +99,10 @@ select.inp{appearance:auto;}
 .g-label .g-asg{font-size:.66rem;color:var(--dim);}
 .g-track{position:relative;flex:1;min-height:40px;}
 .g-bar{position:absolute;top:9px;height:22px;border-radius:5px;display:flex;align-items:center;padding:0 7px;font-size:.66rem;color:#06121f;font-weight:700;overflow:hidden;white-space:nowrap;cursor:pointer;}
+.g-ov{position:relative;z-index:2;flex:0 0 auto;margin-right:6px;font-weight:700;font-size:.66rem;color:#0b1220;}
+.g-segs{position:relative;flex:1 1 auto;display:flex;height:16px;border-radius:3px;overflow:hidden;background:rgba(0,0,0,.14);min-width:0;}
+.g-seg{display:flex;align-items:center;justify-content:center;font-size:.58rem;font-weight:700;color:#07131f;overflow:hidden;border-right:1px solid rgba(0,0,0,.25);min-width:0;}
+.g-seg:last-child{border-right:none;}
 .g-milestone{position:absolute;top:8px;width:22px;height:22px;transform:rotate(45deg);border-radius:4px;cursor:pointer;}
 .g-head{display:flex;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:2;}
 .g-head .g-label{font-weight:700;color:var(--dim);font-size:.72rem;}
@@ -300,6 +304,7 @@ textarea.inp{resize:vertical;min-height:60px;font-family:inherit;}
 // ═══════════════ CONFIG ═══════════════
 var L_TABLEROS='PCAL_Tableros', L_TAREAS='PCAL_Tareas', L_REUNIONES='PCAL_Reuniones', L_NOTIF='PCAL_Notificaciones', L_ENTREG='PCAL_Entregables';
 var ESTATUS=['Sin iniciar','En proceso','En revisión','Bloqueada','Completada'];
+var CAT_EST=['Sin iniciar','En proceso','En revisión','Completada'];
 var ST_COLOR={'Sin iniciar':'#6e7681','En proceso':'#58a6ff','En revisión':'#a855f7','Bloqueada':'#ef4444','Completada':'#2ea043'};
 
 var S = { user:null, completo:false, boards:[], tasks:[], kpis:{}, reuniones:[], entregables:[], curBoard:null, soloMias:false, editBoard:null, editTask:null, _loaded:false, catDraft:[], sgdCache:null, meetTaskId:null };
@@ -440,7 +445,7 @@ async function loadData(silent){
     asignados:_pj(f.PcAsignados,[]), estatus:f.PcEstatus||'Sin iniciar', prioridad:f.PcPrioridad||'Media',
     ini:_iso(f.PcFechaInicio), fin:_iso(f.PcFechaFin), progreso:parseInt(f.PcProgreso||0)||0,
     dependencias:_pj(f.PcDependencias,[]), esHito:(f.PcEsHito==='Si'||f.PcEsHito===true), etiquetas:f.PcEtiquetas||'', orden:f.PcOrden||0,
-    categorias:_pj(f.PcCategorias,[]), frecuencia:_pj(f.PcFrecuencia,null), solicitudID:f.PcSolicitudID||'',
+    categorias:(_pj(f.PcCategorias,[])||[]).map(function(c){ if(!c.estatus) c.estatus=c.hecho?'Completada':'Sin iniciar'; c.hecho=(c.estatus==='Completada'); return c; }), frecuencia:_pj(f.PcFrecuencia,null), solicitudID:f.PcSolicitudID||'',
     fCompromiso:_iso(f.PcFechaCompromiso), fCompromisoAsig:_iso(f.PcFechaCompromisoAsig)
   }; });
   // KPIs (evaluaciones del líder). La lista puede no existir aún.
@@ -611,9 +616,19 @@ function renderGantt(body,b){
     rows+='<div class="g-track" style="width:'+trackW+'px" onclick="openTaskModal(\''+t.id+'\')">';
     if(t.esHito){ rows+='<div class="g-milestone" style="left:'+x+'px;background:'+semColorSolid(_p)+'" title="'+esc(t.nombre)+'"></div>'; }
     else {
-      rows+='<div class="g-bar" style="left:'+x+'px;width:'+w+'px;background:'+semColor(_p)+';color:#0b1220;" title="'+esc(t.nombre)+'">'
-        +'<div style="position:absolute;left:0;top:0;bottom:0;background:'+semColorSolid(_p)+';opacity:.45;width:'+_p+'%"></div>'
-        +'<span style="position:relative;">'+_p+'%</span></div>';
+      var _cats=(t.categorias||[]).filter(function(c){ return (parseInt(c.pct)||0)>0; });
+      var _inner, _ttl=esc(t.nombre);
+      if(_cats.length){
+        var _segs='';
+        _cats.forEach(function(c){
+          var _cp=parseInt(c.pct)||0, _est=c.estatus||(c.hecho?'Completada':'Sin iniciar'), _col=ST_COLOR[_est]||'#6e7681';
+          _segs+='<div class="g-seg" style="flex:0 0 '+_cp+'%;background:'+_col+';" title="'+esc(c.nombre)+': '+_est+' ('+_cp+'%)">'+(_cp>=9?_cp+'%':'')+'</div>';
+        });
+        _inner='<span class="g-ov">'+_p+'%</span><div class="g-segs">'+_segs+'</div>';
+      } else {
+        _inner='<div style="position:absolute;left:0;top:0;bottom:0;background:'+semColorSolid(_p)+';opacity:.45;width:'+_p+'%"></div><span style="position:relative;">'+_p+'%</span>';
+      }
+      rows+='<div class="g-bar" style="left:'+x+'px;width:'+w+'px;background:'+semColor(_p)+';color:#0b1220;" title="'+_ttl+'">'+_inner+'</div>';
     }
     rows+='</div></div>';
   });
@@ -822,6 +837,7 @@ function tkRenderCats(){
   if(!S.catDraft.length){ cont.innerHTML='<div style="color:var(--muted);font-size:.76rem;">Sin categorías.'+(full?' Agrega categorías para medir el avance.':'')+'</div>'; tkCatsRem(); return; }
   var checkDis = auto || !canEdit;   // checkbox 'hecho' deshabilitado si es automático o no puede editar
   S.catDraft.forEach(function(c,idx){
+    if(!c.estatus) c.estatus = c.hecho?'Completada':'Sin iniciar';
     var row=document.createElement('div'); row.className='part-row'; row.style.alignItems='center';
     if(full){
       row.style.flexWrap='wrap';
@@ -829,16 +845,27 @@ function tkRenderCats(){
         +'<input type="number" class="inp tk-cat-pct" min="0" max="100" value="'+(parseInt(c.pct)||0)+'" oninput="S.catDraft['+idx+'].pct=parseInt(this.value)||0;tkCatsRem();" style="width:62px;" title="% de avance">'
         +'<span style="font-size:.72rem;color:var(--dim);">%</span>'
         +'<input type="date" class="inp" value="'+(c.fecha||'')+'" oninput="S.catDraft['+idx+'].fecha=this.value" title="Fecha de entrega de la categoría" style="width:140px;">'
-        +'<label class="chk-item" title="Marcar como realizada"><input type="checkbox" '+(c.hecho?'checked':'')+(checkDis?' disabled':'')+' onchange="S.catDraft['+idx+'].hecho=this.checked;tkCatsRem();"> hecho</label>'
+        +catStSel(idx,c,checkDis)
+        +'<label class="chk-item" title="Marcar como realizada"><input type="checkbox" '+(c.hecho?'checked':'')+(checkDis?' disabled':'')+' onchange="catSetHecho('+idx+',this.checked)"> hecho</label>'
         +'<button class="btn btn-sm btn-ghost" onclick="S.catDraft.splice('+idx+',1);tkRenderCats();">✕</button>';
     } else {
       var fct=c.fecha?(' · 📅 '+fmtD(c.fecha)):'';
-      row.innerHTML='<label class="chk-item" style="flex:1;"><input type="checkbox" '+(c.hecho?'checked':'')+(checkDis?' disabled':'')+' onchange="S.catDraft['+idx+'].hecho=this.checked;tkCatsRem();"> '+esc(c.nombre)+' <span style="color:var(--dim);margin-left:4px;">('+(parseInt(c.pct)||0)+'%)'+fct+'</span></label>';
+      row.style.flexWrap='wrap';
+      row.innerHTML='<label class="chk-item" style="flex:1;min-width:150px;"><input type="checkbox" '+(c.hecho?'checked':'')+(checkDis?' disabled':'')+' onchange="catSetHecho('+idx+',this.checked)"> '+esc(c.nombre)+' <span style="color:var(--dim);margin-left:4px;">('+(parseInt(c.pct)||0)+'%)'+fct+'</span></label>'
+        +catStSel(idx,c,checkDis);
     }
     cont.appendChild(row);
   });
   tkCatsRem();
 }
+function catStSel(idx,c,dis){
+  var cur=c.estatus||'Sin iniciar', o='';
+  CAT_EST.forEach(function(s){ o+='<option value="'+s+'"'+(cur===s?' selected':'')+'>'+s+'</option>'; });
+  return '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+(ST_COLOR[cur]||'#6e7681')+';margin-right:3px;"></span>'
+    +'<select class="inp" style="width:118px;font-size:.72rem;padding:3px 4px;"'+(dis?' disabled':'')+' onchange="catSetEst('+idx+',this.value)" title="Estatus de la categoría">'+o+'</select>';
+}
+function catSetEst(idx,val){ var c=S.catDraft[idx]; if(!c) return; c.estatus=val; c.hecho=(val==='Completada'); tkRenderCats(); }
+function catSetHecho(idx,val){ var c=S.catDraft[idx]; if(!c) return; c.hecho=val; c.estatus = val?'Completada':((c.estatus==='Completada')?'En proceso':(c.estatus||'Sin iniciar')); tkRenderCats(); }
 function tkCatsRem(){
   var rem=_catRemaining();
   var remEl=document.getElementById('tk-cats-rem');
@@ -846,7 +873,7 @@ function tkCatsRem(){
   var prog=0; S.catDraft.forEach(function(c){ if(c.hecho) prog+=(parseInt(c.pct)||0); });
   var pv=document.getElementById('tk-prog-view'); if(pv){ pv.textContent=Math.min(100,prog)+'%'; pv.style.color=semColorSolid(prog); }
 }
-function tkAddCat(){ S.catDraft.push({nombre:'',pct:_catRemaining()>0?_catRemaining():0,hecho:!!S.catAuto,fecha:''}); tkRenderCats(); }
+function tkAddCat(){ S.catDraft.push({nombre:'',pct:_catRemaining()>0?_catRemaining():0,hecho:!!S.catAuto,fecha:'',estatus:(S.catAuto?'Completada':'Sin iniciar')}); tkRenderCats(); }
 
 async function saveTask(){
   var b=curBoardObj(); if(!b) return;
@@ -866,7 +893,9 @@ async function saveTask(){
     frec={tipo:ftipo, dias:(ftipo==='semana'?fdias:[]), catAuto:(ftipo!=='ninguna' && !!S.catAuto)};
   }
   // si es automático, marcar todas las categorías como hechas
-  if(frec.catAuto){ (S.catDraft||[]).forEach(function(c){ c.hecho=true; }); }
+  if(frec.catAuto){ (S.catDraft||[]).forEach(function(c){ c.hecho=true; c.estatus='Completada'; }); }
+  // normalizar estatus/hecho coherentes
+  (S.catDraft||[]).forEach(function(c){ if(!c.estatus) c.estatus=c.hecho?'Completada':'Sin iniciar'; c.hecho=(c.estatus==='Completada'); });
   // progreso desde categorías
   var prog=0; (S.catDraft||[]).forEach(function(c){ if(c.hecho) prog+=(parseInt(c.pct)||0); }); prog=Math.min(100,prog);
   var ini=document.getElementById('tk-ini').value, fin=document.getElementById('tk-fin').value;
@@ -956,7 +985,7 @@ async function deleteTask(){
     closeModal('m-task'); await loadData(); toast('Tarea eliminada');
   }catch(e){ toast('Error: '+(e.message||e)); }
 }
-window.tkToggleSGD=tkToggleSGD; window.tkPickSGD=tkPickSGD; window.tkFrecChange=tkFrecChange; window.tkAddCat=tkAddCat; window.tkCatModeChange=tkCatModeChange; window.tkCatsRem=tkCatsRem; window.tkRenderCats=tkRenderCats;
+window.tkToggleSGD=tkToggleSGD; window.tkPickSGD=tkPickSGD; window.tkFrecChange=tkFrecChange; window.tkAddCat=tkAddCat; window.tkCatModeChange=tkCatModeChange; window.tkCatsRem=tkCatsRem; window.tkRenderCats=tkRenderCats; window.catSetEst=catSetEst; window.catSetHecho=catSetHecho; window.catStSel=catStSel;
 
 // ═══════════════ UTILES ═══════════════
 function openModal(id){ document.getElementById(id).classList.add('show'); }

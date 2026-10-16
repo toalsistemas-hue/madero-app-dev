@@ -19,21 +19,20 @@ a{color:var(--accent-l);}
 
 /* Shell */
 #app{display:flex;flex-direction:column;height:100vh;}
-.shell{display:flex;flex:1;overflow:hidden;}
-.sidebar{width:248px;flex:0 0 248px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
-.sb-head{padding:16px 16px 10px;}
-.sb-head .ttl{font-size:1.02rem;font-weight:800;display:flex;align-items:center;gap:8px;}
-.sb-head .sub{font-size:.72rem;color:var(--dim);margin-top:2px;}
-.sb-nav{flex:1;overflow:auto;padding:8px 10px;}
-.nav-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;cursor:pointer;font-size:.86rem;color:var(--text);margin-bottom:3px;border:1px solid transparent;}
-.nav-item:hover{background:rgba(255,255,255,.05);}
-.nav-item.active{background:rgba(31,111,235,.18);border-color:rgba(88,166,255,.4);}
-.nav-item .ico{width:20px;text-align:center;flex:0 0 auto;}
-.nav-item .cnt{margin-left:auto;background:rgba(255,255,255,.1);border-radius:20px;font-size:.66rem;padding:1px 8px;color:var(--dim);}
-.sb-foot{padding:10px;border-top:1px solid var(--border);}
-.user-row{display:flex;align-items:center;gap:8px;padding:6px 6px 8px;font-size:.78rem;color:var(--dim);}
-.avatar{width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex:0 0 auto;}
-.rolechip{font-size:.6rem;border-radius:5px;padding:1px 7px;background:rgba(88,166,255,.15);color:var(--accent-l);text-transform:uppercase;letter-spacing:.4px;}
+/* Barra superior (reemplaza el sidebar: el portal padre ya tiene el suyo) */
+.topbar{display:flex;align-items:center;gap:16px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--panel);flex-wrap:wrap;}
+.tb-brand{display:flex;flex-direction:column;flex:0 0 auto;}
+.tb-brand .ttl{font-size:1.02rem;font-weight:800;display:flex;align-items:center;gap:8px;}
+.tb-brand .sub{font-size:.7rem;color:var(--dim);margin-top:1px;}
+.tabs{display:flex;gap:6px;flex:1;flex-wrap:wrap;align-items:center;}
+.nav-item{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:20px;cursor:pointer;font-size:.82rem;color:var(--dim);border:1px solid transparent;white-space:nowrap;}
+.nav-item:hover{background:rgba(255,255,255,.05);color:var(--text);}
+.nav-item.active{background:rgba(31,111,235,.18);border-color:rgba(88,166,255,.4);color:var(--text);font-weight:600;}
+.nav-item .ico{flex:0 0 auto;}
+.nav-item .cnt{background:rgba(255,255,255,.12);border-radius:20px;font-size:.64rem;padding:0 7px;color:var(--dim);}
+.nav-item.active .cnt{background:rgba(88,166,255,.25);color:var(--accent-l);}
+.tb-tools{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
+.rolechip{font-size:.6rem;border-radius:5px;padding:2px 8px;background:rgba(88,166,255,.15);color:var(--accent-l);text-transform:uppercase;letter-spacing:.4px;}
 
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 .main-head{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
@@ -148,41 +147,33 @@ table.rtab th{color:var(--dim);font-weight:700;font-size:.7rem;text-transform:up
 <body>
 
 <div id="app">
-  <div class="shell">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="sb-head">
-        <div class="ttl">🛠️ Tickets de Ingeniería</div>
-        <div class="sub">Soporte y seguimiento de solicitudes</div>
-      </div>
-      <nav class="sb-nav" id="nav"></nav>
-      <div class="sb-foot">
-        <button class="btn btn-primary btn-block" id="btn-nuevo" onclick="abrirNuevo()">＋ Nuevo ticket</button>
-        <div class="user-row" style="margin-top:10px;">
-          <div class="avatar" id="u-ava">·</div>
-          <div style="flex:1;min-width:0;">
-            <div id="u-nom" style="color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div>
-            <span class="rolechip" id="u-rol">—</span>
-          </div>
-        </div>
-        <button class="btn btn-sm btn-block" id="btn-refresh" onclick="refrescar()" style="margin-top:6px;">🔄 Actualizar</button>
-      </div>
-    </aside>
-
-    <!-- Main -->
-    <section class="main">
-      <div class="main-head">
-        <div>
-          <div class="h-ttl" id="h-ttl">Mis tickets</div>
-          <div class="h-sub" id="h-sub"></div>
-        </div>
-        <div class="main-tools" id="h-tools"></div>
-      </div>
-      <div class="main-body" id="body">
-        <div class="empty"><span class="spin"></span> Cargando…</div>
-      </div>
-    </section>
+  <!-- Barra superior con pestañas (el portal padre ya tiene el sidebar) -->
+  <div class="topbar">
+    <div class="tb-brand">
+      <div class="ttl">🛠️ Tickets de Ingeniería</div>
+      <div class="sub">Soporte y seguimiento de solicitudes</div>
+    </div>
+    <nav class="tabs" id="nav"></nav>
+    <div class="tb-tools">
+      <span class="rolechip" id="u-rol">—</span>
+      <button class="btn btn-primary btn-sm" id="btn-nuevo" onclick="abrirNuevo()">＋ Nuevo ticket</button>
+      <button class="btn btn-sm" id="btn-refresh" onclick="refrescar()">🔄 Actualizar</button>
+    </div>
   </div>
+
+  <!-- Contenido -->
+  <section class="main">
+    <div class="main-head">
+      <div>
+        <div class="h-ttl" id="h-ttl">Mis tickets</div>
+        <div class="h-sub" id="h-sub"></div>
+      </div>
+      <div class="main-tools" id="h-tools"></div>
+    </div>
+    <div class="main-body" id="body">
+      <div class="empty"><span class="spin"></span> Cargando…</div>
+    </div>
+  </section>
 </div>
 
 <!-- Modal: detalle de ticket -->
@@ -419,10 +410,8 @@ function slaTxt(t){ var e=slaEstado(t);
 
 /* ---------- navegación / cabecera ---------- */
 function pintarUsuario(){
-  document.getElementById('u-ava').textContent=iniciales(S.user.nombre);
-  document.getElementById('u-nom').textContent=S.user.nombre;
   var rl={coordinador:'Coordinador',direccion:'Dirección',ingeniero:'Ingeniero',solicitante:'Solicitante'};
-  document.getElementById('u-rol').textContent=rl[S.rol]||S.rol;
+  var el=document.getElementById('u-rol'); if(el){ el.textContent=rl[S.rol]||S.rol; el.title=S.user?S.user.nombre:''; }
 }
 function navDefs(){
   var n=[{id:'mis',ico:'📌',txt:'Mis tickets'}];

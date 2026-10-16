@@ -2259,6 +2259,16 @@ tr:last-child td{border-bottom:none;}
   </iframe>
 </div>
 
+<!-- PAGE: TICKETS DE INGENIERÍA -->
+<div class="page" id="page-TicketsIngenieria" style="padding:0;margin:0;position:relative;">
+  <iframe
+    id="tkt-iframe"
+    src="tickets-ingenieria.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
+    title="Tickets de Ingeniería">
+  </iframe>
+</div>
+
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
@@ -3328,6 +3338,32 @@ function navigateToPantalla(pantallaID) {
     if (cdocIfrm) cdocIfrm.style.display = 'none';
     var pcalIfrm = document.getElementById('pcal-iframe');
     if (pcalIfrm) pcalIfrm.style.display = 'none';
+    var tktIfrm = document.getElementById('tkt-iframe');
+    if (tktIfrm) tktIfrm.style.display = 'none';
+
+    if (pantallaID==='TicketsIngenieria') {
+      if (tktIfrm) {
+        tktIfrm.style.display = 'block';
+        setTimeout(function() {
+          if (tktIfrm && tktIfrm.contentWindow) {
+            var nivelTkt = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas['TicketsIngenieria'] || '') : '';
+            if (state.currentUser && state.currentUser.esAdmin) nivelTkt = 'completo';
+            tktIfrm.contentWindow.postMessage({
+              type: 'SGD_AUTH',
+              user: {
+                nombre: state.currentUser ? state.currentUser.nombre : '',
+                correo: state.currentUser ? (state.currentUser.email || '') : '',
+                puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+                puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+                esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+              },
+              nivel: nivelTkt,
+              isDemoMode: state.isDemoMode || false
+            }, '*');
+          }
+        }, 400);
+      }
+    }
 
     if (pantallaID==='PlaneacionCalidad') {
       if (pcalIfrm) {
@@ -3699,6 +3735,8 @@ function doLogout() {
   if (cdocIfrmL) cdocIfrmL.style.display = 'none';
   var pcalIfrmL = document.getElementById('pcal-iframe');
   if (pcalIfrmL) pcalIfrmL.style.display = 'none';
+  var tktIfrmL = document.getElementById('tkt-iframe');
+  if (tktIfrmL) tktIfrmL.style.display = 'none';
   document.getElementById('login-email').value='';
   document.getElementById('login-pass').value='';
   document.getElementById('login-error').style.display='none';
@@ -6583,6 +6621,26 @@ window.addEventListener('message', function (e) {
         esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
       },
       nivel: nivelPc,
+      isDemoMode: state.isDemoMode || false
+    }, '*');
+  } catch (_) {}
+});
+
+window.addEventListener('message', function (e) {
+  if (!e.data || e.data.type !== 'TKT_READY') return;
+  try {
+    var nivelTk = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas['TicketsIngenieria'] || '') : '';
+    if (state.currentUser && state.currentUser.esAdmin) nivelTk = 'completo';
+    if (e.source) e.source.postMessage({
+      type: 'SGD_AUTH',
+      user: {
+        nombre: state.currentUser ? state.currentUser.nombre : '',
+        correo: state.currentUser ? (state.currentUser.email || '') : '',
+        puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+        puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+        esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+      },
+      nivel: nivelTk,
       isDemoMode: state.isDemoMode || false
     }, '*');
   } catch (_) {}

@@ -475,6 +475,7 @@ function sgdExtDeMime(m){
   m = (m||'').toLowerCase();
   if (m.indexOf('wordprocessingml')>=0) return '.docx';
   if (m.indexOf('msword')>=0) return '.doc';
+  if (m.indexOf('macroenabled')>=0) return '.xlsm';
   if (m.indexOf('spreadsheetml')>=0) return '.xlsx';
   if (m.indexOf('ms-excel')>=0) return '.xls';
   if (m.indexOf('visio')>=0) return '.vsdx';

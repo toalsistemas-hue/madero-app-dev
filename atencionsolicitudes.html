@@ -459,10 +459,10 @@
         <div class="det" style="display:block;margin:0;">
           <label>1) PDF autorizado (con firmas de autorización) — se muestra en el visor</label>
           <input type="file" id="final-file" accept=".pdf">
-          <label style="margin-top:12px;">2) PDF copia controlada — es el que se descarga</label>
-          <input type="file" id="final-file-copia" accept=".pdf">
+          <label style="margin-top:12px;">2) Copia controlada (PDF, Word o Excel) — es el que se descarga</label>
+          <input type="file" id="final-file-copia" accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm">
           <label style="margin-top:12px;">3) Archivo con formato de origen (Word, Excel o Visio) — editable</label>
-          <input type="file" id="final-file-fuente" accept=".doc,.docx,.xls,.xlsx,.vsd,.vsdx">
+          <input type="file" id="final-file-fuente" accept=".doc,.docx,.xls,.xlsx,.xlsm,.vsd,.vsdx">
           <p class="file-hint">Debes cargar los <b>tres</b> archivos. Al hacerlo, se solicitará a dmartinez@maderoequipos.com agregar el documento a Control Documental y la solicitud pasará a <b>Atendida</b>.</p>
         </div>
       </div>
@@ -1157,7 +1157,7 @@ async function finalGuardar(){
   var copia=(document.getElementById('final-file-copia').files||[])[0];
   var fuente=(document.getElementById('final-file-fuente').files||[])[0];
   if(!file){ err.textContent='Adjunta el PDF autorizado (con firmas).'; return; }
-  if(!copia){ err.textContent='Adjunta el PDF de copia controlada (el que se descarga).'; return; }
+  if(!copia){ err.textContent='Adjunta la copia controlada (PDF, Word o Excel — el que se descarga).'; return; }
   if(!fuente){ err.textContent='Adjunta el archivo con formato de origen (Word, Excel o Visio).'; return; }
   var btn=document.getElementById('final-ok'); btn.disabled=true; btn.textContent='Subiendo…';
   try{
@@ -1167,9 +1167,10 @@ async function finalGuardar(){
       var b64=await atcFileB64(file);
       var up=await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Documentos_Finales', itemId:s.id, fileName:'Final_'+s.id+'.pdf', contentBase64:b64 });
       if(up && up.id) fields.Documento_Final_URL=up.id;
-      // 2) PDF copia controlada (el que se descarga)
+      // 2) Copia controlada (el que se descarga) — conserva su extensión (PDF, Word o Excel)
+      var extC=(copia.name.split('.').pop()||'pdf').toLowerCase();
       var b64c=await atcFileB64(copia);
-      var upc=await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Documentos_Finales', itemId:s.id, fileName:'Copia_'+s.id+'.pdf', contentBase64:b64c });
+      var upc=await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Documentos_Finales', itemId:s.id, fileName:'Copia_'+s.id+'.'+extC, contentBase64:b64c });
       if(upc && upc.id) fields.Documento_Copia_URL=upc.id;
       // 3) Archivo fuente editable (conserva su extensión)
       var extF=(fuente.name.split('.').pop()||'docx').toLowerCase();

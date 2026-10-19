@@ -610,7 +610,14 @@ function atcBotonResolucion(s, idx){
     return '<button class="btn-resol estatus" onclick="estAbrir('+idx+')"><i class="fa-solid fa-arrows-rotate"></i> Cambiar estatus</button>';
   }
   if(est==='en liberación' || est==='en liberacion'){
-    return '<button class="btn-resol estatus" onclick="libAbrir('+idx+')"><i class="fa-solid fa-unlock-keyhole"></i> Liberado por solicitante</button>';
+    var btnLib = '<button class="btn-resol estatus" onclick="libAbrir('+idx+')"><i class="fa-solid fa-unlock-keyhole"></i> Liberado por solicitante</button>';
+    // Solo se puede cancelar mientras NO haya un código apartado. Si ya se apartó código,
+    // la opción de Cancelar desaparece; si luego se libera el código, vuelve a mostrarse.
+    var sinCodigo = !(s.codigoDoc && String(s.codigoDoc).trim());
+    if(sinCodigo){
+      btnLib += ' <button class="btn-resol estatus" style="background:#c0392b;" onclick="estAbrirCancelLib('+idx+')"><i class="fa-solid fa-ban"></i> Cancelar</button>';
+    }
+    return btnLib;
   }
   if(est==='cancelado'){ return '<span class="btn-resol-nota">Cancelada</span>'; }
   if(est==='atendida'){ return '<span class="btn-resol-nota">Atendida</span>'; }
@@ -905,9 +912,13 @@ async function citaConfirmar(){
    MODAL: CAMBIO DE ESTATUS  (solicitud Abierta / En proceso / En revisión)
    ============================================================ */
 var EST_IDX = -1;
+var EST_MODE = 'normal';   // 'normal' (Abierto/En proceso/En revisión) | 'libcancel' (cancelar En liberación sin código)
 function estAbrir(idx){
-  EST_IDX = idx;
+  EST_IDX = idx; EST_MODE = 'normal';
   var s = ATC_VISIBLE[idx]; if(!s) return;
+  // Restaurar las opciones que el modo "solo cancelar" pudo ocultar
+  var opP=document.getElementById('est-opt-proceso'); if(opP) opP.style.display='';
+  var opR=document.getElementById('est-opt-revision'); if(opR) opR.style.display='';
   document.getElementById('est-info').innerHTML =
     '<b>'+atcEsc(s.documento)+'</b><br>Estatus actual: <b>'+atcEsc(s.estatus)+'</b> · Solicitante: '+atcEsc(s.solicitante||'—');
   // Pre-seleccionar la opción según el estatus actual (En proceso / En revisión); si no aplica, En proceso
@@ -929,6 +940,26 @@ function estAbrir(idx){
   document.getElementById('est-modal').classList.add('activo');
 }
 function estCerrar(){ document.getElementById('est-modal').classList.remove('activo'); }
+// Cancelar una solicitud que está "En liberación" PERO que aún no tiene un código apartado.
+// Reutiliza el modal de estatus mostrando únicamente la opción "Cancelado".
+function estAbrirCancelLib(idx){
+  var s = ATC_VISIBLE[idx]; if(!s) return;
+  if(s.codigoDoc && String(s.codigoDoc).trim()){
+    alert('Esta solicitud ya tiene un código apartado. Primero libera el código para poder cancelarla.');
+    return;
+  }
+  EST_IDX = idx; EST_MODE = 'libcancel';
+  document.getElementById('est-info').innerHTML =
+    '<b>'+atcEsc(s.documento)+'</b><br>Estatus actual: <b>'+atcEsc(s.estatus)+'</b> · Solicitante: '+atcEsc(s.solicitante||'—');
+  // Mostrar solo la opción Cancelado
+  var opP=document.getElementById('est-opt-proceso'); if(opP) opP.style.display='none';
+  var opR=document.getElementById('est-opt-revision'); if(opR) opR.style.display='none';
+  var radC=document.querySelector('#est-modal input[value="Cancelado"]'); if(radC) radC.checked=true;
+  var mot=document.getElementById('est-motivo'); if(mot) mot.value='';
+  document.getElementById('est-error').textContent='';
+  estSelOpcion();
+  document.getElementById('est-modal').classList.add('activo');
+}
 function estVerBorrador(){
   var s=ATC_VISIBLE[EST_IDX]; if(!s||!s.docBorradorURL) return;
   if(typeof sgdVerDocumento==='function') sgdVerDocumento(s.docBorradorURL, 'Borrador · '+(s.documento||''));
@@ -949,9 +980,15 @@ async function estConfirmar(){
 
   // Protección: no actuar si el estatus ya cambió (otra persona lo movió)
   btn.disabled=true; btn.textContent='Verificando…';
-  var vig = await atcVigente(s, ['abierta','en proceso','en revisión','en revision']);
+  var guardList = (EST_MODE==='libcancel') ? ['en liberación','en liberacion'] : ['abierta','en proceso','en revisión','en revision'];
+  var vig = await atcVigente(s, guardList);
   btn.disabled=false; btn.textContent='Guardar cambio';
   if(!vig){ estCerrar(); return; }
+  // En modo "cancelar liberación": asegurar que siga sin código apartado
+  if(EST_MODE==='libcancel' && s.codigoDoc && String(s.codigoDoc).trim()){
+    err.textContent='La solicitud ya tiene un código apartado; ya no se puede cancelar aquí.';
+    return;
+  }
 
   if(v==='En proceso'){
     fields = { Estatus:'En proceso', Analista_Asignado:u.nombre||'', Analista_Correo:u.correo||'', Evento_Notificacion:'EN_PROCESO' };

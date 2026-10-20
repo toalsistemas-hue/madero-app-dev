@@ -309,6 +309,18 @@ var ST_COLOR={'Sin iniciar':'#6e7681','En proceso':'#58a6ff','En revisión':'#a8
 
 var S = { user:null, completo:false, boards:[], tasks:[], kpis:{}, reuniones:[], entregables:[], curBoard:null, soloMias:false, editBoard:null, editTask:null, _loaded:false, catDraft:[], sgdCache:null, meetTaskId:null };
 var FREQ_DIAS=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+// ¿El usuario puede VER/seleccionar este tablero?
+//  - Acceso completo (líder/coordinador): ve TODOS los tableros.
+//  - Miembro (lectura): solo los tableros donde es participante.
+function canViewBoard(b){
+  if(!b) return false;
+  if(S.completo) return true;
+  if(!S.user) return false;
+  return (b.participantes||[]).some(function(p){ return (p.correo||'').toLowerCase()===(S.user.email||'').toLowerCase(); });
+}
+// Lista de tableros que el usuario puede ver (respeta permisos).
+function visibleBoards(){ return (S.boards||[]).filter(canViewBoard); }
+
 // ¿El usuario puede editar esta tarea? Completo siempre; lector solo si es su tarea
 // (asignado) o es un tablero compartido donde participa.
 function canEditTask(t){
@@ -464,8 +476,10 @@ async function loadData(silent){
   }catch(e){ S.reuniones=[]; }
   // Entregables (una fila por categoría/tarea con fecha) para el flujo de alertas. Puede no existir aún.
   try{ var es=await listGet(L_ENTREG); S.entregables=es.map(function(i){ var f=i.fields||{}; return {id:i.id, tareaID:f.PcTareaID||''}; }); }catch(e){ S.entregables=[]; }
-  if(S.curBoard && !S.boards.find(function(b){return b.id===S.curBoard;})) S.curBoard=null;
-  if(!S.curBoard && S.boards.length) S.curBoard=S.boards[0].id;
+  // El tablero actual debe ser uno visible para el usuario; si no, cae al primero visible.
+  var _vis=visibleBoards();
+  if(S.curBoard && !_vis.find(function(b){return b.id===S.curBoard;})) S.curBoard=null;
+  if(!S.curBoard && _vis.length) S.curBoard=_vis[0].id;
   S._everLoaded=true;
   renderBoardSelector();
   renderBoard();
@@ -476,10 +490,11 @@ async function loadData(silent){
 function _tipoLbl(t){ return t==='proyecto'?'📊 Proyecto (Gantt)':t==='individual'?'🧑 Individuales':'🗂️ Compartidas'; }
 function renderBoardSelector(){
   var sel=document.getElementById('board-sel'); if(!sel) return;
-  if(!S.boards.length){ sel.innerHTML='<option value="">— Sin tableros —</option>'; return; }
+  var vis=visibleBoards();
+  if(!vis.length){ sel.innerHTML='<option value="">— Sin tableros —</option>'; return; }
   var h='';
   [['compartido','🗂️ Compartidas'],['individual','🧑 Individuales'],['proyecto','📊 Proyecto (Gantt)']].forEach(function(g){
-    var list=S.boards.filter(function(b){return b.tipo===g[0];});
+    var list=vis.filter(function(b){return b.tipo===g[0];});
     if(!list.length) return;
     h+='<optgroup label="'+g[1]+'">';
     list.forEach(function(b){ h+='<option value="'+b.id+'"'+(b.id===S.curBoard?' selected':'')+'>'+esc(b.nombre)+'</option>'; });
@@ -487,7 +502,7 @@ function renderBoardSelector(){
   });
   sel.innerHTML=h;
 }
-function selectBoard(id){ if(!id) return; S.curBoard=id; S.soloMias=false; renderBoardSelector(); renderBoard(); }
+function selectBoard(id){ if(!id) return; var b=S.boards.find(function(x){return x.id===id;}); if(!canViewBoard(b)){ toast('No tienes acceso a ese tablero'); return; } S.curBoard=id; S.soloMias=false; renderBoardSelector(); renderBoard(); }
 
 // ═══════════════ RENDER TABLERO ═══════════════
 function curBoardObj(){ return S.boards.find(function(b){return b.id===S.curBoard;})||null; }

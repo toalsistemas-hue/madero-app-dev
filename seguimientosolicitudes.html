@@ -301,6 +301,33 @@
   </div>
 </div>
 
+<!-- Modal: DAR SEGUIMIENTO (el solicitado llena/actualiza y devuelve documentos) -->
+<div class="seg-modal" id="seg-seg-modal">
+  <div class="seg-box">
+    <div class="seg-head" style="background:linear-gradient(135deg,#1f6feb,#2f75a8);">
+      <div class="t"><i class="fa-solid fa-file-pen"></i> Dar seguimiento</div>
+      <button class="cerrar" onclick="segSegCerrar()">&times;</button>
+    </div>
+    <div class="seg-body">
+      <div class="seg-info" id="seg-seg-info"></div>
+
+      <div style="margin:4px 0 6px;font-weight:700;color:#1f4e79;">Documentos a llenar / revisar</div>
+      <div id="seg-seg-adjuntos" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <p style="color:#667;font-size:13px;margin:8px 0 16px;">Puedes <b>ver</b> los PDF en el visor y <b>descargar</b> cada documento en su formato original para llenarlo. Cuando termines, súbelos ya completos y presiona <b>Devolver documentos</b>.</p>
+
+      <div style="margin:4px 0 6px;font-weight:700;color:#1f4e79;">Subir documentos completados <span style="color:#c0392b;">*</span></div>
+      <input type="file" id="seg-seg-files" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm" onchange="segSegFilesLista()" style="display:block;width:100%;box-sizing:border-box;padding:10px 12px;border:1px dashed #b7c4d4;border-radius:8px;background:#f8fafc;font-size:14px;cursor:pointer;">
+      <div id="seg-seg-files-lista" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;"></div>
+
+      <div class="seg-error" id="seg-seg-error"></div>
+    </div>
+    <div class="seg-foot">
+      <button class="seg-btn cancel" onclick="segSegCerrar()">Cancelar</button>
+      <button class="seg-btn" id="seg-seg-ok" onclick="segSegDevolver()">Devolver documentos</button>
+    </div>
+  </div>
+</div>
+
 <!-- Puente SP + usuario en sesión (inyectado por index.html) -->
 <script src="script.js"></script>
 <script>
@@ -334,6 +361,7 @@ function segEstadoPill(est){
   else if(e==='pendiente') cls='estado-pendiente';
   else if(e==='en proceso') cls='estado-proceso';
   else if(e==='en revisión'||e==='en revision') cls='estado-revision';
+  else if(e==='en seguimiento') cls='estado-revision';
   else if(e==='en liberación'||e==='en liberacion') cls='estado-liberacion';
   else if(e==='cancelado') cls='estado-cancelado';
   else if(e==='atendida') cls='estado-atendida';
@@ -349,7 +377,17 @@ function segFmtFecha(s){
 
 // Dibuja la tabla a partir de SEG_ITEMS aplicando el filtro de tipo
 var SEG_VISIBLE=[];  // subconjunto visible (base para los índices del detalle)
+var SEG_ME='';       // correo del usuario en sesión (para saber si soy solicitante o solicitado)
 function segEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+// ¿Nace de "Solicitar Seguimiento"? (dirigida a un Solicitado)
+function segEsDeSeguimiento(s){ return String((s&&s.origen)||'')==='Seguimiento' && !!(s&&s.correoSolicitado); }
+// Correo del usuario que debe ACTUAR la solicitud (revisar/llenar):
+//  - si viene de "Solicitar Seguimiento", el Solicitado; si no, el solicitante.
+function segActor(s){ return segEsDeSeguimiento(s) ? String(s.correoSolicitado||'').toLowerCase() : String(s.correo||'').toLowerCase(); }
+function segSoyActor(s){ return SEG_ME && segActor(s)===SEG_ME; }
+// Lista de adjuntos [{id,nombre}] de la solicitud
+function segAdjuntos(s){ try{ var a=JSON.parse(s.adjuntosJSON||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function segEsPDF(nombre){ return /\.pdf$/i.test(String(nombre||'')); }
 
 function segRender(){
   var tbody=document.getElementById('seg-tbody');
@@ -410,11 +448,18 @@ function segCeldaCita(s, idx){
 function segCeldaDoc(s, idx){
   var est=String(s.estatus||'').toLowerCase();
   var rdoc=String(s.respuestaDoc||'').toLowerCase();
+  // Solicitud de seguimiento (llenar/actualizar y devolver documentos)
+  if(est==='en seguimiento'){
+    if(segSoyActor(s)) return '<button class="cita-btn cita-validar" onclick="segSegAbrir('+idx+')"><i class="fa-solid fa-file-pen"></i> Dar seguimiento</button>';
+    return '<span class="cita-sub">Pendiente del solicitado</span>';
+  }
   if(s.docFinalURL){
     return '<button class="cita-btn cita-confirmada" onclick="segVerArchivo(\''+segEsc(s.docFinalURL)+'\',\''+segEsc((s.documento||'').replace(/\x27/g,""))+'\')"><i class="fa-solid fa-file-circle-check"></i> Autorizado</button>';
   }
   if((est==='en revisión'||est==='en revision') && s.docBorradorURL && rdoc!=='autorizado'){
-    return '<button class="cita-btn cita-validar" onclick="segDocAbrir('+idx+')"><i class="fa-regular fa-file-lines"></i> Revisar borrador</button>';
+    // Solo el actor (solicitante o, si es de seguimiento, el solicitado) revisa el borrador
+    if(segSoyActor(s)) return '<button class="cita-btn cita-validar" onclick="segDocAbrir('+idx+')"><i class="fa-regular fa-file-lines"></i> Revisar borrador</button>';
+    return '<span class="cita-sub">En revisión por el solicitado</span>';
   }
   if(rdoc==='rechazado'){
     return '<span class="cita-sub">Cambios enviados; espera nuevo borrador</span>';
@@ -499,11 +544,11 @@ async function segDocConfirmar(){
     try{ r = await window.SGD.sp('reauth', {}); }
     catch(e){ btn.disabled=false; btn.textContent='Autorizar'; err.textContent='No se pudo verificar tu identidad con Microsoft. Intenta de nuevo.'; return; }
     var cuentaUsada=((r&&r.username)||'').toLowerCase();
-    var solicitante=String(s.correo||'').toLowerCase();
+    var actor=segActor(s);   // solicitante o, si es de seguimiento, el solicitado
     if(!cuentaUsada){ btn.disabled=false; btn.textContent='Autorizar'; err.textContent='No se pudo verificar la cuenta.'; return; }
-    if(cuentaUsada!==solicitante){
+    if(cuentaUsada!==actor){
       btn.disabled=false; btn.textContent='Autorizar';
-      err.textContent='La cuenta ('+cuentaUsada+') no coincide con la del solicitante. Debes autorizar con tu propia cuenta.';
+      err.textContent='La cuenta ('+cuentaUsada+') no coincide con la del destinatario de esta solicitud. Debes autorizar con tu propia cuenta.';
       return;
     }
     fields = {
@@ -534,6 +579,80 @@ async function segDocConfirmar(){
   finally{ btn.disabled=false; btn.textContent=(v==='autorizar'?'Autorizar':'Enviar cambios'); }
 }
 
+/* ===== Dar seguimiento: el solicitado llena/actualiza y devuelve documentos ===== */
+var SEG_SEG_IDX=-1;
+function segSegAbrir(idx){
+  SEG_SEG_IDX=idx; var s=SEG_VISIBLE[idx]; if(!s) return;
+  document.getElementById('seg-seg-info').innerHTML =
+    '<b>'+segEsc(s.documento)+'</b>'
+    + '<br>Tipo: <b>'+segEsc(s.tipo)+'</b>'
+    + (s.solicitante? '<br>Solicitado por: '+segEsc(s.solicitante) : '')
+    + (s.descripcion? '<br><br><b>Detalle de la solicitud:</b><br>'+segEsc(s.descripcion) : '');
+  var adj=segAdjuntos(s), cont=document.getElementById('seg-seg-adjuntos');
+  if(!adj.length){ cont.innerHTML='<span style="color:#8a94a2;font-size:13px;">No hay documentos adjuntos.</span>'; }
+  else{
+    cont.innerHTML=adj.map(function(a,i){
+      var ver = segEsPDF(a.nombre) ? '<button class="seg-btn" style="margin:0;padding:6px 10px;background:#6b34b3;" onclick="segVerArchivo(\''+segEsc(a.id)+'\',\''+segEsc(String(a.nombre||"").replace(/\x27/g,""))+'\')"><i class="fa-regular fa-eye"></i> Ver</button>' : '';
+      var desc = '<button class="seg-btn" style="margin:0;padding:6px 10px;background:#2f75a8;" onclick="segSegDescargar('+i+')"><i class="fa-solid fa-download"></i> Descargar</button>';
+      return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#eef3f8;border:1px solid #dbe6f0;border-radius:8px;padding:8px 10px;">'
+        +'<span style="flex:1;min-width:140px;font-size:13px;color:#33455a;">📎 '+segEsc(a.nombre||('Documento '+(i+1)))+'</span>'+ver+desc+'</div>';
+    }).join('');
+  }
+  document.getElementById('seg-seg-files').value='';
+  document.getElementById('seg-seg-files-lista').innerHTML='';
+  document.getElementById('seg-seg-error').textContent='';
+  document.getElementById('seg-seg-modal').classList.add('activo');
+}
+function segSegCerrar(){ document.getElementById('seg-seg-modal').classList.remove('activo'); }
+function segSegDescargar(i){
+  var s=SEG_VISIBLE[SEG_SEG_IDX]; if(!s) return; var a=segAdjuntos(s)[i]; if(!a) return;
+  if(typeof sgdDescargarOrigen==='function') sgdDescargarOrigen(a.id, a.nombre||'Documento');
+  else if(typeof sgdDescargarArchivo==='function') sgdDescargarArchivo(a.id, a.nombre||'Documento');
+  else alert('No está disponible la descarga en este contexto.');
+}
+function segSegFilesLista(){
+  var inp=document.getElementById('seg-seg-files'), cont=document.getElementById('seg-seg-files-lista');
+  var files=(inp&&inp.files)?inp.files:[]; if(!files.length){ cont.innerHTML=''; return; }
+  var h=''; for(var i=0;i<files.length;i++){ var kb=Math.round((files[i].size||0)/1024); h+='<div style="font-size:13px;color:#2e6b43;background:#e7f6ee;border:1px solid #bfe3cc;border-radius:8px;padding:6px 10px;">✓ '+segEsc(files[i].name)+' <span style="color:#8a94a2;">('+kb+' KB)</span></div>'; }
+  cont.innerHTML=h;
+}
+async function segSegDevolver(){
+  var s=SEG_VISIBLE[SEG_SEG_IDX]; if(!s) return;
+  var err=document.getElementById('seg-seg-error'); err.textContent='';
+  var files=(document.getElementById('seg-seg-files').files)||[];
+  if(!files.length){ err.textContent='Sube al menos un documento completado.'; return; }
+  var okExt=/\.(pdf|docx?|xlsx|xlsm)$/i;
+  for(var k=0;k<files.length;k++){ if(!okExt.test(files[k].name||'')){ err.textContent='El archivo "'+files[k].name+'" no tiene un formato permitido.'; return; } }
+  var btn=document.getElementById('seg-seg-ok'); btn.disabled=true; btn.textContent='Subiendo…';
+  try{
+    var llenos=[];
+    for(var i=0;i<files.length;i++){
+      try{
+        var b64=await sgdFileB64(files[i]);
+        var safe=(files[i].name||('lleno_'+(i+1))).replace(/[^\w.\- áéíóúÁÉÍÓÚñÑ]/g,'_');
+        var up=await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Adjuntos_Seguimiento', itemId:s.id, fileName:'LLENO_'+(i+1)+'_'+safe, contentBase64:b64 });
+        if(up && up.id) llenos.push({ id:up.id, nombre:(files[i].name||safe)+' (lleno)' });
+      }catch(eu){ console.warn('[seg] lleno', eu&&eu.message); }
+    }
+    if(!llenos.length){ throw new Error('No se pudieron subir los documentos.'); }
+    // Combina originales + llenados para que el analista los vea en Atención a Solicitudes
+    var todos=segAdjuntos(s).concat(llenos);
+    var fields={
+      Adjuntos_JSON: JSON.stringify(todos),
+      Tiene_Adjuntos:'Sí',
+      Estatus:'Abierta',                      // entra al proceso normal (Atención a Solicitudes)
+      Evento_Notificacion:'SEGUIMIENTO_DEVUELTO'
+    };
+    if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
+    await window.SGD.sp('update', { lista:(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes'), itemId:s.id, fields:fields });
+    if(window.SGD.bitacora) window.SGD.bitacora('Devuelve documentos de seguimiento','SGD_Solicitudes', s.documento||'', { id:s.id, pantalla:'Seguimiento de solicitudes' });
+    segSegCerrar();
+    await segCargar();
+    alert('Documentos devueltos. La solicitud pasó a Atención a Solicitudes para continuar su proceso.');
+  }catch(e){ err.textContent='No se pudo devolver. '+((e&&e.message)||'Intenta de nuevo.'); }
+  finally{ btn.disabled=false; btn.textContent='Devolver documentos'; }
+}
+
 /* ===== Detalle de la solicitud (lo que capturó el solicitante) ===== */
 function segCampo(k,v){ return '<div class="campo"><span class="k">'+k+'</span><span class="v">'+(v?segEsc(v):'—')+'</span></div>'; }
 function segBloque(k,v){ if(!v) return ''; return '<div class="det-block"><div class="k">'+k+'</div><div class="v">'+segEsc(v)+'</div></div>'; }
@@ -550,6 +669,7 @@ function segVerDetalle(idx){
     + segCampo('Tipo de modificación', s.tipo)
     + segCampo('Departamento', s.departamento)
     + segCampo('Solicitante', s.solicitante)
+    + (s.solicitado? segCampo('Solicitado', s.solicitado) : '')
     + segCampo('Fecha de solicitud', s.fecha)
     + segCampo('Requiere revisión presencial', rev)
     + segCampo('Fecha/hora de cita', citaTxt)
@@ -700,12 +820,19 @@ async function segCargar(){
         fechaCita:    segFmtFecha(f.Fecha_Revision),
         fechaCitaISO: (f.Fecha_Revision||'').split('T')[0],
         horaCita:     f.Hora_Revision||'',
-        correo:       f.Correo||''
+        correo:       f.Correo||'',
+        solicitado:       f.Solicitado||'',
+        correoSolicitado: f.Correo_Solicitado||'',
+        esSeguimiento:    f.Es_Seguimiento||'',
+        origen:           f.Origen_Solicitud||'',
+        adjuntosJSON:     f.Adjuntos_JSON||''
       };
     })
-    .filter(function(s){ return String(s.correo).toLowerCase()===correo; })          // solo mis solicitudes
+    // Mis solicitudes: las que yo pedí (Correo) o las que me fueron solicitadas a mí (Correo_Solicitado)
+    .filter(function(s){ var c=String(s.correo).toLowerCase(), cs=String(s.correoSolicitado).toLowerCase(); return c===correo || cs===correo; })
     .filter(function(s){ var e=(s.estatus||'').toLowerCase(); return e!=='atendida' && e!=='publicada'; })  // excluir atendidas/publicadas
     .sort(function(a,b){ return (b.fecha||'').localeCompare(a.fecha||''); });
+    SEG_ME=correo;
     segRender();
   }catch(e){
     if(tbody) tbody.innerHTML='<tr><td colspan="10" class="sin-datos">No se pudieron cargar tus solicitudes. Presiona Actualizar para reintentar.</td></tr>';
@@ -721,6 +848,7 @@ document.addEventListener('DOMContentLoaded', function(){ segCargar(); });
 // Cerrar los modales al hacer clic fuera de la caja
 (function(){ var el=document.getElementById('seg-det-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segCerrarDetalle(); }); })();
 (function(){ var el=document.getElementById('seg-resp-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segResponderCerrar(); }); })();
+(function(){ var el=document.getElementById('seg-seg-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segSegCerrar(); }); })();
 (function(){ var el=document.getElementById('seg-doc-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segDocCerrar(); }); })();
 (function(){ var el=document.getElementById('seg-visor-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segCerrarVisor(); }); })();
 </script>

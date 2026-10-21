@@ -392,18 +392,31 @@ function sgdDispararDescarga(blob, nombreArchivo) {
 // la leyenda "Fecha y hora de reimpresión: dd/mm/aaaa hh:mm".
 async function sgdDescargarCopia(ref, nombre) {
   if (!ref) { alert('El documento aún no está disponible para descargar.'); return; }
-  var nombreArchivo = ((nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_')) + '.pdf';
+  var nombreBase = (nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_');
   var got = await window.SGD.obtenerBytes(ref);
 
   // Si no se pudieron obtener los bytes (URL antigua o sin permiso), intentar descarga directa
   if (!got || !got.bytes) {
     if (got && got.error && /403|forbidden/i.test(got.error)) { alert('No tienes permiso para descargar este documento.'); return; }
     var resB = await window.SGD.obtenerBlobUrl(ref);
-    if (resB && resB.url) { sgdDispararDescarga(await (await fetch(resB.url)).blob(), nombreArchivo); }
+    if (resB && resB.url) { sgdDispararDescarga(await (await fetch(resB.url)).blob(), nombreBase); }
     else { alert('No se pudo preparar la descarga.'); }
     return;
   }
 
+  // La copia controlada puede ser PDF, Word o Excel. Se detecta el formato real por el MIME:
+  //  - PDF  → se estampa la leyenda de reimpresión y se descarga como PDF.
+  //  - Word/Excel → se descarga TAL CUAL en su formato original (sin estampar, la leyenda solo aplica a PDF).
+  var mime = (got.mime || '').toLowerCase();
+  var ext = sgdExtDeMime(mime);
+  var esPDF = (ext === '.pdf') || mime.indexOf('pdf') >= 0;
+  if (!esPDF) {
+    sgdDispararDescarga(new Blob([got.bytes], { type: got.mime || 'application/octet-stream' }), nombreBase + (ext || ''));
+    if (window.SGD.bitacora) window.SGD.bitacora('Descargar documento', 'Documento', nombre || '', {});
+    return;
+  }
+
+  var nombreArchivo = nombreBase + '.pdf';
   try {
     var PDFLib = await window.SGD.cargarPdfLib();
     var pdfDoc = await PDFLib.PDFDocument.load(got.bytes);

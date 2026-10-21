@@ -486,6 +486,41 @@
   </div>
 </div>
 
+<!-- ===== Modal: REVISAR SEGUIMIENTO (documentos devueltos por el solicitado) ===== -->
+<div class="sgd2-modal" id="atc-seg-modal">
+  <div class="sgd2-box">
+    <div class="sgd2-head estatus">
+      <div class="t"><i class="fa-solid fa-file-circle-check"></i> Revisar seguimiento</div>
+      <button class="cerrar" onclick="atcSegCerrar()">&times;</button>
+    </div>
+    <div class="sgd2-body">
+      <div class="sgd2-info" id="atc-seg-info"></div>
+
+      <div style="margin:4px 0 6px;font-weight:700;color:#1f4e79;">Documentos (originales y devueltos por el solicitado)</div>
+      <div id="atc-seg-adjuntos" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
+
+      <label class="sgd2-opt sel" id="atc-seg-opt-ok">
+        <div class="cab"><input type="radio" name="atc-seg-op" value="liberar" checked onchange="atcSegSel()"> El documento está correcto → pasar a <b>En liberación</b></div>
+        <div class="det"><p style="margin:0;color:#33455a;font-size:14px;">La solicitud pasa a <b>En liberación</b> para continuar con la asignación / apartado de código (botón «Liberado por solicitante»).</p></div>
+      </label>
+
+      <label class="sgd2-opt" id="atc-seg-opt-aj">
+        <div class="cab"><input type="radio" name="atc-seg-op" value="ajustes" onchange="atcSegSel()"> Solicitar ajustes al solicitado</div>
+        <div class="det">
+          <label>¿Qué debe corregir el solicitado?</label>
+          <textarea id="atc-seg-coment" rows="3" placeholder="Describe los ajustes necesarios. Se enviarán al solicitado y la solicitud volverá a «En seguimiento»."></textarea>
+        </div>
+      </label>
+
+      <div class="sgd2-error" id="atc-seg-error"></div>
+    </div>
+    <div class="sgd2-foot">
+      <button class="sgd2-btn cancel" onclick="atcSegCerrar()">Cancelar</button>
+      <button class="sgd2-btn ok" id="atc-seg-ok" onclick="atcSegConfirmar()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Puente SP + usuario en sesión (inyectado por index.html) -->
 <script src="script.js"></script>
 
@@ -586,6 +621,9 @@ async function atencionCargarSolicitudes(){
         codigoOrigen: f.Codigo_Documento_Origen||'',   // Actualización/Baja: código del documento vigente
         tieneAdjuntos: f.Tiene_Adjuntos||'',
         adjuntos: (function(){ try{ return JSON.parse(f.Adjuntos_JSON||'[]'); }catch(_){ return []; } })(),
+        solicitado: f.Solicitado||'',
+        correoSolicitado: f.Correo_Solicitado||'',
+        esSeguimiento: f.Es_Seguimiento||'',
         fecha:      atcFmtFecha(f.Fecha_Solicitud),
         fechaISO:   f.Fecha_Solicitud||'',
         fechaCitaISO:(f.Fecha_Revision||'').split('T')[0],
@@ -605,6 +643,10 @@ function atcBotonResolucion(s, idx){
   var est=(s.estatus||'').toLowerCase();
   if(est==='pendiente'){
     return '<button class="btn-resol cita" onclick="citaAbrir('+idx+')"><i class="fa-solid fa-calendar-check"></i> Confirmar cita</button>';
+  }
+  // Solicitud de seguimiento con documentos ya devueltos por el solicitado (en revisión del analista)
+  if(/seguimiento/i.test(s.tipo||'') && (est==='en revisión'||est==='en revision')){
+    return '<button class="btn-resol estatus" onclick="atcSegAbrir('+idx+')"><i class="fa-solid fa-file-circle-check"></i> Revisar seguimiento</button>';
   }
   if(est==='abierta' || est==='en proceso' || est==='en revisión' || est==='en revision'){
     return '<button class="btn-resol estatus" onclick="estAbrir('+idx+')"><i class="fa-solid fa-arrows-rotate"></i> Cambiar estatus</button>';
@@ -820,6 +862,70 @@ async function atcAplicarCambio(s, fields, accion, detalle){
   await window.SGD.sp('update', { lista:(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes'), itemId:s.id, fields:fields });
   if(window.SGD.bitacora) window.SGD.bitacora(accion, 'SGD_Solicitudes', detalle||'', { id:s.id, pantalla:'Atención a solicitudes' });
   await atencionCargarSolicitudes();
+}
+
+/* ============================================================
+   MODAL: REVISAR SEGUIMIENTO (documentos devueltos por el solicitado)
+   ============================================================ */
+var ATC_SEG_IDX=-1;
+function atcSegAbrir(idx){
+  ATC_SEG_IDX=idx; var s=ATC_VISIBLE[idx]; if(!s) return;
+  document.getElementById('atc-seg-info').innerHTML =
+    '<b>'+atcEsc(s.documento)+'</b>'
+    + '<br>Tipo: <b>'+atcEsc(s.tipo)+'</b>'
+    + (s.solicitado? '<br>Solicitado a: <b>'+atcEsc(s.solicitado)+'</b>' : '')
+    + (s.descripcion? '<br><br><b>Detalle:</b><br>'+atcEsc(s.descripcion) : '');
+  var adj=s.adjuntos||[]; var cont=document.getElementById('atc-seg-adjuntos');
+  if(!adj.length){ cont.innerHTML='<span style="color:#8a94a2;font-size:13px;">No hay documentos.</span>'; }
+  else{
+    cont.innerHTML=adj.map(function(a,i){
+      var esPdf=/\.pdf$/i.test(a.nombre||'');
+      var ver= esPdf? '<button class="sgd2-btn" style="margin:0;padding:6px 10px;" onclick="atcSegVer('+i+')"><i class="fa-regular fa-eye"></i> Ver</button>' : '';
+      var desc='<button class="sgd2-btn" style="margin:0;padding:6px 10px;background:#2f75a8;" onclick="atcSegDescargar('+i+')"><i class="fa-solid fa-download"></i> Descargar</button>';
+      var etq=/\(lleno\)/i.test(a.nombre||'')? ' <span style="color:#2e6b43;font-weight:700;">(devuelto)</span>':'';
+      return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#eef3f8;border:1px solid #dbe6f0;border-radius:8px;padding:8px 10px;"><span style="flex:1;min-width:140px;font-size:13px;color:#33455a;">📎 '+atcEsc(a.nombre||('Documento '+(i+1)))+etq+'</span>'+ver+desc+'</div>';
+    }).join('');
+  }
+  var radOk=document.querySelector('#atc-seg-modal input[value="liberar"]'); if(radOk) radOk.checked=true;
+  document.getElementById('atc-seg-coment').value='';
+  document.getElementById('atc-seg-error').textContent='';
+  atcSegSel();
+  document.getElementById('atc-seg-modal').classList.add('activo');
+}
+function atcSegCerrar(){ document.getElementById('atc-seg-modal').classList.remove('activo'); }
+function atcSegSel(){
+  var v=(document.querySelector('#atc-seg-modal input[name="atc-seg-op"]:checked')||{}).value;
+  document.getElementById('atc-seg-opt-ok').classList.toggle('sel', v==='liberar');
+  document.getElementById('atc-seg-opt-aj').classList.toggle('sel', v==='ajustes');
+}
+function atcSegVer(i){ var s=ATC_VISIBLE[ATC_SEG_IDX]; if(!s) return; var a=(s.adjuntos||[])[i]; if(a&&a.id&&typeof sgdVerDocumento==='function') sgdVerDocumento(a.id, a.nombre||'Documento'); }
+function atcSegDescargar(i){ var s=ATC_VISIBLE[ATC_SEG_IDX]; if(!s) return; var a=(s.adjuntos||[])[i]; if(!a||!a.id) return; if(typeof sgdDescargarOrigen==='function') sgdDescargarOrigen(a.id, a.nombre||'Documento'); else if(typeof sgdDescargarArchivo==='function') sgdDescargarArchivo(a.id, a.nombre||'Documento'); }
+async function atcSegConfirmar(){
+  var s=ATC_VISIBLE[ATC_SEG_IDX]; if(!s) return;
+  var v=(document.querySelector('#atc-seg-modal input[name="atc-seg-op"]:checked')||{}).value;
+  var err=document.getElementById('atc-seg-error'); err.textContent='';
+  var u=atcUsuarioActual();
+  var btn=document.getElementById('atc-seg-ok');
+  btn.disabled=true; btn.textContent='Verificando…';
+  var vig=await atcVigente(s, ['en revisión','en revision']);
+  btn.disabled=false; btn.textContent='Guardar';
+  if(!vig){ atcSegCerrar(); return; }
+  var fields, accion;
+  if(v==='ajustes'){
+    var c=document.getElementById('atc-seg-coment').value.trim();
+    if(!c){ err.textContent='Escribe los ajustes que debe hacer el solicitado.'; return; }
+    fields={ Estatus:'En seguimiento', Comentarios_Analista:c, Analista_Asignado:u.nombre||'', Analista_Correo:u.correo||'', Evento_Notificacion:'SEGUIMIENTO_AJUSTES' };
+    accion='Solicitar ajustes (seguimiento)';
+  } else {
+    fields={ Estatus:'En liberación', Analista_Asignado:u.nombre||'', Analista_Correo:u.correo||'', Evento_Notificacion:'PROCESADO' };
+    accion='Seguimiento correcto → En liberación';
+  }
+  btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    await atcAplicarCambio(s, fields, accion, (s.codigoDoc||'')+' · '+(s.documento||''));
+    atcSegCerrar();
+  }catch(e){ err.textContent='No se pudo guardar. Intenta de nuevo.'; }
+  finally{ btn.disabled=false; btn.textContent='Guardar'; }
 }
 
 /* ============================================================
@@ -1223,7 +1329,7 @@ async function finalGuardar(){
 }
 
 // Cerrar modales al hacer clic fuera de la caja
-['cita-modal','est-modal','det-modal','lib-modal','final-modal'].forEach(function(id){
+['cita-modal','est-modal','det-modal','lib-modal','final-modal','atc-seg-modal'].forEach(function(id){
   var el=document.getElementById(id);
   if(el) el.addEventListener('click', function(ev){ if(ev.target===this) this.classList.remove('activo'); });
 });

@@ -587,7 +587,8 @@ function segSegAbrir(idx){
     '<b>'+segEsc(s.documento)+'</b>'
     + '<br>Tipo: <b>'+segEsc(s.tipo)+'</b>'
     + (s.solicitante? '<br>Solicitado por: '+segEsc(s.solicitante) : '')
-    + (s.descripcion? '<br><br><b>Detalle de la solicitud:</b><br>'+segEsc(s.descripcion) : '');
+    + (s.descripcion? '<br><br><b>Detalle de la solicitud:</b><br>'+segEsc(s.descripcion) : '')
+    + (s.comentariosAnalista? '<div style="margin-top:10px;padding:9px 11px;background:#fff6e5;border:1px solid #f0d08a;border-radius:8px;color:#7a5b00;"><b>Ajustes solicitados por el analista:</b><br>'+segEsc(s.comentariosAnalista)+'</div>' : '');
   var adj=segAdjuntos(s), cont=document.getElementById('seg-seg-adjuntos');
   if(!adj.length){ cont.innerHTML='<span style="color:#8a94a2;font-size:13px;">No hay documentos adjuntos.</span>'; }
   else{
@@ -640,7 +641,7 @@ async function segSegDevolver(){
     var fields={
       Adjuntos_JSON: JSON.stringify(todos),
       Tiene_Adjuntos:'Sí',
-      Estatus:'Abierta',                      // entra al proceso normal (Atención a Solicitudes)
+      Estatus:'En revisión',                  // el analista revisa los documentos devueltos en Atención
       Evento_Notificacion:'SEGUIMIENTO_DEVUELTO'
     };
     if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
@@ -648,7 +649,7 @@ async function segSegDevolver(){
     if(window.SGD.bitacora) window.SGD.bitacora('Devuelve documentos de seguimiento','SGD_Solicitudes', s.documento||'', { id:s.id, pantalla:'Seguimiento de solicitudes' });
     segSegCerrar();
     await segCargar();
-    alert('Documentos devueltos. La solicitud pasó a Atención a Solicitudes para continuar su proceso.');
+    alert('Documentos devueltos. El analista los revisará en Atención a Solicitudes.');
   }catch(e){ err.textContent='No se pudo devolver. '+((e&&e.message)||'Intenta de nuevo.'); }
   finally{ btn.disabled=false; btn.textContent='Devolver documentos'; }
 }

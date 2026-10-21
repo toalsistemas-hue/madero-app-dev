@@ -261,6 +261,9 @@ window.SGD.debugControlDocumental = function () {
 function sgdAplicarPermisos() {
   var btn = document.getElementById('btn-atencion-solicitudes');
   if (btn) btn.style.display = sgdPuedeAtender() ? '' : 'none';
+  // "SOLICITAR SEGUIMIENTO": solo analistas y líder (acceso Completo), igual que Atención.
+  var btnSeg = document.getElementById('btn-solicitar-seguimiento');
+  if (btnSeg) btnSeg.style.display = sgdPuedeAtender() ? '' : 'none';
   // El botón "CONTROL DOCUMENTAL" solo para Administrador General / Coordinador de Calidad
   var btnCd = document.getElementById('btn-control-documental');
   if (btnCd) {

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Solicitar Seguimiento</title>
+  <link rel="stylesheet" href="solicitud.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    .fila input[readonly]{ background:#eef2f6; color:#333; cursor:not-allowed; }
+    .sol-error{ color:#c0392b; font-weight:600; text-align:center; margin:14px 0 0; min-height:20px; }
+
+    /* Tipo de solicitud (radios tipo tarjeta) */
+    .tipos-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    @media(max-width:560px){ .tipos-grid{ grid-template-columns:1fr; } }
+    .tipo-op{ display:flex; align-items:flex-start; gap:10px; border:1px solid #cdd8e4; border-radius:10px; padding:11px 13px; cursor:pointer; background:#f8fafc; transition:.15s; }
+    .tipo-op:hover{ border-color:#1f4e79; }
+    .tipo-op.sel{ border-color:#1f4e79; background:#eaf2fb; box-shadow:0 0 0 2px rgba(31,78,121,.12); }
+    .tipo-op input{ margin-top:3px; accent-color:#1f4e79; width:17px; height:17px; }
+    .tipo-op .t-nom{ font-weight:700; color:#1f4e79; font-size:14px; }
+    .tipo-op .t-desc{ font-size:12px; color:#667; line-height:17px; margin-top:2px; }
+
+    /* Selector de solicitado */
+    .fila select{ width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid #cdd8e4; border-radius:8px; font-size:15px; background:#fff; }
+
+    /* Adjuntos */
+    #ss-adjuntos{ display:block; width:100%; box-sizing:border-box; padding:10px 12px; border:1px dashed #b7c4d4; border-radius:8px; background:#f8fafc; font-size:14px; cursor:pointer; }
+    .ss-adj-lista{ margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+    .ss-adj-lista .adj-item{ display:flex; align-items:center; gap:8px; font-size:13px; color:#33455a; background:#eef3f8; border:1px solid #dbe6f0; border-radius:8px; padding:7px 10px; }
+    .ss-adj-vacio{ color:#8a94a2; font-size:13px; margin-top:6px; }
+    .ss-adj-hint{ color:#667; font-size:12.5px; margin-top:6px; }
+
+    /* Notificaciones */
+    .ss-notif{ border:1px solid #cdd8e4; border-radius:10px; padding:12px 14px; background:#f8fafc; }
+    .ss-notif .chk{ display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:700; color:#1f4e79; font-size:14px; }
+    .ss-notif .chk input{ width:18px; height:18px; accent-color:#1f4e79; }
+    .ss-notif .frec{ margin:10px 0 0 28px; display:flex; align-items:center; gap:10px; }
+    .ss-notif .frec.deshabilitada{ opacity:.5; pointer-events:none; }
+    .ss-notif .frec select{ width:auto; padding:8px 10px; }
+    .ss-notif .nota{ color:#667; font-size:12.5px; margin:8px 0 0 28px; line-height:18px; }
+
+    .ss-noauth{ display:none; text-align:center; color:#c0392b; font-weight:600; padding:40px 20px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="header">SOLICITAR SEGUIMIENTO</div>
+
+  <div class="ss-noauth" id="ss-noauth">
+    Esta pantalla está disponible solo para analistas y líder de Calidad.
+    <div style="margin-top:16px;"><a href="Sistema_Gestion_Documental.html" class="regresar">Regresar</a></div>
+  </div>
+
+  <form onsubmit="return false;" id="ss-form">
+
+    <div class="fila">
+      <label>Solicitud <span style="color:#c0392b;">*</span></label>
+      <input type="text" id="ss-solicitud" placeholder="¿Qué estás solicitando? (título breve)" required>
+    </div>
+
+    <div class="campo-grande">
+      <label>Tipo de solicitud <span style="color:#c0392b;">*</span></label>
+      <div class="tipos-grid" id="ss-tipos">
+        <label class="tipo-op"><input type="radio" name="ss-tipo" value="Nuevo Ingreso" onchange="ssTipoSel()">
+          <span><span class="t-nom">Nuevo Ingreso</span><span class="t-desc">Documento nuevo. El solicitado revisa el borrador adjunto (estatus «En revisión»).</span></span></label>
+        <label class="tipo-op"><input type="radio" name="ss-tipo" value="Actualización" onchange="ssTipoSel()">
+          <span><span class="t-nom">Actualización</span><span class="t-desc">Actualizar un documento. El solicitado revisa el borrador adjunto.</span></span></label>
+        <label class="tipo-op"><input type="radio" name="ss-tipo" value="Nuevo Ingreso Seguimiento" onchange="ssTipoSel()">
+          <span><span class="t-nom">Nuevo Ingreso Seguimiento</span><span class="t-desc">El solicitado llena los documentos adjuntos y los devuelve; luego entra a asignación y apartado de código.</span></span></label>
+        <label class="tipo-op"><input type="radio" name="ss-tipo" value="Actualización Seguimiento" onchange="ssTipoSel()">
+          <span><span class="t-nom">Actualización Seguimiento</span><span class="t-desc">El solicitado revisa/actualiza y devuelve los documentos adjuntos.</span></span></label>
+      </div>
+    </div>
+
+    <div class="fila">
+      <label>Solicitante <span style="color:#c0392b;">*</span></label>
+      <input type="text" id="ss-solicitante" readonly placeholder="(usuario en sesión)">
+    </div>
+
+    <div class="fila">
+      <label>Solicitado <span style="color:#c0392b;">*</span></label>
+      <select id="ss-solicitado"><option value="">Cargando usuarios…</option></select>
+    </div>
+
+    <div class="campo-grande">
+      <label>Detalle de la solicitud <span style="color:#c0392b;">*</span></label>
+      <textarea id="ss-detalle" rows="5" placeholder="Describe detalladamente lo que se está solicitando" required></textarea>
+    </div>
+
+    <div class="campo-grande">
+      <label>Documentos adjuntos <span style="color:#c0392b;">*</span></label>
+      <input type="file" id="ss-adjuntos" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm" onchange="ssAdjLista()">
+      <div class="ss-adj-hint">Formatos permitidos: PDF, Word (.doc/.docx), Excel (.xlsx/.xlsm). Es obligatorio adjuntar al menos un documento.</div>
+      <div id="ss-adjuntos-lista" class="ss-adj-lista"></div>
+    </div>
+
+    <div class="campo-grande">
+      <div class="ss-notif">
+        <label class="chk"><input type="checkbox" id="ss-notif-chk" onchange="ssNotifToggle()">
+          <span>Enviar recordatorios al solicitado mientras la solicitud siga pendiente</span></label>
+        <div class="frec deshabilitada" id="ss-frec-wrap">
+          <label style="color:#33455a;font-size:14px;">Frecuencia:</label>
+          <select id="ss-frecuencia"><option value="Diaria">Diaria</option><option value="Semanal">Semanal</option></select>
+        </div>
+        <p class="nota">Si se marca, el solicitado recibirá recordatorios por correo (según la frecuencia) hasta que atienda la solicitud. Si no se marca, no se enviarán notificaciones.</p>
+      </div>
+    </div>
+
+    <div class="sol-error" id="ss-error"></div>
+
+    <div class="botones">
+      <a href="Sistema_Gestion_Documental.html" class="regresar">Cancelar</a>
+      <button type="button" class="siguiente" id="ss-registrar" onclick="ssRegistrar()">Registrar</button>
+    </div>
+
+  </form>
+</div>
+
+<!-- Modal de confirmación -->
+<div class="sol-modal" id="ss-modal-ok" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(15,30,50,.6); align-items:center; justify-content:center; padding:24px;">
+  <div class="sol-modal-box" style="background:#fff; width:min(460px,94vw); border-radius:16px; padding:34px 30px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div class="icono" style="width:74px; height:74px; margin:0 auto 18px; border-radius:50%; background:#e7f6ee; color:#27ae60; display:flex; align-items:center; justify-content:center; font-size:38px;">&#10003;</div>
+    <h3 style="color:#1f4e79; font-size:22px; margin-bottom:12px;">Solicitud registrada</h3>
+    <p id="ss-modal-msg" style="color:#555; font-size:15px; line-height:22px; margin-bottom:24px;">La solicitud de seguimiento fue registrada. El solicitado podrá darle seguimiento en «Seguimiento de mis solicitudes».</p>
+    <button type="button" onclick="ssCerrarOK()" style="background:#27ae60; color:#fff; border:none; border-radius:10px; padding:13px 34px; font-size:16px; font-weight:600; cursor:pointer;">Aceptar</button>
+  </div>
+</div>
+
+<script src="script.js"></script>
+<script>
+/* ===== Solicitar Seguimiento — lógica propia de la pantalla ===== */
+var SS = { usuarios: [], listo: false };
+
+// Inicializa cuando el padre confirma la sesión (usuario + nivel).
+window.SGD = window.SGD || {};
+window.SGD._onAuth = ssInit;
+
+function ssInit(){
+  // Solo analistas y líder (acceso Completo)
+  var puede = (typeof sgdPuedeAtender === 'function') ? sgdPuedeAtender() : false;
+  if(!puede){
+    document.getElementById('ss-form').style.display='none';
+    document.getElementById('ss-noauth').style.display='block';
+    return;
+  }
+  document.getElementById('ss-form').style.display='';
+  document.getElementById('ss-noauth').style.display='none';
+  var u = (window.SGD.getUsuario && window.SGD.getUsuario()) || {};
+  document.getElementById('ss-solicitante').value = u.nombre || u.correo || '';
+  if(!SS.listo){ SS.listo=true; ssCargarUsuarios(); }
+}
+
+// Carga la lista Usuarios (solo activos) para el selector de "Solicitado".
+async function ssCargarUsuarios(){
+  var sel = document.getElementById('ss-solicitado');
+  try{
+    var r = await window.SGD.sp('list', { lista:'Usuarios', queryParams:'$expand=fields&$top=500' });
+    var items = (r && r.value) ? r.value : [];
+    var miCorreo = ((window.SGD.getUsuario()||{}).correo||'').toLowerCase();
+    SS.usuarios = items.map(function(it){ var f=it.fields||{};
+      // nombre interno puede variar; se resuelve por heurística
+      var nombre = f.NombreCompleto || f.Nombre || (f.Title && f.Title.indexOf('@')<0 ? f.Title : '');
+      if(!nombre){ Object.keys(f).forEach(function(k){ if(!nombre){ var kn=k.toLowerCase().replace(/[^a-z]/g,''); if(kn.indexOf('nombre')>=0 && k!=='Title') nombre=f[k]||''; } }); }
+      var correo = (f.Email || f.Correo || (f.Title && f.Title.indexOf('@')>=0 ? f.Title : '') || '').toLowerCase();
+      var activo = (f.Activo===true || f.Activo===1 || /^(s[íi]|true|activo|1)$/i.test(String(f.Activo==null?'':f.Activo)));
+      return { nombre: nombre||correo, correo: correo, activo: activo };
+    }).filter(function(x){ return x.correo && x.activo && x.correo!==miCorreo; })
+      .sort(function(a,b){ return (a.nombre||'').localeCompare(b.nombre||''); });
+
+    if(!SS.usuarios.length){ sel.innerHTML='<option value="">No hay usuarios activos disponibles</option>'; return; }
+    var h='<option value="">Selecciona un usuario…</option>';
+    SS.usuarios.forEach(function(x){ h+='<option value="'+ssEsc(x.correo)+'" data-nom="'+ssEsc(x.nombre)+'">'+ssEsc(x.nombre)+' ('+ssEsc(x.correo)+')</option>'; });
+    sel.innerHTML=h;
+  }catch(e){
+    sel.innerHTML='<option value="">No se pudo cargar la lista de usuarios</option>';
+    console.warn('[SS] usuarios', e && e.message);
+  }
+}
+
+function ssEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function ssTipoSel(){
+  var v=(document.querySelector('input[name="ss-tipo"]:checked')||{}).value;
+  Array.prototype.forEach.call(document.querySelectorAll('#ss-tipos .tipo-op'), function(op){
+    var r=op.querySelector('input'); op.classList.toggle('sel', r && r.checked);
+  });
+}
+
+function ssAdjLista(){
+  var inp=document.getElementById('ss-adjuntos'), cont=document.getElementById('ss-adjuntos-lista');
+  var files=(inp&&inp.files)?inp.files:[];
+  if(!files.length){ cont.innerHTML='<div class="ss-adj-vacio">No se han adjuntado documentos.</div>'; return; }
+  var okExt=/\.(pdf|docx?|xlsx|xlsm)$/i, malo='';
+  var h='';
+  for(var i=0;i<files.length;i++){
+    var nm=String(files[i].name||''); var kb=Math.round((files[i].size||0)/1024);
+    if(!okExt.test(nm)) malo=nm;
+    h+='<div class="adj-item"><i class="fa-solid fa-paperclip" style="color:#1f4e79;"></i> <span>'+ssEsc(nm)+'</span> <span style="color:#8a94a2;">('+kb+' KB)</span></div>';
+  }
+  cont.innerHTML=h;
+  document.getElementById('ss-error').textContent = malo ? ('El archivo "'+malo+'" no tiene un formato permitido (PDF, Word, Excel).') : '';
+}
+
+function ssNotifToggle(){
+  var on=document.getElementById('ss-notif-chk').checked;
+  document.getElementById('ss-frec-wrap').classList.toggle('deshabilitada', !on);
+}
+
+async function ssRegistrar(){
+  var err=document.getElementById('ss-error'); err.textContent='';
+  var solicitud=document.getElementById('ss-solicitud').value.trim();
+  var tipo=(document.querySelector('input[name="ss-tipo"]:checked')||{}).value||'';
+  var selSol=document.getElementById('ss-solicitado');
+  var correoSol=(selSol.value||'').trim();
+  var _opt=selSol.options[selSol.selectedIndex];
+  var nomSol=_opt ? (_opt.getAttribute('data-nom')||'') : '';
+  var detalle=document.getElementById('ss-detalle').value.trim();
+  var files=(document.getElementById('ss-adjuntos').files)||[];
+  var notif=document.getElementById('ss-notif-chk').checked;
+  var frec=document.getElementById('ss-frecuencia').value;
+
+  if(!solicitud){ err.textContent='Escribe la solicitud.'; return; }
+  if(!tipo){ err.textContent='Selecciona el tipo de solicitud.'; return; }
+  if(!correoSol){ err.textContent='Selecciona el usuario solicitado.'; return; }
+  if(!detalle){ err.textContent='Escribe el detalle de la solicitud.'; return; }
+  if(!files.length){ err.textContent='Adjunta al menos un documento.'; return; }
+  var okExt=/\.(pdf|docx?|xlsx|xlsm)$/i;
+  for(var k=0;k<files.length;k++){ if(!okExt.test(files[k].name||'')){ err.textContent='El archivo "'+files[k].name+'" no tiene un formato permitido.'; return; } }
+
+  if(!(window.SGD.embebido && window.SGD.embebido())){ err.textContent='Esta pantalla debe abrirse desde el portal.'; return; }
+
+  var u=(window.SGD.getUsuario && window.SGD.getUsuario())||{};
+  var esSeg = tipo.indexOf('Seguimiento')>=0;
+  var btn=document.getElementById('ss-registrar'); btn.disabled=true; btn.textContent='Registrando…';
+
+  try{
+    var fields={
+      Title: solicitud,
+      Tipo_Modificacion: tipo,
+      Solicitante: u.nombre || u.correo || '',
+      Correo: u.correo || '',                 // creador (analista/líder)
+      Solicitado: nomSol || correoSol,
+      Correo_Solicitado: correoSol,
+      Descripcion: detalle,
+      Analista_Asignado: u.nombre || '',
+      Analista_Correo: u.correo || '',
+      Es_Seguimiento: esSeg ? 'Sí' : 'No',
+      Notificar_Pendiente: notif ? 'Sí' : 'No',
+      Frecuencia_Notificacion: notif ? frec : '',
+      Fecha_Solicitud: new Date().toISOString(),
+      Tiene_Adjuntos: 'Sí'
+    };
+    if(esSeg){
+      // El solicitado llenará/actualizará los documentos y los devolverá.
+      fields.Estatus = 'En seguimiento';
+      fields.Evento_Notificacion = 'SEGUIMIENTO_SOLICITADO';
+    } else {
+      // Nuevo Ingreso / Actualización: el adjunto es el borrador que el solicitado revisa.
+      fields.Estatus = 'En revisión';
+      fields.Evento_Notificacion = 'EN_REVISION';
+    }
+    if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
+
+    var cr=await window.SGD.sp('create', { lista: window.SGD.LISTA_SOLICITUDES, fields: fields });
+    var itemId=(cr && cr.id!==undefined)?cr.id:null;
+    if(!itemId){ throw new Error('no_item'); }
+
+    // Subir adjuntos
+    btn.textContent='Subiendo adjuntos…';
+    var adjRefs=[];
+    for(var i=0;i<files.length;i++){
+      try{
+        var b64=await sgdFileB64(files[i]);
+        var safe=(files[i].name||('archivo_'+(i+1))).replace(/[^\w.\- áéíóúÁÉÍÓÚñÑ]/g,'_');
+        var up=await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Adjuntos_Seguimiento', itemId:itemId, fileName:(i+1)+'_'+safe, contentBase64:b64 });
+        if(up && up.id) adjRefs.push({ id:up.id, nombre:(files[i].name||safe) });
+      }catch(eu){ console.warn('[SS] adjunto', files[i] && files[i].name, eu && eu.message); }
+    }
+
+    var upd={ Adjuntos_JSON: JSON.stringify(adjRefs), Tiene_Adjuntos: adjRefs.length?'Sí':'No' };
+    // Para Nuevo Ingreso / Actualización el primer adjunto hace de borrador a revisar.
+    if(!esSeg && adjRefs.length){ upd.Documento_Borrador_URL = adjRefs[0].id; }
+    if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(upd);
+    await window.SGD.sp('update', { lista: window.SGD.LISTA_SOLICITUDES, itemId:itemId, fields:upd });
+
+    if(window.SGD.bitacora) window.SGD.bitacora('Solicitar seguimiento', 'SGD_Solicitudes', solicitud, { id:itemId, pantalla:'Solicitar Seguimiento' });
+
+    var msg = esSeg
+      ? 'La solicitud de seguimiento fue registrada. '+ssEsc(nomSol||correoSol)+' podrá ver y descargar los documentos, llenarlos y devolverlos desde «Seguimiento de mis solicitudes».'
+      : 'La solicitud fue registrada en estatus «En revisión». '+ssEsc(nomSol||correoSol)+' podrá revisar el borrador desde «Seguimiento de mis solicitudes».';
+    document.getElementById('ss-modal-msg').innerHTML=msg;
+    document.getElementById('ss-modal-ok').style.display='flex'; document.body.style.overflow='hidden';
+  }catch(e){
+    console.error('[SS] registrar', e);
+    err.textContent='No se pudo registrar la solicitud. '+((e&&e.message)||'Intenta de nuevo.');
+  }finally{ btn.disabled=false; btn.textContent='Registrar'; }
+}
+
+function ssCerrarOK(){
+  document.getElementById('ss-modal-ok').style.display='none'; document.body.style.overflow='';
+  if(typeof sgdIrAPrincipal==='function') sgdIrAPrincipal();
+  else window.location.href='Sistema_Gestion_Documental.html';
+}
+
+// Si la sesión ya estaba lista antes de registrar el _onAuth, intenta inicializar.
+document.addEventListener('DOMContentLoaded', function(){
+  if(window.SGD && window.SGD.getUsuario && window.SGD.getUsuario()) ssInit();
+  document.getElementById('ss-adjuntos-lista').innerHTML='<div class="ss-adj-vacio">No se han adjuntado documentos.</div>';
+});
+</script>
+</body>
+</html>

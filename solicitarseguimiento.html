@@ -75,6 +75,11 @@
     </div>
 
     <div class="fila">
+      <label>Tipo de documento <span style="color:#c0392b;">*</span></label>
+      <select id="ss-tipodoc"><option value="">Seleccione un tipo de documento</option></select>
+    </div>
+
+    <div class="fila">
       <label>Solicitante <span style="color:#c0392b;">*</span></label>
       <input type="text" id="ss-solicitante" readonly placeholder="(usuario en sesión)">
     </div>
@@ -82,6 +87,11 @@
     <div class="fila">
       <label>Solicitado <span style="color:#c0392b;">*</span></label>
       <select id="ss-solicitado"><option value="">Cargando usuarios…</option></select>
+    </div>
+
+    <div class="fila">
+      <label>Departamento <span style="color:#c0392b;">*</span></label>
+      <input type="text" id="ss-departamento" placeholder="Departamento al que corresponde el documento" required>
     </div>
 
     <div class="campo-grande">
@@ -149,7 +159,11 @@ function ssInit(){
   document.getElementById('ss-noauth').style.display='none';
   var u = (window.SGD.getUsuario && window.SGD.getUsuario()) || {};
   document.getElementById('ss-solicitante').value = u.nombre || u.correo || '';
-  if(!SS.listo){ SS.listo=true; ssCargarUsuarios(); }
+  if(!SS.listo){
+    SS.listo=true;
+    ssCargarUsuarios();
+    if(window.SGD.cargarTiposEnSelect) window.SGD.cargarTiposEnSelect('ss-tipodoc','Seleccione un tipo de documento');
+  }
 }
 
 // Carga la lista Usuarios (solo activos) para el selector de "Solicitado".
@@ -212,6 +226,8 @@ async function ssRegistrar(){
   var err=document.getElementById('ss-error'); err.textContent='';
   var solicitud=document.getElementById('ss-solicitud').value.trim();
   var tipo=(document.querySelector('input[name="ss-tipo"]:checked')||{}).value||'';
+  var tipoDoc=document.getElementById('ss-tipodoc').value||'';
+  var departamento=document.getElementById('ss-departamento').value.trim();
   var selSol=document.getElementById('ss-solicitado');
   var correoSol=(selSol.value||'').trim();
   var _opt=selSol.options[selSol.selectedIndex];
@@ -223,7 +239,9 @@ async function ssRegistrar(){
 
   if(!solicitud){ err.textContent='Escribe la solicitud.'; return; }
   if(!tipo){ err.textContent='Selecciona el tipo de solicitud.'; return; }
+  if(!tipoDoc){ err.textContent='Selecciona el tipo de documento.'; return; }
   if(!correoSol){ err.textContent='Selecciona el usuario solicitado.'; return; }
+  if(!departamento){ err.textContent='Escribe el departamento.'; return; }
   if(!detalle){ err.textContent='Escribe el detalle de la solicitud.'; return; }
   if(!files.length){ err.textContent='Adjunta al menos un documento.'; return; }
   var okExt=/\.(pdf|docx?|xlsx|xlsm)$/i;
@@ -239,6 +257,8 @@ async function ssRegistrar(){
     var fields={
       Title: solicitud,
       Tipo_Modificacion: tipo,
+      Tipo_Documento: tipoDoc,
+      Departamento: departamento,
       Solicitante: u.nombre || u.correo || '',
       Correo: u.correo || '',                 // creador (analista/líder)
       Solicitado: nomSol || correoSol,
@@ -247,6 +267,7 @@ async function ssRegistrar(){
       Analista_Asignado: u.nombre || '',
       Analista_Correo: u.correo || '',
       Es_Seguimiento: esSeg ? 'Sí' : 'No',
+      Origen_Solicitud: 'Seguimiento',        // marca que nace de "Solicitar Seguimiento" (para los flujos de correo)
       Notificar_Pendiente: notif ? 'Sí' : 'No',
       Frecuencia_Notificacion: notif ? frec : '',
       Fecha_Solicitud: new Date().toISOString(),
@@ -257,9 +278,10 @@ async function ssRegistrar(){
       fields.Estatus = 'En seguimiento';
       fields.Evento_Notificacion = 'SEGUIMIENTO_SOLICITADO';
     } else {
-      // Nuevo Ingreso / Actualización: el adjunto es el borrador que el solicitado revisa.
+      // Nuevo Ingreso / Actualización: el adjunto es el borrador que el SOLICITADO revisa.
+      // Evento propio (SEG_REVISION) para que el correo vaya al Solicitado y no al creador.
       fields.Estatus = 'En revisión';
-      fields.Evento_Notificacion = 'EN_REVISION';
+      fields.Evento_Notificacion = 'SEG_REVISION';
     }
     if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
 

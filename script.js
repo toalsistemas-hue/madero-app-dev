@@ -816,6 +816,44 @@ function sgdFileB64(file){
   });
 }
 
+/* ============================================================================
+   ADJUNTOS MÚLTIPLES (acumulables)
+   Un <input type="file"> reemplaza su selección en cada clic y no acumula.
+   Este helper mantiene la lista de archivos elegidos (aunque se agreguen en
+   varias veces), los muestra con botón para quitar, y la devuelve al guardar.
+   Uso:  window.SGD.initAdjuntos('input-id','lista-id');
+         var files = window.SGD.getAdj('input-id');   // File[]
+         window.SGD.resetAdj('input-id');             // limpiar
+   ============================================================================ */
+window.SGD.multiAdj = window.SGD.multiAdj || {};
+window.SGD.initAdjuntos = function(inputId, listId){
+  var inp = document.getElementById(inputId);
+  var cont = document.getElementById(listId);
+  if(!inp || !cont) return;
+  var st = window.SGD.multiAdj[inputId] = { files: [], listId: listId };
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  st.render = function(){
+    if(!st.files.length){ cont.innerHTML = '<div style="color:#8a94a2;font-size:13px;margin-top:6px;">No se han adjuntado documentos.</div>'; return; }
+    cont.innerHTML = st.files.map(function(f,i){
+      var kb = Math.round((f.size||0)/1024);
+      return '<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#33455a;background:#eef3f8;border:1px solid #dbe6f0;border-radius:8px;padding:7px 10px;margin-top:6px;">'
+        + '<span style="flex:1;">📎 '+esc(f.name)+' <span style="color:#8a94a2;">('+kb+' KB)</span></span>'
+        + '<button type="button" title="Quitar" onclick="window.SGD.removeAdj(\''+inputId+'\','+i+')" style="border:none;background:transparent;color:#c0392b;cursor:pointer;font-size:16px;line-height:1;">&times;</button>'
+        + '</div>';
+    }).join('');
+  };
+  inp.addEventListener('change', function(){
+    var nuevos = inp.files ? Array.prototype.slice.call(inp.files) : [];
+    nuevos.forEach(function(f){ st.files.push(f); });
+    try{ inp.value=''; }catch(e){}   // permitir volver a elegir el mismo archivo y acumular
+    st.render();
+  });
+  st.render();
+};
+window.SGD.removeAdj = function(inputId, i){ var st=window.SGD.multiAdj[inputId]; if(!st) return; st.files.splice(i,1); st.render(); };
+window.SGD.getAdj = function(inputId){ var st=window.SGD.multiAdj[inputId]; return st ? st.files.slice() : []; };
+window.SGD.resetAdj = function(inputId){ var st=window.SGD.multiAdj[inputId]; if(st){ st.files=[]; st.render(); } };
+
 async function sgdRegistrarSolicitud(ev) {
   if (ev) ev.preventDefault();
   var err = document.getElementById('sol-error');
@@ -867,9 +905,10 @@ async function sgdRegistrarSolicitud(ev) {
   var btn = document.getElementById('sol-registrar');
   if (btn) { btn.disabled = true; btn.textContent = 'Registrando…'; }
 
-  // Documentos adjuntos seleccionados por el solicitante
+  // Documentos adjuntos seleccionados por el solicitante (lista acumulable)
   var adjInput = document.getElementById('sol-adjuntos');
-  var adjFiles = (adjInput && adjInput.files) ? Array.prototype.slice.call(adjInput.files) : [];
+  var adjFiles = (window.SGD.getAdj ? window.SGD.getAdj('sol-adjuntos') : []);
+  if(!adjFiles.length && adjInput && adjInput.files){ adjFiles = Array.prototype.slice.call(adjInput.files); }
 
   // Campos para la lista SGD_Solicitudes en SharePoint
   var fields = {
@@ -918,7 +957,7 @@ async function sgdRegistrarSolicitud(ev) {
   // Subir documentos adjuntos (si hay) y guardar sus referencias en la solicitud
   if (nuevoId && adjFiles.length && window.SGD.embebido && window.SGD.embebido()) {
     if (btn) btn.textContent = 'Subiendo adjuntos…';
-    var adjRefs = [];
+    var adjRefs = [], adjFallan = [];
     for (var ai = 0; ai < adjFiles.length; ai++) {
       var fAdj = adjFiles[ai];
       try {
@@ -929,8 +968,10 @@ async function sgdRegistrarSolicitud(ev) {
           fileName: (ai + 1) + '_' + safeName, contentBase64: b64a
         });
         if (upa && upa.id) adjRefs.push({ id: upa.id, nombre: (fAdj.name || safeName) });
-      } catch (eUp) { console.warn('[Adjunto] no se pudo subir', fAdj && fAdj.name, eUp && eUp.message); }
+        else adjFallan.push(fAdj.name || ('archivo '+(ai+1)));
+      } catch (eUp) { adjFallan.push((fAdj&&fAdj.name)||('archivo '+(ai+1))); console.warn('[Adjunto] no se pudo subir', fAdj && fAdj.name, eUp && eUp.message); }
     }
+    if (adjFallan.length) { try{ alert('Algunos archivos no se pudieron adjuntar:\n- '+adjFallan.join('\n- ')); }catch(_){ } }
     try {
       var updAdj = { Adjuntos_JSON: JSON.stringify(adjRefs), Tiene_Adjuntos: adjRefs.length ? 'Sí' : 'No' };
       if (window.SGD.stampAuditoria) window.SGD.stampAuditoria(updAdj);
@@ -944,6 +985,7 @@ async function sgdRegistrarSolicitud(ev) {
       { id: nuevoId, pantalla: 'Solicitud de documentación' });
   }
 
+  if (window.SGD.resetAdj) window.SGD.resetAdj('sol-adjuntos');
   sgdMostrarModalOK();
   if (btn) { btn.disabled = false; btn.textContent = 'Registrar'; }
 }

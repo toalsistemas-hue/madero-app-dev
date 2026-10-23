@@ -181,7 +181,7 @@
                     </span>
                 </span>
             </label>
-            <input type="file" id="sol-adjuntos" multiple onchange="sgdSolAdjLista()">
+            <input type="file" id="sol-adjuntos" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm">
             <div id="sol-adjuntos-lista" class="sol-adj-lista"></div>
         </div>
 
@@ -249,6 +249,8 @@
     var chk = document.getElementById('sol-revision-presencial');
     if (chk) chk.addEventListener('change', aplicar);
     aplicar(); // estado inicial
+    // Adjuntos acumulables (varios archivos, se pueden agregar en varias veces y quitar)
+    if (window.SGD && window.SGD.initAdjuntos) window.SGD.initAdjuntos('sol-adjuntos','sol-adjuntos-lista');
   });
 })();
 </script>

@@ -280,7 +280,9 @@
       <label class="seg-opt sel" id="seg-doc-opt-aut">
         <div class="cab"><input type="radio" name="seg-doc" value="autorizar" checked onchange="segDocSel()"> Autorizar el documento</div>
         <div class="det">
-          <p style="margin:0;color:#33455a;font-size:14px;">Se verificará tu identidad con <b>Microsoft</b> (tu sesión actual) para confirmar que eres el <b>solicitante</b>. Al autorizar, el documento pasa a finalizado.</p>
+          <p style="margin:0 0 10px;color:#33455a;font-size:14px;">Se verificará tu identidad con <b>Microsoft</b> (tu sesión actual) para confirmar que eres el <b>solicitante</b>. Al autorizar, el documento pasa a finalizado.</p>
+          <label>Comentario (opcional)</label>
+          <textarea id="seg-doc-coment-aut" rows="2" placeholder="Agrega un comentario para el analista (opcional)…"></textarea>
         </div>
       </label>
 
@@ -316,7 +318,7 @@
       <p style="color:#667;font-size:13px;margin:8px 0 16px;">Puedes <b>ver</b> los PDF en el visor y <b>descargar</b> cada documento en su formato original para llenarlo. Cuando termines, súbelos ya completos y presiona <b>Devolver documentos</b>.</p>
 
       <div style="margin:4px 0 6px;font-weight:700;color:#1f4e79;">Subir documentos completados <span style="color:#c0392b;">*</span></div>
-      <input type="file" id="seg-seg-files" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm" onchange="segSegFilesLista()" style="display:block;width:100%;box-sizing:border-box;padding:10px 12px;border:1px dashed #b7c4d4;border-radius:8px;background:#f8fafc;font-size:14px;cursor:pointer;">
+      <input type="file" id="seg-seg-files" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm" style="display:block;width:100%;box-sizing:border-box;padding:10px 12px;border:1px dashed #b7c4d4;border-radius:8px;background:#f8fafc;font-size:14px;cursor:pointer;">
       <div id="seg-seg-files-lista" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;"></div>
 
       <div class="seg-error" id="seg-seg-error"></div>
@@ -511,6 +513,7 @@ function segDocAbrir(idx){
     + '<br><br>Revisa el borrador y autorízalo o solicita cambios.';
   document.querySelector('#seg-doc-modal input[value="autorizar"]').checked=true;
   document.getElementById('seg-doc-cambios').value='';
+  var _ca=document.getElementById('seg-doc-coment-aut'); if(_ca) _ca.value='';
   document.getElementById('seg-doc-error').textContent='';
   segDocSel();
   document.getElementById('seg-doc-modal').classList.add('activo');
@@ -557,6 +560,8 @@ async function segDocConfirmar(){
       Estatus:'En liberación',
       Evento_Notificacion:'DOC_AUTORIZADO'
     };
+    var _comentAut=((document.getElementById('seg-doc-coment-aut')||{}).value||'').trim();
+    if(_comentAut) fields.Comentario_Solicitante=_comentAut;
   } else {
     var cambios=document.getElementById('seg-doc-cambios').value.trim();
     if(!cambios){ err.textContent='Escribe los cambios necesarios para el analista.'; return; }
@@ -600,7 +605,7 @@ function segSegAbrir(idx){
     }).join('');
   }
   document.getElementById('seg-seg-files').value='';
-  document.getElementById('seg-seg-files-lista').innerHTML='';
+  if(window.SGD.resetAdj) window.SGD.resetAdj('seg-seg-files');
   document.getElementById('seg-seg-error').textContent='';
   document.getElementById('seg-seg-modal').classList.add('activo');
 }
@@ -620,22 +625,25 @@ function segSegFilesLista(){
 async function segSegDevolver(){
   var s=SEG_VISIBLE[SEG_SEG_IDX]; if(!s) return;
   var err=document.getElementById('seg-seg-error'); err.textContent='';
-  var files=(document.getElementById('seg-seg-files').files)||[];
+  var files=(window.SGD.getAdj ? window.SGD.getAdj('seg-seg-files') : []);
+  if(!files.length){ var _fi=document.getElementById('seg-seg-files'); if(_fi&&_fi.files) files=Array.prototype.slice.call(_fi.files); }
   if(!files.length){ err.textContent='Sube al menos un documento completado.'; return; }
   var okExt=/\.(pdf|docx?|xlsx|xlsm)$/i;
   for(var k=0;k<files.length;k++){ if(!okExt.test(files[k].name||'')){ err.textContent='El archivo "'+files[k].name+'" no tiene un formato permitido.'; return; } }
   var btn=document.getElementById('seg-seg-ok'); btn.disabled=true; btn.textContent='Subiendo…';
   try{
-    var llenos=[];
+    var llenos=[], segFallan=[];
     for(var i=0;i<files.length;i++){
       try{
         var b64=await sgdFileB64(files[i]);
         var safe=(files[i].name||('lleno_'+(i+1))).replace(/[^\w.\- áéíóúÁÉÍÓÚñÑ]/g,'_');
         var up=await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Adjuntos_Seguimiento', itemId:s.id, fileName:'LLENO_'+(i+1)+'_'+safe, contentBase64:b64 });
         if(up && up.id) llenos.push({ id:up.id, nombre:(files[i].name||safe)+' (lleno)' });
-      }catch(eu){ console.warn('[seg] lleno', eu&&eu.message); }
+        else segFallan.push(files[i].name||('archivo '+(i+1)));
+      }catch(eu){ segFallan.push((files[i]&&files[i].name)||('archivo '+(i+1))); console.warn('[seg] lleno', eu&&eu.message); }
     }
     if(!llenos.length){ throw new Error('No se pudieron subir los documentos.'); }
+    if(segFallan.length){ try{ alert('Algunos archivos no se pudieron subir:\n- '+segFallan.join('\n- ')); }catch(_){ } }
     // Combina originales + llenados para que el analista los vea en Atención a Solicitudes
     var todos=segAdjuntos(s).concat(llenos);
     var fields={
@@ -844,7 +852,7 @@ async function segCargar(){
 window.SGD = window.SGD || {};
 window.SGD._onAuth = segCargar;
 
-document.addEventListener('DOMContentLoaded', function(){ segCargar(); });
+document.addEventListener('DOMContentLoaded', function(){ segCargar(); if(window.SGD && window.SGD.initAdjuntos) window.SGD.initAdjuntos('seg-seg-files','seg-seg-files-lista'); });
 
 // Cerrar los modales al hacer clic fuera de la caja
 (function(){ var el=document.getElementById('seg-det-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segCerrarDetalle(); }); })();

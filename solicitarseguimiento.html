@@ -101,7 +101,7 @@
 
     <div class="campo-grande">
       <label>Documentos adjuntos <span style="color:#c0392b;">*</span></label>
-      <input type="file" id="ss-adjuntos" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm" onchange="ssAdjLista()">
+      <input type="file" id="ss-adjuntos" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm">
       <div class="ss-adj-hint">Formatos permitidos: PDF, Word (.doc/.docx), Excel (.xlsx/.xlsm). Es obligatorio adjuntar al menos un documento.</div>
       <div id="ss-adjuntos-lista" class="ss-adj-lista"></div>
     </div>
@@ -233,7 +233,8 @@ async function ssRegistrar(){
   var _opt=selSol.options[selSol.selectedIndex];
   var nomSol=_opt ? (_opt.getAttribute('data-nom')||'') : '';
   var detalle=document.getElementById('ss-detalle').value.trim();
-  var files=(document.getElementById('ss-adjuntos').files)||[];
+  var files=(window.SGD.getAdj ? window.SGD.getAdj('ss-adjuntos') : []);
+  if(!files.length){ var _fi=document.getElementById('ss-adjuntos'); if(_fi&&_fi.files) files=Array.prototype.slice.call(_fi.files); }
   var notif=document.getElementById('ss-notif-chk').checked;
   var frec=document.getElementById('ss-frecuencia').value;
 
@@ -291,15 +292,17 @@ async function ssRegistrar(){
 
     // Subir adjuntos
     btn.textContent='Subiendo adjuntos…';
-    var adjRefs=[];
+    var adjRefs=[], adjFallan=[];
     for(var i=0;i<files.length;i++){
       try{
         var b64=await sgdFileB64(files[i]);
         var safe=(files[i].name||('archivo_'+(i+1))).replace(/[^\w.\- áéíóúÁÉÍÓÚñÑ]/g,'_');
         var up=await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Adjuntos_Seguimiento', itemId:itemId, fileName:(i+1)+'_'+safe, contentBase64:b64 });
         if(up && up.id) adjRefs.push({ id:up.id, nombre:(files[i].name||safe) });
-      }catch(eu){ console.warn('[SS] adjunto', files[i] && files[i].name, eu && eu.message); }
+        else adjFallan.push(files[i].name||('archivo '+(i+1)));
+      }catch(eu){ adjFallan.push((files[i]&&files[i].name)||('archivo '+(i+1))); console.warn('[SS] adjunto', files[i] && files[i].name, eu && eu.message); }
     }
+    if(adjFallan.length){ try{ alert('Algunos archivos no se pudieron adjuntar:\n- '+adjFallan.join('\n- ')); }catch(_){ } }
 
     var upd={ Adjuntos_JSON: JSON.stringify(adjRefs), Tiene_Adjuntos: adjRefs.length?'Sí':'No' };
     // Para Nuevo Ingreso / Actualización el primer adjunto hace de borrador a revisar.
@@ -312,6 +315,7 @@ async function ssRegistrar(){
     var msg = esSeg
       ? 'La solicitud de seguimiento fue registrada. '+ssEsc(nomSol||correoSol)+' podrá ver y descargar los documentos, llenarlos y devolverlos desde «Seguimiento de mis solicitudes».'
       : 'La solicitud fue registrada en estatus «En revisión». '+ssEsc(nomSol||correoSol)+' podrá revisar el borrador desde «Seguimiento de mis solicitudes».';
+    if(window.SGD.resetAdj) window.SGD.resetAdj('ss-adjuntos');
     document.getElementById('ss-modal-msg').innerHTML=msg;
     document.getElementById('ss-modal-ok').style.display='flex'; document.body.style.overflow='hidden';
   }catch(e){
@@ -328,8 +332,8 @@ function ssCerrarOK(){
 
 // Si la sesión ya estaba lista antes de registrar el _onAuth, intenta inicializar.
 document.addEventListener('DOMContentLoaded', function(){
+  if(window.SGD && window.SGD.initAdjuntos) window.SGD.initAdjuntos('ss-adjuntos','ss-adjuntos-lista');
   if(window.SGD && window.SGD.getUsuario && window.SGD.getUsuario()) ssInit();
-  document.getElementById('ss-adjuntos-lista').innerHTML='<div class="ss-adj-vacio">No se han adjuntado documentos.</div>';
 });
 </script>
 </body>

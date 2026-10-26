@@ -229,9 +229,10 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
   <div class="modal"><div class="modal-hd"><h3>Asignar solicitud</h3><button class="x" onclick="cerrar('m-asig')">✕</button></div>
     <div class="modal-bd">
       <div style="color:var(--dim);font-size:.82rem;margin-bottom:12px;" id="asig-info"></div>
-      <div class="fld"><label>Técnico responsable <span class="req">*</span></label><select class="inp" id="asig-tec"><option value="">Selecciona…</option></select></div>
+      <div class="fld" id="asig-tec-fld"><label>Técnico responsable <span class="req">*</span></label><select class="inp" id="asig-tec"><option value="">Selecciona…</option></select></div>
+      <div id="asig-tec-nota" style="display:none;background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.3);color:var(--accent-l);border-radius:8px;padding:9px 11px;font-size:.82rem;margin-bottom:12px;"></div>
       <div class="fld">
-        <label>Participantes (ingenieros) <span class="req">*</span></label>
+        <label>Participantes (ingenieros) <span style="color:var(--muted);">(opcional)</span></label>
         <select class="inp" id="asig-skill" onchange="S.partFiltroSkill=this.value;renderAsigParts();" style="width:auto;min-width:200px;margin-bottom:8px;"><option value="">Filtrar por skill: todas</option></select>
         <div class="part-grid" id="asig-parts"></div>
       </div>
@@ -724,7 +725,15 @@ function abrirAsignar(){
   var t=S.curTicket; if(!t) return;
   document.getElementById('asig-info').innerHTML='<b>'+esc(t.folio)+'</b> · '+esc(t.tipo)+' — solicitada por '+esc(t.usuarioNombre||t.usuarioCorreo);
   document.getElementById('asig-err').textContent='';
-  var selTec=document.getElementById('asig-tec'); selTec.innerHTML='<option value="">Selecciona…</option>'+S.ingenieros.map(function(x){return '<option value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'">'+esc(x.nombre)+'</option>';}).join(''); selTec.value='';
+  // Técnico: acceso completo elige; lectura se autoasigna
+  var fld=document.getElementById('asig-tec-fld'), nota=document.getElementById('asig-tec-nota');
+  if(S.completo){
+    fld.style.display=''; nota.style.display='none';
+    var selTec=document.getElementById('asig-tec'); selTec.innerHTML='<option value="">Selecciona…</option>'+S.ingenieros.map(function(x){return '<option value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'">'+esc(x.nombre)+'</option>';}).join(''); selTec.value='';
+  } else {
+    fld.style.display='none';
+    nota.style.display='block'; nota.innerHTML='Se te asignará a ti como <b>técnico responsable</b>: '+esc(S.user.nombre);
+  }
   S.partSel={}; S.partFiltroSkill='';
   var selSk=document.getElementById('asig-skill'); selSk.innerHTML='<option value="">Filtrar por skill: todas</option>'+S.skills.map(function(s){return '<option>'+esc(s)+'</option>';}).join(''); selSk.value='';
   renderAsigParts();
@@ -744,11 +753,16 @@ function renderAsigParts(){
 async function asignarConfirmar(){
   var t=S.curTicket; if(!t) return;
   var err=document.getElementById('asig-err'); err.textContent='';
-  var selTec=document.getElementById('asig-tec'); var tecCorreo=selTec.value||'';
-  var tecNombre=(selTec.selectedIndex>0)?(selTec.options[selTec.selectedIndex].getAttribute('data-nom')||''):'';
+  var tecCorreo, tecNombre;
+  if(S.completo){
+    var selTec=document.getElementById('asig-tec'); tecCorreo=selTec.value||'';
+    tecNombre=(selTec.selectedIndex>0)?(selTec.options[selTec.selectedIndex].getAttribute('data-nom')||''):'';
+    if(!tecCorreo){ err.textContent='Selecciona el técnico responsable.'; return; }
+  } else {
+    // Acceso solo lectura: se autoasigna
+    tecCorreo=S.user.email; tecNombre=S.user.nombre;
+  }
   var parts=[]; S.ingenieros.forEach(function(x){ if(S.partSel&&S.partSel[x.correo]) parts.push({ nombre:x.nombre, correo:x.correo }); });
-  if(!tecCorreo){ err.textContent='Selecciona el técnico responsable.'; return; }
-  if(!parts.length){ err.textContent='Selecciona al menos un participante.'; return; }
   var btn=document.getElementById('asig-ok'); btn.disabled=true; btn.textContent='Asignando…';
   try{
     var fields={ TkEstatus:'Abierto', TkUsuarioNombre:tecNombre, TkUsuarioCorreo:tecCorreo, TkParticipantes:JSON.stringify(parts), TkFechaAsignacion:nowISO() };

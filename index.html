@@ -2808,7 +2808,9 @@ async function graphGet(endpoint, retry) {
     endpoint = endpoint.replace('/sites/undefined/', '/sites/'+(FT_SITE_ID||'')+'/');
   }
   const url   = endpoint.startsWith('https') ? endpoint : `https://graph.microsoft.com/v1.0/${endpoint}`;
-  const res   = await fetch(url, { headers:{ Authorization:`Bearer ${token}` } });
+  // Prefer: permite filtrar/ordenar por columnas de lista (p. ej. $filter=fields/Title eq '...').
+  // Es inofensivo para las demás consultas (Graph lo ignora cuando no aplica).
+  const res   = await fetch(url, { headers:{ Authorization:`Bearer ${token}`, 'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly' } });
 
   // Si 401 o 403 y no hemos reintentado — limpiar cache y renovar token
   if ((res.status === 401 || res.status === 403) && !retry) {

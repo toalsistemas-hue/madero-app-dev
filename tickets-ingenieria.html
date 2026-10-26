@@ -229,7 +229,7 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
   <div class="modal"><div class="modal-hd"><h3>Asignar solicitud</h3><button class="x" onclick="cerrar('m-asig')">✕</button></div>
     <div class="modal-bd">
       <div style="color:var(--dim);font-size:.82rem;margin-bottom:12px;" id="asig-info"></div>
-      <div class="fld" id="asig-tec-fld"><label>Técnico responsable <span class="req">*</span></label><select class="inp" id="asig-tec"><option value="">Selecciona…</option></select></div>
+      <div class="fld" id="asig-tec-fld"><label>Técnico responsable <span class="req">*</span></label><select class="inp" id="asig-tec" onchange="renderAsigParts()"><option value="">Selecciona…</option></select></div>
       <div id="asig-tec-nota" style="display:none;background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.3);color:var(--accent-l);border-radius:8px;padding:9px 11px;font-size:.82rem;margin-bottom:12px;"></div>
       <div class="fld">
         <label>Participantes (ingenieros) <span style="color:var(--muted);">(opcional)</span></label>
@@ -742,12 +742,18 @@ function abrirAsignar(){
 function renderAsigParts(){
   var cont=document.getElementById('asig-parts');
   if(!S.ingenieros.length){ cont.innerHTML='<span style="color:var(--muted);font-size:.78rem;">No hay ingenieros dados de alta.</span>'; return; }
+  // Técnico responsable efectivo: no puede seleccionarse también como participante
+  var tecCorreo = S.completo ? ((document.getElementById('asig-tec')||{}).value||'') : S.user.email;
+  tecCorreo=lc(tecCorreo);
+  if(tecCorreo && S.partSel) S.partSel[tecCorreo]=false;   // quitarlo si estaba marcado
   var f=S.partFiltroSkill||'';
   var list=f? S.ingenieros.filter(function(x){return (x.skills||[]).indexOf(f)>=0;}) : S.ingenieros;
   if(!list.length){ cont.innerHTML='<span style="color:var(--muted);font-size:.78rem;">Ningún ingeniero con la skill «'+esc(f)+'».</span>'; return; }
   cont.innerHTML=list.map(function(x){
     var tags=(x.skills||[]).length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">'+x.skills.map(function(s){return '<span class="chip" style="font-size:.6rem;">'+esc(s)+'</span>';}).join('')+'</div>':'';
-    return '<label class="part-chk" style="flex-direction:column;align-items:flex-start;"><span style="display:flex;align-items:center;gap:7px;"><input type="checkbox" value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'" '+(S.partSel[x.correo]?'checked':'')+' onchange="S.partSel[this.value]=this.checked;"> '+esc(x.nombre)+'</span>'+tags+'</label>';
+    var esTec=(lc(x.correo)===tecCorreo);
+    var nota=esTec?' <span style="color:var(--accent-l);font-size:.62rem;font-weight:700;">(técnico responsable)</span>':'';
+    return '<label class="part-chk" style="flex-direction:column;align-items:flex-start;'+(esTec?'opacity:.6;':'')+'"><span style="display:flex;align-items:center;gap:7px;"><input type="checkbox" value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'" '+((!esTec&&S.partSel[x.correo])?'checked':'')+(esTec?' disabled':'')+' onchange="S.partSel[this.value]=this.checked;"> '+esc(x.nombre)+nota+'</span>'+tags+'</label>';
   }).join('');
 }
 async function asignarConfirmar(){

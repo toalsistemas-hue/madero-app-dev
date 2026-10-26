@@ -138,6 +138,7 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
     <nav class="tabs" style="display:flex;gap:6px;flex:1;flex-wrap:wrap;">
       <button class="nav-item active" id="tab-tickets" onclick="setView('tickets')">🗂️ Tickets</button>
       <button class="nav-item" id="tab-reportes" onclick="setView('reportes')">📊 Reportes</button>
+      <button class="nav-item" id="tab-skills" onclick="setView('skills')">👷 Skills</button>
     </nav>
     <div class="tb-tools">
       <button class="btn btn-sm" id="btn-cfg" onclick="abrirConfig()" style="display:none;">⚙️ Configuración</button>
@@ -179,6 +180,7 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
       <div class="fld"><label>Descripción detallada de la solicitud <span class="req">*</span></label><textarea class="inp" id="f-desc" rows="4" placeholder="Describe la solicitud"></textarea></div>
       <div class="fld">
         <label>Participantes (ingenieros)</label>
+        <select class="inp" id="f-part-skill" onchange="S.partFiltroSkill=this.value;renderParts();" style="width:auto;min-width:200px;margin-bottom:8px;"><option value="">Filtrar por skill: todas</option></select>
         <div class="part-grid" id="f-parts"></div>
       </div>
       <div style="color:#fca5a5;font-size:.8rem;min-height:18px;" id="new-err"></div>
@@ -226,11 +228,11 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
 
 <script>
 /* ═══════════════ TICKETS DE INGENIERÍA (embebida) ═══════════════ */
-var L_TICKETS='TKT_Tickets', L_TIPOS='TKT_TiposTicket', L_INGS='TKT_Ingenieros', L_ARTICULOS='Articulos_Sap';
+var L_TICKETS='TKT_Tickets', L_TIPOS='TKT_TiposTicket', L_INGS='TKT_Ingenieros', L_ARTICULOS='Articulos_Sap', L_SKILLS='TKT_Skills';
 var EST_COLOR={'Abierto':'#58a6ff','Atendido':'#2ea043','Cancelado':'#ef4444'};
 var PRIO_COLOR={'Urgente':'#ef4444','Alta':'#f59e0b','Media':'#d4a017','Baja':'#8b949e'};
 
-var S = { user:null, completo:false, view:'tickets', tickets:[], tipos:[], ingenieros:[], soloMias:false, filtros:{},
+var S = { user:null, completo:false, view:'tickets', tickets:[], tipos:[], ingenieros:[], skills:[], soloMias:false, filtros:{}, partFiltroSkill:'', skillFiltro:'',
           curTicket:null, artDraft:[], accMode:'', _loaded:false, _everLoaded:false, _autoT:null };
 
 /* utilidades */
@@ -296,7 +298,8 @@ async function loadData(){
   var bb=document.getElementById('body');
   if(bb && !S._everLoaded) bb.innerHTML='<div class="empty"><span class="spin"></span> Cargando…</div>';
   try{ var tp=await listGet(L_TIPOS); S.tipos=tp.map(function(i){ return (i.fields&&i.fields.Title)||''; }).filter(Boolean).sort(); }catch(e){ S.tipos=[]; }
-  try{ var ing=await listGet(L_INGS); S.ingenieros=ing.map(function(i){ var f=i.fields||{}; return { nombre:f.Title||'', correo:lc(f.Correo||'') }; }).filter(function(x){return x.nombre;}).sort(function(a,b){return a.nombre.localeCompare(b.nombre);}); }catch(e){ S.ingenieros=[]; }
+  try{ var sk=await listGet(L_SKILLS); S.skills=sk.map(function(i){ return (i.fields&&i.fields.Title)||''; }).filter(Boolean).sort(); }catch(e){ S.skills=[]; }
+  try{ var ing=await listGet(L_INGS); S.ingenieros=ing.map(function(i){ var f=i.fields||{}; return { id:i.id, nombre:f.Title||'', correo:lc(f.Correo||''), skills:_pj(f.TkSkills,[]) }; }).filter(function(x){return x.nombre;}).sort(function(a,b){return a.nombre.localeCompare(b.nombre);}); }catch(e){ S.ingenieros=[]; }
   var ts=await listGet(L_TICKETS);
   S.tickets=ts.map(mapTicket);
   S._everLoaded=true;
@@ -318,12 +321,12 @@ function mapTicket(i){ var f=i.fields||{}; return {
 function misTickets(){ return S.tickets.filter(function(t){ return t.usuarioCorreo===S.user.email; }); }
 function setView(v){
   S.view=v;
-  var a=document.getElementById('tab-tickets'), b=document.getElementById('tab-reportes');
-  if(a) a.classList.toggle('active', v==='tickets'); if(b) b.classList.toggle('active', v==='reportes');
+  [['tab-tickets','tickets'],['tab-reportes','reportes'],['tab-skills','skills']].forEach(function(p){ var el=document.getElementById(p[0]); if(el) el.classList.toggle('active', v===p[1]); });
   render();
 }
 function render(){
   if(S.view==='reportes') return renderReportes();
+  if(S.view==='skills') return renderSkills();
   var body=document.getElementById('body');
   var items=S.soloMias?misTickets():S.tickets.slice();
   var f=S.filtros||{};
@@ -417,6 +420,25 @@ function renderReportes(){
   document.getElementById('body').innerHTML=h;
 }
 
+/* ---------- listado de skills (directorio de ingenieros) ---------- */
+function renderSkills(){
+  document.getElementById('h-sub').textContent='Ingenieros y skills';
+  var f=S.skillFiltro||'';
+  var ings=S.ingenieros.slice();
+  if(f) ings=ings.filter(function(x){ return (x.skills||[]).indexOf(f)>=0; });
+  var opt='<option value="">Filtrar por skill: todas</option>'+S.skills.map(function(s){return '<option'+(f===s?' selected':'')+'>'+esc(s)+'</option>';}).join('');
+  var h='<div class="flt"><select class="inp" onchange="S.skillFiltro=this.value;render();">'+opt+'</select>'
+    +'<button class="btn btn-sm btn-ghost" onclick="S.skillFiltro=\'\';render();">Limpiar</button></div>';
+  if(!ings.length){ h+='<div class="empty">No hay ingenieros'+(f?(' con la skill «'+esc(f)+'»'):'')+'.</div>'; document.getElementById('body').innerHTML=h; return; }
+  h+='<div class="tkt-grid">'+ings.map(function(x){
+    var tags=(x.skills||[]).length? x.skills.map(function(s){return '<span class="chip">'+esc(s)+'</span>';}).join(' ') : '<span style="color:var(--muted);font-size:.76rem;">Sin skills asignadas</span>';
+    return '<div class="tkt-card" style="cursor:default;"><div class="asunto">👷 '+esc(x.nombre)+'</div>'
+      +(x.correo?'<div class="meta-l" style="margin-bottom:6px;">'+esc(x.correo)+'</div>':'')
+      +'<div style="display:flex;flex-wrap:wrap;gap:5px;">'+tags+'</div></div>';
+  }).join('')+'</div>';
+  document.getElementById('body').innerHTML=h;
+}
+
 /* ---------- nuevo ticket ---------- */
 function abrirNuevo(){
   document.getElementById('new-err').textContent='';
@@ -429,10 +451,21 @@ function abrirNuevo(){
   document.getElementById('f-desc').value='';
   S.artDraft=[{num:'',desc:''}]; artRender();
   // participantes
-  var cont=document.getElementById('f-parts');
-  if(!S.ingenieros.length){ cont.innerHTML='<span style="color:var(--muted);font-size:.78rem;">No hay ingenieros dados de alta (lista TKT_Ingenieros).</span>'; }
-  else cont.innerHTML=S.ingenieros.map(function(x,i){ return '<label class="part-chk"><input type="checkbox" class="f-part" value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'"> '+esc(x.nombre)+'</label>'; }).join('');
+  S.partSel={}; S.partFiltroSkill='';
+  var selSk=document.getElementById('f-part-skill'); selSk.innerHTML='<option value="">Filtrar por skill: todas</option>'+S.skills.map(function(s){return '<option>'+esc(s)+'</option>';}).join(''); selSk.value='';
+  renderParts();
   abrir('m-new');
+}
+function renderParts(){
+  var cont=document.getElementById('f-parts');
+  if(!S.ingenieros.length){ cont.innerHTML='<span style="color:var(--muted);font-size:.78rem;">No hay ingenieros dados de alta (lista TKT_Ingenieros).</span>'; return; }
+  var f=S.partFiltroSkill||'';
+  var list=f? S.ingenieros.filter(function(x){return (x.skills||[]).indexOf(f)>=0;}) : S.ingenieros;
+  if(!list.length){ cont.innerHTML='<span style="color:var(--muted);font-size:.78rem;">Ningún ingeniero con la skill «'+esc(f)+'».</span>'; return; }
+  cont.innerHTML=list.map(function(x){
+    var tags=(x.skills||[]).length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">'+x.skills.map(function(s){return '<span class="chip" style="font-size:.6rem;">'+esc(s)+'</span>';}).join('')+'</div>':'';
+    return '<label class="part-chk" style="flex-direction:column;align-items:flex-start;"><span style="display:flex;align-items:center;gap:7px;"><input type="checkbox" class="f-part" value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'" '+(S.partSel[x.correo]?'checked':'')+' onchange="S.partSel[this.value]=this.checked;"> '+esc(x.nombre)+'</span>'+tags+'</label>';
+  }).join('');
 }
 function artRender(){
   var cont=document.getElementById('f-arts');
@@ -470,7 +503,7 @@ async function crearTicket(){
   var solicita=document.getElementById('f-solicita').value.trim();
   var desc=document.getElementById('f-desc').value.trim();
   var arts=(S.artDraft||[]).filter(function(a){ return (a.num||'').trim(); }).map(function(a){ return { num:a.num.trim().toUpperCase(), desc:(a.desc||'') }; });
-  var parts=[]; document.querySelectorAll('.f-part:checked').forEach(function(c){ parts.push({ nombre:c.getAttribute('data-nom'), correo:c.value }); });
+  var parts=[]; S.ingenieros.forEach(function(x){ if(S.partSel&&S.partSel[x.correo]) parts.push({ nombre:x.nombre, correo:x.correo }); });
 
   if(!tipo){ err.textContent='Selecciona el tipo de ticket.'; return; }
   if(!depto){ err.textContent='Escribe el departamento / cliente.'; return; }
@@ -582,17 +615,40 @@ function pintarConfig(){
   h+='<div class="fld"><label>Tipos de ticket (lista TKT_TiposTicket)</label>'
     +'<div style="display:flex;gap:6px;"><input class="inp" id="cfg-tipo" placeholder="Nuevo tipo de ticket…"><button class="btn btn-sm" onclick="cfgAddTipo()">＋</button></div>'
     +'<div class="chips" id="cfg-tipos-chips">'+chipsTipos()+'</div></div>';
-  h+='<div class="fld" style="margin-top:14px;"><label>Ingenieros / participantes (lista TKT_Ingenieros)</label>'
+  h+='<div class="fld" style="margin-top:14px;"><label>Skills (catálogo TKT_Skills)</label>'
+    +'<div style="display:flex;gap:6px;"><input class="inp" id="cfg-skill" placeholder="Nueva skill…"><button class="btn btn-sm" onclick="cfgAddSkill()">＋</button></div>'
+    +'<div class="chips" id="cfg-skills-chips">'+chipsSkills()+'</div></div>';
+  h+='<div class="fld" style="margin-top:14px;"><label>Ingenieros / participantes (lista TKT_Ingenieros) — marca sus skills</label>'
     +'<div style="display:flex;gap:6px;"><input class="inp" id="cfg-ing-nom" placeholder="Nombre"><input class="inp" id="cfg-ing-mail" placeholder="correo@..."><button class="btn btn-sm" onclick="cfgAddIng()">＋</button></div>'
-    +'<div class="chips" id="cfg-ing-chips">'+chipsIng()+'</div></div>';
+    +'<div id="cfg-ings">'+ingRows()+'</div></div>';
   document.getElementById('cfg-bd').innerHTML=h;
 }
 function chipsTipos(){ return S.tipos.map(function(x){ return '<span class="chipx">'+esc(x)+'<button onclick="cfgDelTipo(\''+esc(x).replace(/'/g,"\\'")+'\')">✕</button></span>'; }).join('')||'<span style="color:var(--muted);font-size:.76rem;">Sin tipos.</span>'; }
-function chipsIng(){ return S.ingenieros.map(function(x){ return '<span class="chipx">'+esc(x.nombre)+' <small style="color:var(--muted);">'+esc(x.correo)+'</small><button onclick="cfgDelIng(\''+esc(x.correo).replace(/'/g,"\\'")+'\')">✕</button></span>'; }).join('')||'<span style="color:var(--muted);font-size:.76rem;">Sin ingenieros.</span>'; }
+function chipsSkills(){ return S.skills.map(function(x){ return '<span class="chipx">'+esc(x)+'<button onclick="cfgDelSkill(\''+esc(x).replace(/'/g,"\\'")+'\')">✕</button></span>'; }).join('')||'<span style="color:var(--muted);font-size:.76rem;">Sin skills.</span>'; }
+function ingRows(){
+  if(!S.ingenieros.length) return '<div style="color:var(--muted);font-size:.76rem;margin-top:6px;">Sin ingenieros.</div>';
+  return S.ingenieros.map(function(x){
+    var checks = S.skills.length
+      ? S.skills.map(function(s){ var on=(x.skills||[]).indexOf(s)>=0; return '<label class="part-chk" style="font-size:.73rem;padding:4px 9px;"><input type="checkbox" '+(on?'checked':'')+' onchange="cfgToggleSkill(\''+esc(String(x.id))+'\',\''+esc(s).replace(/'/g,"\\'")+'\',this.checked)"> '+esc(s)+'</label>'; }).join('')
+      : '<span style="color:var(--muted);font-size:.72rem;">Agrega skills al catálogo para poder asignarlas.</span>';
+    return '<div style="border:1px solid var(--border);border-radius:9px;padding:10px;margin-top:8px;">'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><b style="flex:1;">'+esc(x.nombre)+'</b><small style="color:var(--muted);">'+esc(x.correo)+'</small><button class="btn btn-sm btn-danger" onclick="cfgDelIng(\''+esc(x.correo).replace(/'/g,"\\'")+'\')">Eliminar</button></div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">'+checks+'</div></div>';
+  }).join('');
+}
 async function cfgAddTipo(){ var v=document.getElementById('cfg-tipo').value.trim(); if(!v) return; try{ await listCreate(L_TIPOS,{Title:v}); document.getElementById('cfg-tipo').value=''; await loadData(); pintarConfig(); toast('Tipo agregado'); }catch(e){ toast('No se pudo'); } }
 async function cfgDelTipo(v){ try{ var items=await listGet(L_TIPOS); var it=items.find(function(i){return (i.fields&&i.fields.Title)===v;}); if(it){ await listDelete(L_TIPOS,it.id); await loadData(); pintarConfig(); toast('Tipo eliminado'); } }catch(e){ toast('No se pudo'); } }
 async function cfgAddIng(){ var n=document.getElementById('cfg-ing-nom').value.trim(), m=document.getElementById('cfg-ing-mail').value.trim(); if(!n||!m){ toast('Nombre y correo'); return; } try{ await listCreate(L_INGS,{Title:n, Correo:m}); document.getElementById('cfg-ing-nom').value=''; document.getElementById('cfg-ing-mail').value=''; await loadData(); pintarConfig(); toast('Ingeniero agregado'); }catch(e){ toast('No se pudo'); } }
 async function cfgDelIng(correo){ try{ var items=await listGet(L_INGS); var it=items.find(function(i){return lc(i.fields&&i.fields.Correo)===lc(correo);}); if(it){ await listDelete(L_INGS,it.id); await loadData(); pintarConfig(); toast('Ingeniero eliminado'); } }catch(e){ toast('No se pudo'); } }
+async function cfgAddSkill(){ var v=document.getElementById('cfg-skill').value.trim(); if(!v) return; try{ await listCreate(L_SKILLS,{Title:v}); document.getElementById('cfg-skill').value=''; await loadData(); pintarConfig(); toast('Skill agregada'); }catch(e){ toast('No se pudo'); } }
+async function cfgDelSkill(v){ try{ var items=await listGet(L_SKILLS); var it=items.find(function(i){return (i.fields&&i.fields.Title)===v;}); if(it){ await listDelete(L_SKILLS,it.id); await loadData(); pintarConfig(); toast('Skill eliminada'); } }catch(e){ toast('No se pudo'); } }
+async function cfgToggleSkill(ingId, skill, on){
+  var x=S.ingenieros.find(function(e){return String(e.id)===String(ingId);}); if(!x) return;
+  var arr=(x.skills||[]).slice(), i=arr.indexOf(skill);
+  if(on && i<0) arr.push(skill); if(!on && i>=0) arr.splice(i,1);
+  x.skills=arr;
+  try{ await listUpdate(L_INGS, ingId, { TkSkills: JSON.stringify(arr) }); }catch(e){ toast('No se pudo guardar la skill'); }
+}
 
 /* init */
 document.addEventListener('DOMContentLoaded', boot); boot();
@@ -600,6 +656,7 @@ window.abrirNuevo=abrirNuevo; window.crearTicket=crearTicket; window.cerrar=cerr
 window.abrirTicket=abrirTicket; window.artAdd=artAdd; window.artLookup=artLookup; window.render=render; window.setView=setView;
 window.pedirAccion=pedirAccion; window.accConfirmar=accConfirmar; window.abrirConfig=abrirConfig;
 window.cfgAddTipo=cfgAddTipo; window.cfgDelTipo=cfgDelTipo; window.cfgAddIng=cfgAddIng; window.cfgDelIng=cfgDelIng;
+window.renderParts=renderParts; window.cfgAddSkill=cfgAddSkill; window.cfgDelSkill=cfgDelSkill; window.cfgToggleSkill=cfgToggleSkill; window.renderSkills=renderSkills;
 </script>
 </body>
 </html>

@@ -2279,6 +2279,20 @@ tr:last-child td{border-bottom:none;}
   </iframe>
 </div>
 
+<!-- PAGE: GARANTÍAS (Ingeniería) -->
+<div class="page" id="page-Garantias" style="padding:0;margin:0;position:relative;">
+  <iframe id="gar-iframe" src="garantias.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
+    title="Garantías"></iframe>
+</div>
+
+<!-- PAGE: SOLICITUD DE GARANTÍAS (misma pantalla en modo solicitar) -->
+<div class="page" id="page-SolicitarGarantia" style="padding:0;margin:0;position:relative;">
+  <iframe id="sgar-iframe" src="garantias.html?modo=solicitar"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
+    title="Solicitud de garantías"></iframe>
+</div>
+
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
@@ -3354,6 +3368,26 @@ function navigateToPantalla(pantallaID) {
     if (tktIfrm) tktIfrm.style.display = 'none';
     var stkIfrm = document.getElementById('stk-iframe');
     if (stkIfrm) stkIfrm.style.display = 'none';
+    var garIfrm = document.getElementById('gar-iframe');
+    if (garIfrm) garIfrm.style.display = 'none';
+    var sgarIfrm = document.getElementById('sgar-iframe');
+    if (sgarIfrm) sgarIfrm.style.display = 'none';
+
+    function _pushGar(ifrm, pid){
+      if(!ifrm) return;
+      ifrm.style.display='block';
+      setTimeout(function(){
+        if(ifrm && ifrm.contentWindow){
+          var nivelG=(state.currentUser && state.currentUser.pantallas)?(state.currentUser.pantallas[pid]||''):'';
+          if(state.currentUser && state.currentUser.esAdmin) nivelG='completo';
+          ifrm.contentWindow.postMessage({ type:'SGD_AUTH',
+            user:{ nombre:state.currentUser?state.currentUser.nombre:'', correo:state.currentUser?(state.currentUser.email||''):'', puesto:state.currentUser?(state.currentUser.puesto||''):'', esAdmin:state.currentUser?!!state.currentUser.esAdmin:false },
+            nivel:nivelG, isDemoMode:state.isDemoMode||false }, '*');
+        }
+      }, 400);
+    }
+    if (pantallaID==='Garantias') { _pushGar(garIfrm, 'Garantias'); }
+    if (pantallaID==='SolicitarGarantia') { _pushGar(sgarIfrm, 'SolicitarGarantia'); }
 
     if (pantallaID==='SolicitarTicket') {
       if (stkIfrm) {
@@ -3774,6 +3808,10 @@ function doLogout() {
   if (tktIfrmL) tktIfrmL.style.display = 'none';
   var stkIfrmL = document.getElementById('stk-iframe');
   if (stkIfrmL) stkIfrmL.style.display = 'none';
+  var garIfrmL = document.getElementById('gar-iframe');
+  if (garIfrmL) garIfrmL.style.display = 'none';
+  var sgarIfrmL = document.getElementById('sgar-iframe');
+  if (sgarIfrmL) sgarIfrmL.style.display = 'none';
   document.getElementById('login-email').value='';
   document.getElementById('login-pass').value='';
   document.getElementById('login-error').style.display='none';
@@ -6658,6 +6696,25 @@ window.addEventListener('message', function (e) {
         esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
       },
       nivel: nivelPc,
+      isDemoMode: state.isDemoMode || false
+    }, '*');
+  } catch (_) {}
+});
+
+window.addEventListener('message', function (e) {
+  if (!e.data || e.data.type !== 'GAR_READY') return;
+  try {
+    var nivelG = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas['Garantias'] || '') : '';
+    if (state.currentUser && state.currentUser.esAdmin) nivelG = 'completo';
+    if (e.source) e.source.postMessage({
+      type: 'SGD_AUTH',
+      user: {
+        nombre: state.currentUser ? state.currentUser.nombre : '',
+        correo: state.currentUser ? (state.currentUser.email || '') : '',
+        puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+        esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+      },
+      nivel: nivelG,
       isDemoMode: state.isDemoMode || false
     }, '*');
   } catch (_) {}

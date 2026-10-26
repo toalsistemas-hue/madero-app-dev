@@ -28,6 +28,7 @@ a{color:var(--accent-l);}
 .nav-item{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:20px;cursor:pointer;font-size:.82rem;color:var(--dim);border:1px solid transparent;background:transparent;white-space:nowrap;}
 .nav-item:hover{background:rgba(255,255,255,.05);color:var(--text);}
 .nav-item.active{background:rgba(31,111,235,.18);border-color:rgba(88,166,255,.4);color:var(--text);font-weight:600;}
+.badge{background:#fff;color:#ef4444;border-radius:20px;font-size:.62rem;font-weight:800;padding:1px 7px;margin-left:2px;line-height:1.4;}
 
 /* Reportes */
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px;}
@@ -135,8 +136,9 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
       <div class="ttl">🛠️ Tickets de Ingeniería</div>
       <div class="sub">Soporte y seguimiento de solicitudes</div>
     </div>
-    <nav class="tabs" style="display:flex;gap:6px;flex:1;flex-wrap:wrap;">
+    <nav class="tabs" id="nav-tabs" style="display:flex;gap:6px;flex:1;flex-wrap:wrap;">
       <button class="nav-item active" id="tab-tickets" onclick="setView('tickets')">🗂️ Tickets</button>
+      <button class="nav-item" id="tab-solicitudes" onclick="setView('solicitudes')">📨 Solicitudes <span class="badge" id="sol-badge" style="display:none;">0</span></button>
       <button class="nav-item" id="tab-reportes" onclick="setView('reportes')">📊 Reportes</button>
       <button class="nav-item" id="tab-skills" onclick="setView('skills')">👷 Skills</button>
     </nav>
@@ -149,7 +151,7 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
 
   <section class="main">
     <div class="main-head">
-      <div><div class="h-ttl">Tickets</div><div class="h-sub" id="h-sub"></div></div>
+      <div><div class="h-ttl" id="h-ttl">Tickets</div><div class="h-sub" id="h-sub"></div></div>
     </div>
     <div class="main-body" id="body"><div class="empty"><span class="spin"></span> Cargando…</div></div>
   </section>
@@ -174,11 +176,17 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
       </div>
       <div class="fld">
         <label>Número de artículo <span class="req">*</span> <span style="color:var(--muted);">(se busca la descripción en Articulos_Sap)</span></label>
-        <div id="f-arts"></div>
-        <button class="btn btn-sm" type="button" onclick="artAdd()" style="margin-top:4px;">＋ Agregar artículo</button>
+        <label class="chk-lbl" style="margin-bottom:8px;"><input type="checkbox" id="f-art-otro-chk" onchange="artOtroToggle()"> Otro (no está dado de alta como número de artículo)</label>
+        <div id="f-arts-wrap">
+          <div id="f-arts"></div>
+          <button class="btn btn-sm" type="button" onclick="artAdd()" style="margin-top:4px;">＋ Agregar artículo</button>
+        </div>
+        <div id="f-art-otro-wrap" style="display:none;">
+          <input class="inp" id="f-art-otro" placeholder="Especifica el artículo / equipo">
+        </div>
       </div>
       <div class="fld"><label>Descripción detallada de la solicitud <span class="req">*</span></label><textarea class="inp" id="f-desc" rows="4" placeholder="Describe la solicitud"></textarea></div>
-      <div class="fld">
+      <div class="fld" id="fld-parts">
         <label>Participantes (ingenieros)</label>
         <select class="inp" id="f-part-skill" onchange="S.partFiltroSkill=this.value;renderParts();" style="width:auto;min-width:200px;margin-bottom:8px;"><option value="">Filtrar por skill: todas</option></select>
         <div class="part-grid" id="f-parts"></div>
@@ -216,6 +224,22 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
   </div>
 </div>
 
+<!-- Modal: asignar solicitud -->
+<div class="modal-bg" id="m-asig">
+  <div class="modal"><div class="modal-hd"><h3>Asignar solicitud</h3><button class="x" onclick="cerrar('m-asig')">✕</button></div>
+    <div class="modal-bd">
+      <div style="color:var(--dim);font-size:.82rem;margin-bottom:12px;" id="asig-info"></div>
+      <div class="fld">
+        <label>Participantes (ingenieros) <span class="req">*</span></label>
+        <select class="inp" id="asig-skill" onchange="S.partFiltroSkill=this.value;renderAsigParts();" style="width:auto;min-width:200px;margin-bottom:8px;"><option value="">Filtrar por skill: todas</option></select>
+        <div class="part-grid" id="asig-parts"></div>
+      </div>
+      <div style="color:#fca5a5;font-size:.8rem;min-height:18px;" id="asig-err"></div>
+    </div>
+    <div class="modal-ft"><button class="btn btn-ghost" onclick="cerrar('m-asig')">Cancelar</button><button class="btn btn-primary" id="asig-ok" onclick="asignarConfirmar()">Asignar y abrir ticket</button></div>
+  </div>
+</div>
+
 <!-- Modal: configuración -->
 <div class="modal-bg" id="m-cfg">
   <div class="modal"><div class="modal-hd"><h3>Configuración</h3><button class="x" onclick="cerrar('m-cfg')">✕</button></div>
@@ -229,7 +253,9 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
 <script>
 /* ═══════════════ TICKETS DE INGENIERÍA (embebida) ═══════════════ */
 var L_TICKETS='TKT_Tickets', L_TIPOS='TKT_TiposTicket', L_INGS='TKT_Ingenieros', L_ARTICULOS='Articulos_Sap', L_SKILLS='TKT_Skills';
-var EST_COLOR={'Abierto':'#58a6ff','Atendido':'#2ea043','Cancelado':'#ef4444'};
+// Modo de la pantalla: 'ing' (Ingeniería, por defecto) o 'solicitar' (usuarios de otros deptos).
+var MODO = (function(){ try{ return (new URLSearchParams(location.search).get('modo')==='solicitar')?'solicitar':'ing'; }catch(e){ return 'ing'; } })();
+var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Atendido':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
 var PRIO_COLOR={'Urgente':'#ef4444','Alta':'#f59e0b','Media':'#d4a017','Baja':'#8b949e'};
 
 var S = { user:null, completo:false, view:'tickets', tickets:[], tipos:[], ingenieros:[], skills:[], soloMias:false, filtros:{}, partFiltroSkill:'', skillFiltro:'',
@@ -284,7 +310,8 @@ function onAuth(d){
   if(d && d.isDemoMode){ document.getElementById('body').innerHTML='<div class="empty">No disponible en modo demo (sin sesión real de Microsoft).</div>'; return; }
   S.user={ email:lc(u.correo), nombre:u.nombre||u.correo||'Usuario', esAdmin:!!u.esAdmin };
   S.completo=(d&&d.nivel==='completo')||!!u.esAdmin;
-  var bc=document.getElementById('btn-cfg'); if(bc) bc.style.display=S.completo?'inline-block':'none';
+  applyModo();
+  var bc=document.getElementById('btn-cfg'); if(bc) bc.style.display=(MODO!=='solicitar'&&S.completo)?'inline-block':'none';
   if(!S._loaded){
     S._loaded=true;
     loadData().catch(function(e){ document.getElementById('body').innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existen las listas TKT_Tickets, TKT_TiposTicket y TKT_Ingenieros?<br><small>'+esc(e.message||e)+'</small></div>'; });
@@ -309,8 +336,9 @@ function mapTicket(i){ var f=i.fields||{}; return {
   id:i.id, folio:f.Title||('#'+i.id), tipo:f.TkTipo||'', prioridad:f.TkPrioridad||'Media',
   usuarioNombre:f.TkUsuarioNombre||'', usuarioCorreo:lc(f.TkUsuarioCorreo||''),
   departamento:f.TkDepartamento||'', solicita:f.TkSolicita||'',
-  articulos:_pj(f.TkArticulos,[]), descripcion:f.TkDescripcion||'',
+  articulos:_pj(f.TkArticulos,[]), articulosOtro:f.TkArticulosOtro||'', descripcion:f.TkDescripcion||'',
   participantes:_pj(f.TkParticipantes,[]), estatus:f.TkEstatus||'Abierto',
+  origen:f.TkOrigen||'Ingenieria', comentarioRechazo:f.TkComentarioRechazo||'', fechaAsignacion:f.TkFechaAsignacion||'',
   fechaRegistro:f.TkFechaRegistro||f.Created||'', fechaCierre:f.TkFechaCierre||'',
   dias:(f.TkDias!=null&&f.TkDias!=='')?Number(f.TkDias):null,
   horas:(f.TkHoras!=null&&f.TkHoras!=='')?Number(f.TkHoras):null,
@@ -324,35 +352,65 @@ function setView(v){
   [['tab-tickets','tickets'],['tab-reportes','reportes'],['tab-skills','skills']].forEach(function(p){ var el=document.getElementById(p[0]); if(el) el.classList.toggle('active', v===p[1]); });
   render();
 }
+function applyModo(){
+  if(MODO==='solicitar'){
+    var nt=document.getElementById('nav-tabs'); if(nt) nt.style.display='none';
+    var bc=document.getElementById('btn-cfg'); if(bc) bc.style.display='none';
+    var ht=document.getElementById('h-ttl'); if(ht) ht.textContent='Mis Tickets';
+    S.view='tickets';
+  }
+}
+function updBadge(){
+  var b=document.getElementById('sol-badge'); if(!b) return;
+  var n=S.tickets.filter(function(t){ return t.origen==='Solicitud' && t.estatus==='En proceso'; }).length;
+  if(n>0){ b.textContent=n; b.style.display='inline-block'; } else b.style.display='none';
+}
 function render(){
+  updBadge();
+  if(MODO==='solicitar') return renderLista('mis');
+  var titles={tickets:'Tickets',solicitudes:'Solicitudes',reportes:'Reportes',skills:'Skills'};
+  var ht=document.getElementById('h-ttl'); if(ht) ht.textContent=titles[S.view]||'Tickets';
   if(S.view==='reportes') return renderReportes();
   if(S.view==='skills') return renderSkills();
-  var body=document.getElementById('body');
-  var items=S.soloMias?misTickets():S.tickets.slice();
-  var f=S.filtros||{};
+  if(S.view==='solicitudes') return renderSolicitudes();
+  return renderLista('tickets');
+}
+function renderLista(tipo){
+  var body=document.getElementById('body'); var f=S.filtros||{}, me=S.user.email;
+  var items;
+  if(tipo==='mis'){ items=S.tickets.filter(function(t){return t.usuarioCorreo===me;}); }
+  else { items=S.tickets.filter(function(t){ return ['Abierto','Atendido','Cancelado'].indexOf(t.estatus)>=0; });
+         if(S.soloMias) items=items.filter(function(t){ return t.usuarioCorreo===me || (t.participantes||[]).some(function(p){return lc(p.correo)===me;}); }); }
   items=items.filter(function(t){
     if(f.est && t.estatus!==f.est) return false;
     if(f.prio && t.prioridad!==f.prio) return false;
     if(f.tipo && t.tipo!==f.tipo) return false;
-    if(f.q){ var q=lc(f.q); var blob=lc(t.folio+' '+t.tipo+' '+t.departamento+' '+t.solicita+' '+t.usuarioNombre+' '+t.descripcion+' '+(t.articulos||[]).map(function(a){return a.num+' '+a.desc;}).join(' ')); if(blob.indexOf(q)<0) return false; }
+    if(f.q){ var q=lc(f.q); var blob=lc(t.folio+' '+t.tipo+' '+t.departamento+' '+t.solicita+' '+t.usuarioNombre+' '+t.descripcion+' '+(t.articulos||[]).map(function(a){return a.num+' '+a.desc;}).join(' ')+' '+t.articulosOtro); if(blob.indexOf(q)<0) return false; }
     return true;
   });
   items.sort(function(a,b){ return (new Date(b.fechaRegistro||0))-(new Date(a.fechaRegistro||0)); });
   document.getElementById('h-sub').textContent=items.length+' ticket(s)';
-
+  var estOpts = (tipo==='mis')? ['En proceso','Abierto','Atendido','Cancelado','Rechazado'] : ['Abierto','Atendido','Cancelado'];
   var tiposOpt='<option value="">Tipo: todos</option>'+S.tipos.map(function(x){return '<option'+(f.tipo===x?' selected':'')+'>'+esc(x)+'</option>';}).join('');
   var h='<div class="flt">'
     +'<input class="inp" placeholder="🔎 Buscar folio, tipo, artículo…" value="'+esc(f.q||'')+'" oninput="S.filtros.q=this.value;render();" style="min-width:230px;">'
-    +'<select class="inp" onchange="S.filtros.est=this.value;render();"><option value="">Estatus: todos</option>'+['Abierto','Atendido','Cancelado'].map(function(x){return '<option'+(f.est===x?' selected':'')+'>'+x+'</option>';}).join('')+'</select>'
+    +'<select class="inp" onchange="S.filtros.est=this.value;render();"><option value="">Estatus: todos</option>'+estOpts.map(function(x){return '<option'+(f.est===x?' selected':'')+'>'+x+'</option>';}).join('')+'</select>'
     +'<select class="inp" onchange="S.filtros.prio=this.value;render();"><option value="">Prioridad: todas</option>'+['Urgente','Alta','Media','Baja'].map(function(x){return '<option'+(f.prio===x?' selected':'')+'>'+x+'</option>';}).join('')+'</select>'
     +'<select class="inp" onchange="S.filtros.tipo=this.value;render();">'+tiposOpt+'</select>'
-    +'<label class="chk-lbl"><input type="checkbox" '+(S.soloMias?'checked':'')+' onchange="S.soloMias=this.checked;render();"> Solo mis tickets</label>'
+    +((tipo==='mis')?'':'<label class="chk-lbl"><input type="checkbox" '+(S.soloMias?'checked':'')+' onchange="S.soloMias=this.checked;render();"> Solo mis tickets</label>')
     +'<button class="btn btn-sm btn-ghost" onclick="S.filtros={};S.soloMias=false;render();">Limpiar</button>'
   +'</div>';
-
   if(!items.length){ h+='<div class="empty">No hay tickets que coincidan.</div>'; body.innerHTML=h; return; }
   h+='<div class="tkt-grid">'+items.map(cardHTML).join('')+'</div>';
   body.innerHTML=h;
+}
+function renderSolicitudes(){
+  var body=document.getElementById('body');
+  var items=S.tickets.filter(function(t){ return t.origen==='Solicitud' && t.estatus==='En proceso'; });
+  items.sort(function(a,b){ return (new Date(a.fechaRegistro||0))-(new Date(b.fechaRegistro||0)); });
+  document.getElementById('h-sub').textContent=items.length+' solicitud(es) pendiente(s)';
+  if(!items.length){ body.innerHTML='<div class="empty">No hay solicitudes pendientes por atender. 🎉</div>'; return; }
+  body.innerHTML='<div class="tkt-grid">'+items.map(cardHTML).join('')+'</div>';
 }
 function cardHTML(t){
   var nParts=(t.participantes||[]).length, nArts=(t.articulos||[]).length;
@@ -449,12 +507,20 @@ function abrirNuevo(){
   document.getElementById('f-depto').value='';
   document.getElementById('f-solicita').value='';
   document.getElementById('f-desc').value='';
+  // artículos
   S.artDraft=[{num:'',desc:''}]; artRender();
-  // participantes
+  document.getElementById('f-art-otro-chk').checked=false; document.getElementById('f-art-otro').value=''; artOtroToggle();
+  // participantes (ocultos en modo solicitar)
+  var fp=document.getElementById('fld-parts'); if(fp) fp.style.display=(MODO==='solicitar')?'none':'';
   S.partSel={}; S.partFiltroSkill='';
   var selSk=document.getElementById('f-part-skill'); selSk.innerHTML='<option value="">Filtrar por skill: todas</option>'+S.skills.map(function(s){return '<option>'+esc(s)+'</option>';}).join(''); selSk.value='';
   renderParts();
   abrir('m-new');
+}
+function artOtroToggle(){
+  var on=document.getElementById('f-art-otro-chk').checked;
+  document.getElementById('f-arts-wrap').style.display=on?'none':'';
+  document.getElementById('f-art-otro-wrap').style.display=on?'':'none';
 }
 function renderParts(){
   var cont=document.getElementById('f-parts');
@@ -502,15 +568,19 @@ async function crearTicket(){
   var depto=document.getElementById('f-depto').value.trim();
   var solicita=document.getElementById('f-solicita').value.trim();
   var desc=document.getElementById('f-desc').value.trim();
+  var esOtro=document.getElementById('f-art-otro-chk').checked;
+  var artOtro=document.getElementById('f-art-otro').value.trim();
   var arts=(S.artDraft||[]).filter(function(a){ return (a.num||'').trim(); }).map(function(a){ return { num:a.num.trim().toUpperCase(), desc:(a.desc||'') }; });
   var parts=[]; S.ingenieros.forEach(function(x){ if(S.partSel&&S.partSel[x.correo]) parts.push({ nombre:x.nombre, correo:x.correo }); });
 
   if(!tipo){ err.textContent='Selecciona el tipo de ticket.'; return; }
   if(!depto){ err.textContent='Escribe el departamento / cliente.'; return; }
   if(!solicita){ err.textContent='Escribe quién solicita.'; return; }
-  if(!arts.length){ err.textContent='Agrega al menos un número de artículo.'; return; }
+  if(esOtro){ if(!artOtro){ err.textContent='Especifica el artículo / equipo.'; return; } }
+  else if(!arts.length){ err.textContent='Agrega al menos un número de artículo (o marca «Otro»).'; return; }
   if(!desc){ err.textContent='Escribe la descripción detallada.'; return; }
 
+  var esSolic=(MODO==='solicitar');
   var btn=document.getElementById('new-ok'); btn.disabled=true; btn.textContent='Creando…';
   try{
     var folio=await folioNuevo();
@@ -518,12 +588,15 @@ async function crearTicket(){
       Title: folio, TkTipo:tipo, TkPrioridad:prio,
       TkUsuarioNombre:S.user.nombre, TkUsuarioCorreo:S.user.email,
       TkDepartamento:depto, TkSolicita:solicita,
-      TkArticulos:JSON.stringify(arts), TkDescripcion:desc,
-      TkParticipantes:JSON.stringify(parts), TkEstatus:'Abierto',
+      TkArticulos:JSON.stringify(esOtro?[]:arts), TkArticulosOtro:(esOtro?artOtro:''),
+      TkDescripcion:desc,
+      TkParticipantes:JSON.stringify(esSolic?[]:parts),
+      TkOrigen:(esSolic?'Solicitud':'Ingenieria'),
+      TkEstatus:(esSolic?'En proceso':'Abierto'),
       TkFechaRegistro:nowISO()
     };
     await listCreate(L_TICKETS, fields);
-    cerrar('m-new'); await loadData(); toast('Ticket creado: '+folio);
+    cerrar('m-new'); await loadData(); toast(esSolic?('Solicitud enviada: '+folio):('Ticket creado: '+folio));
   }catch(e){ err.textContent='No se pudo crear. '+((e&&e.message)||''); }
   finally{ btn.disabled=false; btn.textContent='Crear ticket'; }
 }
@@ -537,7 +610,9 @@ function pintarDetalle(){
   var h='';
   // aviso si cerrado/cancelado
   if(t.estatus==='Cancelado'){ h+='<div class="aviso cancel"><b>Ticket cancelado</b> · '+fmtDT(t.fechaCierre)+' · <b>Tiempo:</b> '+fmtTiempo(t)+'<br><b>Motivo:</b> '+esc(t.motivoCancelacion||'—')+'</div>'; }
+  else if(t.estatus==='Rechazado'){ h+='<div class="aviso cancel"><b>Solicitud rechazada</b>'+(t.comentarioRechazo?('<br><b>Motivo:</b> '+esc(t.comentarioRechazo)):'')+'</div>'; }
   else if(t.estatus==='Atendido'){ h+='<div class="aviso cerrado"><b>Ticket atendido</b> · '+fmtDT(t.fechaCierre)+' · <b>Tiempo de atención:</b> '+fmtTiempo(t)+(t.comentarioCierre?('<br><b>Comentarios:</b> '+esc(t.comentarioCierre)):'')+'</div>'; }
+  else if(t.estatus==='En proceso'){ h+='<div class="aviso" style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:#f0cf6b;"><b>Solicitud en proceso</b> — pendiente de que Ingeniería la atienda.</div>'; }
 
   h+='<div class="d-sec"><div class="row" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px;">'
     +'<span class="st" style="background:'+hex2rgba(EST_COLOR[t.estatus],.16)+';color:'+(EST_COLOR[t.estatus]||'#888')+'">'+esc(t.estatus)+'</span>'
@@ -551,8 +626,9 @@ function pintarDetalle(){
     +dF('Solicita',t.solicita)
   +'</div>';
 
-  h+='<div class="d-sec"><div class="k">Artículos</div>';
-  if((t.articulos||[]).length){ h+=t.articulos.map(function(a){ return '<div class="d-art"><span class="n">'+esc(a.num)+'</span><span>'+esc(a.desc||'')+'</span></div>'; }).join(''); }
+  h+='<div class="d-sec"><div class="k">Artículos / Equipo</div>';
+  if(t.articulosOtro){ h+='<div class="d-box">'+esc(t.articulosOtro)+'</div>'; }
+  else if((t.articulos||[]).length){ h+=t.articulos.map(function(a){ return '<div class="d-art"><span class="n">'+esc(a.num)+'</span><span>'+esc(a.desc||'')+'</span></div>'; }).join(''); }
   else h+='<div style="color:var(--muted);font-size:.8rem;">Sin artículos.</div>';
   h+='</div>';
 
@@ -564,48 +640,100 @@ function pintarDetalle(){
   h+='</div>';
 
   document.getElementById('det-bd').innerHTML=h;
-  // botones: solo el creador y solo si está Abierto
   var ft=document.getElementById('det-ft'); var soyCreador=(t.usuarioCorreo===S.user.email);
   var b='';
-  if(soyCreador && t.estatus==='Abierto'){
-    b+='<button class="btn btn-sm btn-danger" onclick="pedirAccion(\'cancelar\')">✕ Cancelar ticket</button>';
-    b+='<button class="btn btn-sm btn-ok" onclick="pedirAccion(\'cerrar\')">✔ Cerrar ticket</button>';
+  if(MODO!=='solicitar'){
+    if(t.origen==='Solicitud' && t.estatus==='En proceso'){
+      // Solicitud pendiente: Ingeniería la rechaza o la asigna (abre ticket)
+      b+='<button class="btn btn-sm btn-danger" onclick="pedirAccion(\'rechazar\')">✕ Rechazar</button>';
+      b+='<button class="btn btn-sm btn-ok" onclick="abrirAsignar()">✔ Asignar</button>';
+    } else if(t.estatus==='Abierto' && (soyCreador || t.origen==='Solicitud')){
+      // Ticket abierto: lo cierra/cancela el creador (ing) o cualquier ingeniero (si vino de solicitud)
+      b+='<button class="btn btn-sm btn-danger" onclick="pedirAccion(\'cancelar\')">✕ Cancelar ticket</button>';
+      b+='<button class="btn btn-sm btn-ok" onclick="pedirAccion(\'cerrar\')">✔ Cerrar ticket</button>';
+    }
   }
   b+='<button class="btn btn-sm btn-ghost" onclick="cerrar(\'m-det\')">Cerrar</button>';
   ft.innerHTML=b;
 }
 function dF(l,v){ return '<div class="d-field"><span class="lbl">'+esc(l)+'</span><span class="val">'+esc(v||'—')+'</span></div>'; }
 
-/* ---------- cancelar / cerrar ---------- */
+/* ---------- cancelar / cerrar / rechazar ---------- */
+var ACC_LBL={ cancelar:['Cancelar ticket','Motivo de la cancelación <span class="req">*</span>','Cancelar ticket'],
+              cerrar:['Cerrar ticket','Comentarios (opcional)','Cerrar ticket'],
+              rechazar:['Rechazar solicitud','Motivo del rechazo <span class="req">*</span>','Rechazar'] };
 function pedirAccion(modo){
-  S.accMode=modo;
-  document.getElementById('acc-ttl').textContent = modo==='cancelar'?'Cancelar ticket':'Cerrar ticket';
-  document.getElementById('acc-lbl').innerHTML = modo==='cancelar' ? 'Motivo de la cancelación <span class="req">*</span>' : 'Comentarios (opcional)';
+  S.accMode=modo; var l=ACC_LBL[modo]||ACC_LBL.cancelar;
+  document.getElementById('acc-ttl').textContent=l[0];
+  document.getElementById('acc-lbl').innerHTML=l[1];
   document.getElementById('acc-txt').value='';
   document.getElementById('acc-err').textContent='';
-  document.getElementById('acc-ok').textContent = modo==='cancelar'?'Cancelar ticket':'Cerrar ticket';
+  document.getElementById('acc-ok').textContent=l[2];
   abrir('m-acc');
 }
 async function accConfirmar(){
   var t=S.curTicket; if(!t) return;
   var modo=S.accMode, txt=document.getElementById('acc-txt').value.trim();
   var err=document.getElementById('acc-err'); err.textContent='';
-  if(modo==='cancelar' && !txt){ err.textContent='Escribe el motivo de la cancelación.'; return; }
+  if((modo==='cancelar'||modo==='rechazar') && !txt){ err.textContent='Escribe el motivo.'; return; }
   var btn=document.getElementById('acc-ok'); btn.disabled=true; btn.textContent='Guardando…';
   try{
-    var cierre=nowISO();
-    var ms=Math.max(0, new Date(cierre)-new Date(t.fechaRegistro||cierre));
-    var dias=Math.floor(ms/86400000);
-    var horas=Math.round((ms/3600000)*100)/100;   // tiempo total de atención en horas (decimal)
-    var fields = (modo==='cancelar')
-      ? { TkEstatus:'Cancelado', TkMotivoCancelacion:txt, TkFechaCierre:cierre, TkDias:dias, TkHoras:horas }
-      : { TkEstatus:'Atendido', TkComentarioCierre:txt, TkFechaCierre:cierre, TkDias:dias, TkHoras:horas };
+    var fields, patch;
+    if(modo==='rechazar'){
+      fields={ TkEstatus:'Rechazado', TkComentarioRechazo:txt };
+      patch={ estatus:'Rechazado', comentarioRechazo:txt };
+    } else {
+      var cierre=nowISO();
+      var ms=Math.max(0, new Date(cierre)-new Date(t.fechaRegistro||cierre));
+      var dias=Math.floor(ms/86400000), horas=Math.round((ms/3600000)*100)/100;
+      fields = (modo==='cancelar')
+        ? { TkEstatus:'Cancelado', TkMotivoCancelacion:txt, TkFechaCierre:cierre, TkDias:dias, TkHoras:horas }
+        : { TkEstatus:'Atendido', TkComentarioCierre:txt, TkFechaCierre:cierre, TkDias:dias, TkHoras:horas };
+      patch={ estatus:fields.TkEstatus, fechaCierre:cierre, dias:dias, horas:horas, motivoCancelacion:fields.TkMotivoCancelacion||t.motivoCancelacion, comentarioCierre:fields.TkComentarioCierre||t.comentarioCierre };
+    }
     await listUpdate(L_TICKETS, t.id, fields);
-    Object.assign(t, { estatus:fields.TkEstatus, fechaCierre:cierre, dias:dias, horas:horas, motivoCancelacion:fields.TkMotivoCancelacion||t.motivoCancelacion, comentarioCierre:fields.TkComentarioCierre||t.comentarioCierre });
+    Object.assign(t, patch);
     cerrar('m-acc'); pintarDetalle(); render();
-    toast(modo==='cancelar'?'Ticket cancelado':'Ticket cerrado');
+    toast(modo==='rechazar'?'Solicitud rechazada':(modo==='cancelar'?'Ticket cancelado':'Ticket cerrado'));
   }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
-  finally{ btn.disabled=false; btn.textContent=modo==='cancelar'?'Cancelar ticket':'Cerrar ticket'; }
+  finally{ btn.disabled=false; btn.textContent=(ACC_LBL[modo]||ACC_LBL.cancelar)[2]; }
+}
+
+/* ---------- asignar solicitud ---------- */
+function abrirAsignar(){
+  var t=S.curTicket; if(!t) return;
+  document.getElementById('asig-info').innerHTML='<b>'+esc(t.folio)+'</b> · '+esc(t.tipo)+' — solicitada por '+esc(t.usuarioNombre||t.usuarioCorreo);
+  document.getElementById('asig-err').textContent='';
+  S.partSel={}; S.partFiltroSkill='';
+  var selSk=document.getElementById('asig-skill'); selSk.innerHTML='<option value="">Filtrar por skill: todas</option>'+S.skills.map(function(s){return '<option>'+esc(s)+'</option>';}).join(''); selSk.value='';
+  renderAsigParts();
+  abrir('m-asig');
+}
+function renderAsigParts(){
+  var cont=document.getElementById('asig-parts');
+  if(!S.ingenieros.length){ cont.innerHTML='<span style="color:var(--muted);font-size:.78rem;">No hay ingenieros dados de alta.</span>'; return; }
+  var f=S.partFiltroSkill||'';
+  var list=f? S.ingenieros.filter(function(x){return (x.skills||[]).indexOf(f)>=0;}) : S.ingenieros;
+  if(!list.length){ cont.innerHTML='<span style="color:var(--muted);font-size:.78rem;">Ningún ingeniero con la skill «'+esc(f)+'».</span>'; return; }
+  cont.innerHTML=list.map(function(x){
+    var tags=(x.skills||[]).length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">'+x.skills.map(function(s){return '<span class="chip" style="font-size:.6rem;">'+esc(s)+'</span>';}).join('')+'</div>':'';
+    return '<label class="part-chk" style="flex-direction:column;align-items:flex-start;"><span style="display:flex;align-items:center;gap:7px;"><input type="checkbox" value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'" '+(S.partSel[x.correo]?'checked':'')+' onchange="S.partSel[this.value]=this.checked;"> '+esc(x.nombre)+'</span>'+tags+'</label>';
+  }).join('');
+}
+async function asignarConfirmar(){
+  var t=S.curTicket; if(!t) return;
+  var err=document.getElementById('asig-err'); err.textContent='';
+  var parts=[]; S.ingenieros.forEach(function(x){ if(S.partSel&&S.partSel[x.correo]) parts.push({ nombre:x.nombre, correo:x.correo }); });
+  if(!parts.length){ err.textContent='Selecciona al menos un participante.'; return; }
+  var btn=document.getElementById('asig-ok'); btn.disabled=true; btn.textContent='Asignando…';
+  try{
+    var fields={ TkEstatus:'Abierto', TkParticipantes:JSON.stringify(parts), TkFechaAsignacion:nowISO() };
+    await listUpdate(L_TICKETS, t.id, fields);
+    Object.assign(t, { estatus:'Abierto', participantes:parts, fechaAsignacion:fields.TkFechaAsignacion });
+    cerrar('m-asig'); cerrar('m-det'); render();
+    toast('Solicitud asignada — pasó a Tickets (Abierto)');
+  }catch(e){ err.textContent='No se pudo asignar. '+((e&&e.message)||''); }
+  finally{ btn.disabled=false; btn.textContent='Asignar y abrir ticket'; }
 }
 
 /* ---------- configuración (tipos e ingenieros) ---------- */
@@ -657,6 +785,7 @@ window.abrirTicket=abrirTicket; window.artAdd=artAdd; window.artLookup=artLookup
 window.pedirAccion=pedirAccion; window.accConfirmar=accConfirmar; window.abrirConfig=abrirConfig;
 window.cfgAddTipo=cfgAddTipo; window.cfgDelTipo=cfgDelTipo; window.cfgAddIng=cfgAddIng; window.cfgDelIng=cfgDelIng;
 window.renderParts=renderParts; window.cfgAddSkill=cfgAddSkill; window.cfgDelSkill=cfgDelSkill; window.cfgToggleSkill=cfgToggleSkill; window.renderSkills=renderSkills;
+window.artOtroToggle=artOtroToggle; window.pedirAccion=pedirAccion; window.abrirAsignar=abrirAsignar; window.renderAsigParts=renderAsigParts; window.asignarConfirmar=asignarConfirmar;
 </script>
 </body>
 </html>

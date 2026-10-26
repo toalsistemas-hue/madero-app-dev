@@ -2269,6 +2269,16 @@ tr:last-child td{border-bottom:none;}
   </iframe>
 </div>
 
+<!-- PAGE: SOLICITAR TICKET (misma pantalla en modo solicitar) -->
+<div class="page" id="page-SolicitarTicket" style="padding:0;margin:0;position:relative;">
+  <iframe
+    id="stk-iframe"
+    src="tickets-ingenieria.html?modo=solicitar"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
+    title="Solicitar Ticket">
+  </iframe>
+</div>
+
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
@@ -3342,6 +3352,29 @@ function navigateToPantalla(pantallaID) {
     if (pcalIfrm) pcalIfrm.style.display = 'none';
     var tktIfrm = document.getElementById('tkt-iframe');
     if (tktIfrm) tktIfrm.style.display = 'none';
+    var stkIfrm = document.getElementById('stk-iframe');
+    if (stkIfrm) stkIfrm.style.display = 'none';
+
+    if (pantallaID==='SolicitarTicket') {
+      if (stkIfrm) {
+        stkIfrm.style.display = 'block';
+        setTimeout(function() {
+          if (stkIfrm && stkIfrm.contentWindow) {
+            stkIfrm.contentWindow.postMessage({
+              type: 'SGD_AUTH',
+              user: {
+                nombre: state.currentUser ? state.currentUser.nombre : '',
+                correo: state.currentUser ? (state.currentUser.email || '') : '',
+                puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+                esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+              },
+              nivel: '',
+              isDemoMode: state.isDemoMode || false
+            }, '*');
+          }
+        }, 400);
+      }
+    }
 
     if (pantallaID==='TicketsIngenieria') {
       if (tktIfrm) {
@@ -3739,6 +3772,8 @@ function doLogout() {
   if (pcalIfrmL) pcalIfrmL.style.display = 'none';
   var tktIfrmL = document.getElementById('tkt-iframe');
   if (tktIfrmL) tktIfrmL.style.display = 'none';
+  var stkIfrmL = document.getElementById('stk-iframe');
+  if (stkIfrmL) stkIfrmL.style.display = 'none';
   document.getElementById('login-email').value='';
   document.getElementById('login-pass').value='';
   document.getElementById('login-error').style.display='none';

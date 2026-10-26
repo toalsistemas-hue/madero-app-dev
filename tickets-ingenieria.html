@@ -167,12 +167,12 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
         <div class="fld"><label>Prioridad <span class="req">*</span></label><select class="inp" id="f-prio"><option>Baja</option><option selected>Media</option><option>Alta</option><option>Urgente</option></select></div>
       </div>
       <div class="grid2">
-        <div class="fld"><label>Usuario quien realiza ticket <span class="req">*</span></label><input class="inp" id="f-usr" disabled></div>
-        <div class="fld"><label>Correo <span class="req">*</span></label><input class="inp" id="f-mail" disabled></div>
+        <div class="fld"><label>Solicita <span class="req">*</span></label><input class="inp" id="f-solicita" placeholder="Nombre de quien solicita"></div>
+        <div class="fld"><label>Correo del solicitante <span class="req">*</span></label><input class="inp" id="f-solicita-mail" placeholder="correo@..."></div>
       </div>
       <div class="grid2">
         <div class="fld"><label>Departamento / Cliente <span class="req">*</span></label><input class="inp" id="f-depto" placeholder="Departamento interno o cliente"></div>
-        <div class="fld"><label>Solicita <span class="req">*</span></label><input class="inp" id="f-solicita" placeholder="Nombre de quien solicita"></div>
+        <div class="fld" id="fld-tecnico"><label>Técnico responsable <span class="req">*</span></label><select class="inp" id="f-tec"><option value="">Selecciona…</option></select></div>
       </div>
       <div class="fld">
         <label>Número de artículo <span class="req">*</span> <span style="color:var(--muted);">(se busca la descripción en Articulos_Sap)</span></label>
@@ -229,6 +229,7 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
   <div class="modal"><div class="modal-hd"><h3>Asignar solicitud</h3><button class="x" onclick="cerrar('m-asig')">✕</button></div>
     <div class="modal-bd">
       <div style="color:var(--dim);font-size:.82rem;margin-bottom:12px;" id="asig-info"></div>
+      <div class="fld"><label>Técnico responsable <span class="req">*</span></label><select class="inp" id="asig-tec"><option value="">Selecciona…</option></select></div>
       <div class="fld">
         <label>Participantes (ingenieros) <span class="req">*</span></label>
         <select class="inp" id="asig-skill" onchange="S.partFiltroSkill=this.value;renderAsigParts();" style="width:auto;min-width:200px;margin-bottom:8px;"><option value="">Filtrar por skill: todas</option></select>
@@ -336,6 +337,7 @@ function mapTicket(i){ var f=i.fields||{}; return {
   id:i.id, folio:f.Title||('#'+i.id), tipo:f.TkTipo||'', prioridad:f.TkPrioridad||'Media',
   usuarioNombre:f.TkUsuarioNombre||'', usuarioCorreo:lc(f.TkUsuarioCorreo||''),
   departamento:f.TkDepartamento||'', solicita:f.TkSolicita||'',
+  solicitaCorreo:lc(f.TkSolicitaCorreo||''),
   articulos:_pj(f.TkArticulos,[]), articulosOtro:f.TkArticulosOtro||'', descripcion:f.TkDescripcion||'',
   participantes:_pj(f.TkParticipantes,[]), estatus:f.TkEstatus||'Abierto',
   origen:f.TkOrigen||'Ingenieria', comentarioRechazo:f.TkComentarioRechazo||'', fechaAsignacion:f.TkFechaAsignacion||'',
@@ -378,7 +380,7 @@ function render(){
 function renderLista(tipo){
   var body=document.getElementById('body'); var f=S.filtros||{}, me=S.user.email;
   var items;
-  if(tipo==='mis'){ items=S.tickets.filter(function(t){return t.usuarioCorreo===me;}); }
+  if(tipo==='mis'){ items=S.tickets.filter(function(t){return t.solicitaCorreo===me;}); }
   else { items=S.tickets.filter(function(t){ return ['Abierto','Atendido','Cancelado'].indexOf(t.estatus)>=0; });
          if(S.soloMias) items=items.filter(function(t){ return t.usuarioCorreo===me || (t.participantes||[]).some(function(p){return lc(p.correo)===me;}); }); }
   items=items.filter(function(t){
@@ -421,8 +423,9 @@ function cardHTML(t){
       +'<span class="st" style="background:'+hex2rgba(EST_COLOR[t.estatus],.16)+';color:'+(EST_COLOR[t.estatus]||'#888')+'">'+esc(t.estatus)+'</span>'
       +'<span class="tag" style="background:'+hex2rgba(PRIO_COLOR[t.prioridad],.16)+';color:'+(PRIO_COLOR[t.prioridad]||'#888')+'">'+esc(t.prioridad)+'</span>'
     +'</div>'
-    +'<div class="row"><span class="meta-l">👤 '+esc(t.usuarioNombre||'—')+'</span><span class="meta-l">🏢 '+esc(t.departamento||'—')+'</span></div>'
-    +'<div class="row">'+(nArts?('<span class="meta-l">📦 '+nArts+' artículo(s)</span>'):'')+(nParts?('<span class="chip">👷 '+nParts+' participante(s)</span>'):'')+'</div>'
+    +'<div class="row"><span class="meta-l">🙋 '+esc(t.solicita||'—')+'</span><span class="meta-l">🏢 '+esc(t.departamento||'—')+'</span></div>'
+    +(t.usuarioNombre?('<div class="row"><span class="meta-l">👤 Téc: '+esc(t.usuarioNombre)+'</span></div>'):'')
+    +'<div class="row">'+((nArts||t.articulosOtro)?('<span class="meta-l">📦 '+(t.articulosOtro?'Otro':(nArts+' artículo(s)'))+'</span>'):'')+(nParts?('<span class="chip">👷 '+nParts+' participante(s)</span>'):'')+'</div>'
   +'</div>';
 }
 
@@ -449,11 +452,11 @@ function renderReportes(){
 
   // Mano de obra por usuario (quien levanta el ticket)
   var porU={};
-  all.forEach(function(t){ var k=lc(t.usuarioCorreo)||'—'; if(!S.completo && k!==me) return;
+  all.forEach(function(t){ if(!t.usuarioCorreo) return; var k=lc(t.usuarioCorreo); if(!S.completo && k!==me) return;
     if(!porU[k]) porU[k]={nombre:t.usuarioNombre||t.usuarioCorreo||k, tickets:0, atend:0, horas:0};
     porU[k].tickets++; if(t.estatus==='Atendido'){ porU[k].atend++; porU[k].horas+=horasAtencion(t); } });
   var arrU=Object.keys(porU).map(function(k){return porU[k];}).sort(function(a,b){return b.horas-a.horas;});
-  h+='<div class="rep-card"><h4>Mano de obra por usuario</h4><table class="rtab"><tr><th>Usuario</th><th class="num">Tickets</th><th class="num">Atendidos</th><th class="num">Mano de obra</th><th class="num">Prom.</th></tr>'
+  h+='<div class="rep-card"><h4>Mano de obra por técnico responsable</h4><table class="rtab"><tr><th>Técnico</th><th class="num">Tickets</th><th class="num">Atendidos</th><th class="num">Mano de obra</th><th class="num">Prom.</th></tr>'
     +(arrU.length?arrU.map(function(x){return '<tr><td>'+esc(x.nombre)+'</td><td class="num">'+x.tickets+'</td><td class="num">'+x.atend+'</td><td class="num">'+fmtHrsNum(x.horas)+'</td><td class="num">'+fmtHrsNum(x.atend?x.horas/x.atend:0)+'</td></tr>';}).join(''):'<tr><td colspan="5" style="color:var(--muted);">Sin datos.</td></tr>')
     +'</table></div>';
 
@@ -502,11 +505,21 @@ function abrirNuevo(){
   document.getElementById('new-err').textContent='';
   var selT=document.getElementById('f-tipo'); selT.innerHTML='<option value="">Selecciona…</option>'+S.tipos.map(function(x){return '<option>'+esc(x)+'</option>';}).join('');
   document.getElementById('f-prio').value='Media';
-  document.getElementById('f-usr').value=S.user.nombre;
-  document.getElementById('f-mail').value=S.user.email;
   document.getElementById('f-depto').value='';
-  document.getElementById('f-solicita').value='';
   document.getElementById('f-desc').value='';
+  var esSolic=(MODO==='solicitar');
+  var fSol=document.getElementById('f-solicita'), fSolM=document.getElementById('f-solicita-mail');
+  if(esSolic){ fSol.value=S.user.nombre; fSol.disabled=true; fSolM.value=S.user.email; fSolM.disabled=true; }
+  else { fSol.value=''; fSol.disabled=false; fSolM.value=''; fSolM.disabled=false; }
+  // Técnico responsable: en modo solicitar se oculta (se asigna después); en ingeniería es un selector
+  var fldTec=document.getElementById('fld-tecnico');
+  if(esSolic){ if(fldTec) fldTec.style.display='none'; }
+  else {
+    if(fldTec) fldTec.style.display='';
+    var selTec=document.getElementById('f-tec');
+    selTec.innerHTML='<option value="">Selecciona…</option>'+S.ingenieros.map(function(x){return '<option value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'">'+esc(x.nombre)+'</option>';}).join('');
+    var yo=S.ingenieros.find(function(x){return x.correo===S.user.email;}); selTec.value=yo?yo.correo:'';
+  }
   // artículos
   S.artDraft=[{num:'',desc:''}]; artRender();
   document.getElementById('f-art-otro-chk').checked=false; document.getElementById('f-art-otro').value=''; artOtroToggle();
@@ -563,10 +576,15 @@ async function folioNuevo(){
 }
 async function crearTicket(){
   var err=document.getElementById('new-err'); err.textContent='';
+  var esSolic=(MODO==='solicitar');
   var tipo=document.getElementById('f-tipo').value;
   var prio=document.getElementById('f-prio').value;
   var depto=document.getElementById('f-depto').value.trim();
-  var solicita=document.getElementById('f-solicita').value.trim();
+  var solicita = esSolic ? S.user.nombre : document.getElementById('f-solicita').value.trim();
+  var solicitaMail = esSolic ? S.user.email : document.getElementById('f-solicita-mail').value.trim();
+  var selTec=document.getElementById('f-tec');
+  var tecCorreo = (!esSolic && selTec) ? (selTec.value||'') : '';
+  var tecNombre = (!esSolic && selTec && selTec.selectedIndex>0) ? (selTec.options[selTec.selectedIndex].getAttribute('data-nom')||'') : '';
   var desc=document.getElementById('f-desc').value.trim();
   var esOtro=document.getElementById('f-art-otro-chk').checked;
   var artOtro=document.getElementById('f-art-otro').value.trim();
@@ -574,20 +592,22 @@ async function crearTicket(){
   var parts=[]; S.ingenieros.forEach(function(x){ if(S.partSel&&S.partSel[x.correo]) parts.push({ nombre:x.nombre, correo:x.correo }); });
 
   if(!tipo){ err.textContent='Selecciona el tipo de ticket.'; return; }
-  if(!depto){ err.textContent='Escribe el departamento / cliente.'; return; }
   if(!solicita){ err.textContent='Escribe quién solicita.'; return; }
+  if(!solicitaMail){ err.textContent='Escribe el correo del solicitante.'; return; }
+  if(!depto){ err.textContent='Escribe el departamento / cliente.'; return; }
+  if(!esSolic && !tecCorreo){ err.textContent='Selecciona el técnico responsable.'; return; }
   if(esOtro){ if(!artOtro){ err.textContent='Especifica el artículo / equipo.'; return; } }
   else if(!arts.length){ err.textContent='Agrega al menos un número de artículo (o marca «Otro»).'; return; }
   if(!desc){ err.textContent='Escribe la descripción detallada.'; return; }
 
-  var esSolic=(MODO==='solicitar');
   var btn=document.getElementById('new-ok'); btn.disabled=true; btn.textContent='Creando…';
   try{
     var folio=await folioNuevo();
     var fields={
       Title: folio, TkTipo:tipo, TkPrioridad:prio,
-      TkUsuarioNombre:S.user.nombre, TkUsuarioCorreo:S.user.email,
-      TkDepartamento:depto, TkSolicita:solicita,
+      TkUsuarioNombre:(esSolic?'':tecNombre), TkUsuarioCorreo:(esSolic?'':tecCorreo),
+      TkSolicita:solicita, TkSolicitaCorreo:solicitaMail,
+      TkDepartamento:depto,
       TkArticulos:JSON.stringify(esOtro?[]:arts), TkArticulosOtro:(esOtro?artOtro:''),
       TkDescripcion:desc,
       TkParticipantes:JSON.stringify(esSolic?[]:parts),
@@ -621,9 +641,9 @@ function pintarDetalle(){
 
   h+='<div class="d-sec">'
     +dF('Tipo de ticket',t.tipo)
-    +dF('Usuario quien realiza',t.usuarioNombre+(t.usuarioCorreo?(' · '+t.usuarioCorreo):''))
+    +dF('Solicita', t.solicita+(t.solicitaCorreo?(' · '+t.solicitaCorreo):''))
     +dF('Departamento / Cliente',t.departamento)
-    +dF('Solicita',t.solicita)
+    +dF('Técnico responsable', t.usuarioNombre ? (t.usuarioNombre+(t.usuarioCorreo?(' · '+t.usuarioCorreo):'')) : '— (sin asignar)')
   +'</div>';
 
   h+='<div class="d-sec"><div class="k">Artículos / Equipo</div>';
@@ -704,6 +724,7 @@ function abrirAsignar(){
   var t=S.curTicket; if(!t) return;
   document.getElementById('asig-info').innerHTML='<b>'+esc(t.folio)+'</b> · '+esc(t.tipo)+' — solicitada por '+esc(t.usuarioNombre||t.usuarioCorreo);
   document.getElementById('asig-err').textContent='';
+  var selTec=document.getElementById('asig-tec'); selTec.innerHTML='<option value="">Selecciona…</option>'+S.ingenieros.map(function(x){return '<option value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'">'+esc(x.nombre)+'</option>';}).join(''); selTec.value='';
   S.partSel={}; S.partFiltroSkill='';
   var selSk=document.getElementById('asig-skill'); selSk.innerHTML='<option value="">Filtrar por skill: todas</option>'+S.skills.map(function(s){return '<option>'+esc(s)+'</option>';}).join(''); selSk.value='';
   renderAsigParts();
@@ -723,13 +744,16 @@ function renderAsigParts(){
 async function asignarConfirmar(){
   var t=S.curTicket; if(!t) return;
   var err=document.getElementById('asig-err'); err.textContent='';
+  var selTec=document.getElementById('asig-tec'); var tecCorreo=selTec.value||'';
+  var tecNombre=(selTec.selectedIndex>0)?(selTec.options[selTec.selectedIndex].getAttribute('data-nom')||''):'';
   var parts=[]; S.ingenieros.forEach(function(x){ if(S.partSel&&S.partSel[x.correo]) parts.push({ nombre:x.nombre, correo:x.correo }); });
+  if(!tecCorreo){ err.textContent='Selecciona el técnico responsable.'; return; }
   if(!parts.length){ err.textContent='Selecciona al menos un participante.'; return; }
   var btn=document.getElementById('asig-ok'); btn.disabled=true; btn.textContent='Asignando…';
   try{
-    var fields={ TkEstatus:'Abierto', TkParticipantes:JSON.stringify(parts), TkFechaAsignacion:nowISO() };
+    var fields={ TkEstatus:'Abierto', TkUsuarioNombre:tecNombre, TkUsuarioCorreo:tecCorreo, TkParticipantes:JSON.stringify(parts), TkFechaAsignacion:nowISO() };
     await listUpdate(L_TICKETS, t.id, fields);
-    Object.assign(t, { estatus:'Abierto', participantes:parts, fechaAsignacion:fields.TkFechaAsignacion });
+    Object.assign(t, { estatus:'Abierto', usuarioNombre:tecNombre, usuarioCorreo:lc(tecCorreo), participantes:parts, fechaAsignacion:fields.TkFechaAsignacion });
     cerrar('m-asig'); cerrar('m-det'); render();
     toast('Solicitud asignada — pasó a Tickets (Abierto)');
   }catch(e){ err.textContent='No se pudo asignar. '+((e&&e.message)||''); }

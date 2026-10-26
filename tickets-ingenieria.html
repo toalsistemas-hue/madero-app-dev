@@ -25,6 +25,21 @@ a{color:var(--accent-l);}
 .tb-brand .sub{font-size:.7rem;color:var(--dim);margin-top:1px;}
 .tb-tools{display:flex;align-items:center;gap:8px;flex:0 0 auto;flex-wrap:wrap;}
 .rolechip{font-size:.6rem;border-radius:5px;padding:2px 8px;background:rgba(88,166,255,.15);color:var(--accent-l);text-transform:uppercase;letter-spacing:.4px;}
+.nav-item{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:20px;cursor:pointer;font-size:.82rem;color:var(--dim);border:1px solid transparent;background:transparent;white-space:nowrap;}
+.nav-item:hover{background:rgba(255,255,255,.05);color:var(--text);}
+.nav-item.active{background:rgba(31,111,235,.18);border-color:rgba(88,166,255,.4);color:var(--text);font-weight:600;}
+
+/* Reportes */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px;}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:14px 16px;}
+.kpi .v{font-size:1.6rem;font-weight:800;line-height:1.1;}
+.kpi .l{font-size:.72rem;color:var(--dim);margin-top:4px;}
+.rep-card{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:16px;margin-bottom:16px;}
+.rep-card h4{font-size:.92rem;margin-bottom:12px;}
+table.rtab{width:100%;border-collapse:collapse;font-size:.8rem;}
+table.rtab th,table.rtab td{padding:7px 9px;text-align:left;border-bottom:1px solid var(--border);}
+table.rtab th{color:var(--dim);font-weight:700;font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;}
+table.rtab td.num,table.rtab th.num{text-align:right;}
 
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 .main-head{padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
@@ -116,10 +131,14 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
 
 <div id="app">
   <div class="topbar">
-    <div class="tb-brand">
+    <div class="tb-brand" style="flex:0 0 auto;">
       <div class="ttl">🛠️ Tickets de Ingeniería</div>
       <div class="sub">Soporte y seguimiento de solicitudes</div>
     </div>
+    <nav class="tabs" style="display:flex;gap:6px;flex:1;flex-wrap:wrap;">
+      <button class="nav-item active" id="tab-tickets" onclick="setView('tickets')">🗂️ Tickets</button>
+      <button class="nav-item" id="tab-reportes" onclick="setView('reportes')">📊 Reportes</button>
+    </nav>
     <div class="tb-tools">
       <button class="btn btn-sm" id="btn-cfg" onclick="abrirConfig()" style="display:none;">⚙️ Configuración</button>
       <button class="btn btn-primary btn-sm" onclick="abrirNuevo()">＋ Nuevo ticket</button>
@@ -211,7 +230,7 @@ var L_TICKETS='TKT_Tickets', L_TIPOS='TKT_TiposTicket', L_INGS='TKT_Ingenieros',
 var EST_COLOR={'Abierto':'#58a6ff','Atendido':'#2ea043','Cancelado':'#ef4444'};
 var PRIO_COLOR={'Urgente':'#ef4444','Alta':'#f59e0b','Media':'#d4a017','Baja':'#8b949e'};
 
-var S = { user:null, completo:false, tickets:[], tipos:[], ingenieros:[], soloMias:false, filtros:{},
+var S = { user:null, completo:false, view:'tickets', tickets:[], tipos:[], ingenieros:[], soloMias:false, filtros:{},
           curTicket:null, artDraft:[], accMode:'', _loaded:false, _everLoaded:false, _autoT:null };
 
 /* utilidades */
@@ -223,6 +242,11 @@ function _pj(s,def){ try{ var v=JSON.parse(s||''); return v==null?def:v; }catch(
 function nowISO(){ return new Date().toISOString(); }
 function lc(s){ return (s||'').toLowerCase(); }
 function fmtDT(s){ if(!s) return '—'; var d=new Date(s); if(isNaN(d)) return '—'; return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }
+// Tiempo de atención (registro → cierre). Si es ≥1 día muestra días; si es el mismo día, muestra horas/min.
+function msAtencion(t){ if(!t.fechaCierre||!t.fechaRegistro) return null; var ms=new Date(t.fechaCierre)-new Date(t.fechaRegistro); return (isNaN(ms)||ms<0)?0:ms; }
+function fmtTiempo(t){ var ms=msAtencion(t); if(ms==null) return '—'; var dias=Math.floor(ms/86400000); if(dias>=1) return dias+' día(s)'; var hrs=ms/3600000; var h=Math.floor(hrs), min=Math.round((hrs-h)*60); if(min===60){h++;min=0;} if(h<=0) return (min||0)+' min'; return h+' h'+(min?(' '+min+' min'):''); }
+function horasAtencion(t){ if(t.horas!=null) return t.horas; var ms=msAtencion(t); return ms==null?0:Math.round((ms/3600000)*100)/100; }
+function fmtHrsNum(h){ h=Number(h)||0; if(h<1&&h>0) return Math.round(h*60)+' min'; return (Math.round(h*10)/10)+' h'; }
 function hex2rgba(hex,a){ hex=hex||'#888'; var m=hex.replace('#',''); if(m.length===3) m=m[0]+m[0]+m[1]+m[1]+m[2]+m[2]; return 'rgba('+parseInt(m.substr(0,2),16)+','+parseInt(m.substr(2,2),16)+','+parseInt(m.substr(4,2),16)+','+a+')'; }
 
 /* puente */
@@ -286,12 +310,20 @@ function mapTicket(i){ var f=i.fields||{}; return {
   participantes:_pj(f.TkParticipantes,[]), estatus:f.TkEstatus||'Abierto',
   fechaRegistro:f.TkFechaRegistro||f.Created||'', fechaCierre:f.TkFechaCierre||'',
   dias:(f.TkDias!=null&&f.TkDias!=='')?Number(f.TkDias):null,
+  horas:(f.TkHoras!=null&&f.TkHoras!=='')?Number(f.TkHoras):null,
   motivoCancelacion:f.TkMotivoCancelacion||'', comentarioCierre:f.TkComentarioCierre||''
 }; }
 
 /* ---------- render lista ---------- */
 function misTickets(){ return S.tickets.filter(function(t){ return t.usuarioCorreo===S.user.email; }); }
+function setView(v){
+  S.view=v;
+  var a=document.getElementById('tab-tickets'), b=document.getElementById('tab-reportes');
+  if(a) a.classList.toggle('active', v==='tickets'); if(b) b.classList.toggle('active', v==='reportes');
+  render();
+}
 function render(){
+  if(S.view==='reportes') return renderReportes();
   var body=document.getElementById('body');
   var items=S.soloMias?misTickets():S.tickets.slice();
   var f=S.filtros||{};
@@ -331,6 +363,58 @@ function cardHTML(t){
     +'<div class="row"><span class="meta-l">👤 '+esc(t.usuarioNombre||'—')+'</span><span class="meta-l">🏢 '+esc(t.departamento||'—')+'</span></div>'
     +'<div class="row">'+(nArts?('<span class="meta-l">📦 '+nArts+' artículo(s)</span>'):'')+(nParts?('<span class="chip">👷 '+nParts+' participante(s)</span>'):'')+'</div>'
   +'</div>';
+}
+
+/* ---------- reportes ---------- */
+function kpi(v,l){ return '<div class="kpi"><div class="v">'+v+'</div><div class="l">'+l+'</div></div>'; }
+function renderReportes(){
+  document.getElementById('h-sub').textContent='Indicadores y reportes';
+  var me=S.user.email;
+  // Completo: todos. Lectura: sus tickets (creados) + donde participa.
+  var all = S.completo ? S.tickets.slice()
+    : S.tickets.filter(function(t){ return t.usuarioCorreo===me || (t.participantes||[]).some(function(p){return lc(p.correo)===me;}); });
+  var atend=all.filter(function(t){return t.estatus==='Atendido';});
+  var abiertos=all.filter(function(t){return t.estatus==='Abierto';}).length;
+  var cancel=all.filter(function(t){return t.estatus==='Cancelado';}).length;
+  var manoObra=atend.reduce(function(a,t){return a+horasAtencion(t);},0);
+  var promAt=atend.length?(manoObra/atend.length):0;
+
+  var h='';
+  if(!S.completo) h+='<div style="color:var(--dim);font-size:.8rem;margin-bottom:12px;">Mostrando solo tus tickets y en los que participas.</div>';
+  h+='<div class="kpi-row">'
+    +kpi(all.length,'Tickets')+kpi(abiertos,'Abiertos')+kpi(atend.length,'Atendidos')+kpi(cancel,'Cancelados')
+    +kpi(fmtHrsNum(promAt),'Tiempo prom. de atención')+kpi(fmtHrsNum(manoObra),'Mano de obra total')
+  +'</div>';
+
+  // Mano de obra por usuario (quien levanta el ticket)
+  var porU={};
+  all.forEach(function(t){ var k=lc(t.usuarioCorreo)||'—'; if(!S.completo && k!==me) return;
+    if(!porU[k]) porU[k]={nombre:t.usuarioNombre||t.usuarioCorreo||k, tickets:0, atend:0, horas:0};
+    porU[k].tickets++; if(t.estatus==='Atendido'){ porU[k].atend++; porU[k].horas+=horasAtencion(t); } });
+  var arrU=Object.keys(porU).map(function(k){return porU[k];}).sort(function(a,b){return b.horas-a.horas;});
+  h+='<div class="rep-card"><h4>Mano de obra por usuario</h4><table class="rtab"><tr><th>Usuario</th><th class="num">Tickets</th><th class="num">Atendidos</th><th class="num">Mano de obra</th><th class="num">Prom.</th></tr>'
+    +(arrU.length?arrU.map(function(x){return '<tr><td>'+esc(x.nombre)+'</td><td class="num">'+x.tickets+'</td><td class="num">'+x.atend+'</td><td class="num">'+fmtHrsNum(x.horas)+'</td><td class="num">'+fmtHrsNum(x.atend?x.horas/x.atend:0)+'</td></tr>';}).join(''):'<tr><td colspan="5" style="color:var(--muted);">Sin datos.</td></tr>')
+    +'</table></div>';
+
+  // Participación de ingenieros
+  var porP={};
+  all.forEach(function(t){ (t.participantes||[]).forEach(function(p){ var k=lc(p.correo)||lc(p.nombre); if(!k) return; if(!S.completo && k!==me) return;
+    if(!porP[k]) porP[k]={nombre:p.nombre||p.correo||k, part:0, horas:0};
+    porP[k].part++; if(t.estatus==='Atendido') porP[k].horas+=horasAtencion(t); }); });
+  var arrP=Object.keys(porP).map(function(k){return porP[k];}).sort(function(a,b){return b.horas-a.horas;});
+  h+='<div class="rep-card"><h4>Participación de ingenieros</h4><table class="rtab"><tr><th>Participante</th><th class="num">Participaciones</th><th class="num">Mano de obra (atendidos)</th></tr>'
+    +(arrP.length?arrP.map(function(x){return '<tr><td>'+esc(x.nombre)+'</td><td class="num">'+x.part+'</td><td class="num">'+fmtHrsNum(x.horas)+'</td></tr>';}).join(''):'<tr><td colspan="3" style="color:var(--muted);">Sin datos.</td></tr>')
+    +'</table></div>';
+
+  // Tickets por tipo (solo completo)
+  if(S.completo){
+    var porT={}; all.forEach(function(t){ var k=t.tipo||'(sin tipo)'; porT[k]=(porT[k]||0)+1; });
+    var arrT=Object.keys(porT).map(function(k){return {l:k,v:porT[k]};}).sort(function(a,b){return b.v-a.v;});
+    h+='<div class="rep-card"><h4>Tickets por tipo</h4><table class="rtab"><tr><th>Tipo</th><th class="num">Tickets</th></tr>'
+      +arrT.map(function(x){return '<tr><td>'+esc(x.l)+'</td><td class="num">'+x.v+'</td></tr>';}).join('')+'</table></div>';
+  }
+
+  document.getElementById('body').innerHTML=h;
 }
 
 /* ---------- nuevo ticket ---------- */
@@ -419,8 +503,8 @@ function pintarDetalle(){
   document.getElementById('det-folio').textContent=t.folio+' · registrado '+fmtDT(t.fechaRegistro);
   var h='';
   // aviso si cerrado/cancelado
-  if(t.estatus==='Cancelado'){ h+='<div class="aviso cancel"><b>Ticket cancelado</b> · '+fmtDT(t.fechaCierre)+(t.dias!=null?(' · '+t.dias+' día(s)'):'')+'<br><b>Motivo:</b> '+esc(t.motivoCancelacion||'—')+'</div>'; }
-  else if(t.estatus==='Atendido'){ h+='<div class="aviso cerrado"><b>Ticket atendido</b> · '+fmtDT(t.fechaCierre)+(t.dias!=null?(' · '+t.dias+' día(s)'):'')+(t.comentarioCierre?('<br><b>Comentarios:</b> '+esc(t.comentarioCierre)):'')+'</div>'; }
+  if(t.estatus==='Cancelado'){ h+='<div class="aviso cancel"><b>Ticket cancelado</b> · '+fmtDT(t.fechaCierre)+' · <b>Tiempo:</b> '+fmtTiempo(t)+'<br><b>Motivo:</b> '+esc(t.motivoCancelacion||'—')+'</div>'; }
+  else if(t.estatus==='Atendido'){ h+='<div class="aviso cerrado"><b>Ticket atendido</b> · '+fmtDT(t.fechaCierre)+' · <b>Tiempo de atención:</b> '+fmtTiempo(t)+(t.comentarioCierre?('<br><b>Comentarios:</b> '+esc(t.comentarioCierre)):'')+'</div>'; }
 
   h+='<div class="d-sec"><div class="row" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px;">'
     +'<span class="st" style="background:'+hex2rgba(EST_COLOR[t.estatus],.16)+';color:'+(EST_COLOR[t.estatus]||'#888')+'">'+esc(t.estatus)+'</span>'
@@ -477,12 +561,14 @@ async function accConfirmar(){
   var btn=document.getElementById('acc-ok'); btn.disabled=true; btn.textContent='Guardando…';
   try{
     var cierre=nowISO();
-    var dias=Math.max(0, Math.floor((new Date(cierre)-new Date(t.fechaRegistro||cierre))/86400000));
+    var ms=Math.max(0, new Date(cierre)-new Date(t.fechaRegistro||cierre));
+    var dias=Math.floor(ms/86400000);
+    var horas=Math.round((ms/3600000)*100)/100;   // tiempo total de atención en horas (decimal)
     var fields = (modo==='cancelar')
-      ? { TkEstatus:'Cancelado', TkMotivoCancelacion:txt, TkFechaCierre:cierre, TkDias:dias }
-      : { TkEstatus:'Atendido', TkComentarioCierre:txt, TkFechaCierre:cierre, TkDias:dias };
+      ? { TkEstatus:'Cancelado', TkMotivoCancelacion:txt, TkFechaCierre:cierre, TkDias:dias, TkHoras:horas }
+      : { TkEstatus:'Atendido', TkComentarioCierre:txt, TkFechaCierre:cierre, TkDias:dias, TkHoras:horas };
     await listUpdate(L_TICKETS, t.id, fields);
-    Object.assign(t, { estatus:fields.TkEstatus, fechaCierre:cierre, dias:dias, motivoCancelacion:fields.TkMotivoCancelacion||t.motivoCancelacion, comentarioCierre:fields.TkComentarioCierre||t.comentarioCierre });
+    Object.assign(t, { estatus:fields.TkEstatus, fechaCierre:cierre, dias:dias, horas:horas, motivoCancelacion:fields.TkMotivoCancelacion||t.motivoCancelacion, comentarioCierre:fields.TkComentarioCierre||t.comentarioCierre });
     cerrar('m-acc'); pintarDetalle(); render();
     toast(modo==='cancelar'?'Ticket cancelado':'Ticket cerrado');
   }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
@@ -511,7 +597,7 @@ async function cfgDelIng(correo){ try{ var items=await listGet(L_INGS); var it=i
 /* init */
 document.addEventListener('DOMContentLoaded', boot); boot();
 window.abrirNuevo=abrirNuevo; window.crearTicket=crearTicket; window.cerrar=cerrar; window.refrescar=refrescar;
-window.abrirTicket=abrirTicket; window.artAdd=artAdd; window.artLookup=artLookup; window.render=render;
+window.abrirTicket=abrirTicket; window.artAdd=artAdd; window.artLookup=artLookup; window.render=render; window.setView=setView;
 window.pedirAccion=pedirAccion; window.accConfirmar=accConfirmar; window.abrirConfig=abrirConfig;
 window.cfgAddTipo=cfgAddTipo; window.cfgDelTipo=cfgDelTipo; window.cfgAddIng=cfgAddIng; window.cfgDelIng=cfgDelIng;
 </script>

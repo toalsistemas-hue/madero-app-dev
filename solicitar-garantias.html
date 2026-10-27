@@ -162,6 +162,7 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
     <div class="modal-bd">
       <div id="acc-txt-wrap" class="fld"><label id="acc-lbl">Comentario</label><textarea class="inp" id="acc-txt" rows="3"></textarea></div>
       <div id="acc-file-wrap" class="fld" style="display:none;"><label id="acc-file-lbl">Documento</label><input type="file" id="acc-file" accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm,.png,.jpg,.jpeg" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;"></div>
+      <div id="acc-note" style="color:var(--dim);font-size:.82rem;margin-bottom:6px;display:none;"></div>
       <div style="color:#fca5a5;font-size:.8rem;min-height:18px;" id="acc-err"></div>
     </div>
     <div class="modal-ft"><button class="btn btn-ghost" onclick="cerrar('m-acc')">Cancelar</button><button class="btn btn-primary" id="acc-ok" onclick="accConfirmar()">Confirmar</button></div>
@@ -174,12 +175,22 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
     <div class="modal-hd"><h3>Configuración de correos</h3><button class="x" onclick="cerrar('m-cfg')">✕</button></div>
     <div class="modal-bd">
       <div class="fld"><label>Correo — Encargado de Mostrador</label><input class="inp" id="cfg-mostrador" placeholder="correo@..."></div>
-      <div class="fld"><label>Correo — Asistente administrativo de almacén</label><input class="inp" id="cfg-almacen" placeholder="correo@..."></div>
+      <div class="fld"><label>Correo — Almacén</label><input class="inp" id="cfg-almacen" placeholder="correo@..."></div>
+      <div class="fld"><label>Correo — Jefe de Almacén (respaldo para cerrar)</label><input class="inp" id="cfg-almacen-jefe" placeholder="correo@..."></div>
       <div class="fld"><label>CC (separados por ;)</label><input class="inp" id="cfg-cc" placeholder="correo1@...; correo2@..."></div>
       <div style="color:var(--dim);font-size:.78rem;">Estos correos se usan para el avance de etapas (por correo) y las notificaciones de la siguiente sub-etapa.</div>
       <div style="color:#fca5a5;font-size:.8rem;min-height:18px;" id="cfg-err"></div>
     </div>
     <div class="modal-ft"><button class="btn btn-ghost" onclick="cerrar('m-cfg')">Cancelar</button><button class="btn btn-primary" onclick="guardarConfig()">Guardar</button></div>
+  </div>
+</div>
+
+<!-- Modal: disposición por artículo -->
+<div class="modal-bg" id="m-disp">
+  <div class="modal" style="width:640px;">
+    <div class="modal-hd"><div><h3>Disposición de artículos</h3><div class="h-sub" id="disp-sub" style="color:var(--dim);font-size:.72rem;margin-top:3px;"></div></div><button class="x" onclick="cerrar('m-disp')">✕</button></div>
+    <div class="modal-bd" id="disp-bd"></div>
+    <div class="modal-ft"><div style="color:#fca5a5;font-size:.8rem;flex:1;" id="disp-err"></div><button class="btn btn-ghost" onclick="cerrar('m-disp')">Cancelar</button><button class="btn btn-primary" id="disp-ok" onclick="dispGuardar()">Guardar y enviar por garantías</button></div>
   </div>
 </div>
 
@@ -196,7 +207,8 @@ var EVALUACION=['Pruebas en sitio','Panel de pruebas','Visual'];
 var TIPOGARANTIA=['Equipo','Departamento','Proveedor'];
 var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Documento enviado por solicitante':'#a855f7','Aplicado por mostrador':'#a855f7','Aplicado por almacén':'#a855f7','En almacén de garantías':'#58a6ff','Nota de crédito':'#a855f7','Enviado por garantías':'#f59e0b','Atendido':'#2ea043','Cerrado':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
 
-var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{mostrador:'',almacen:'',cc:''}, cfgId:null, filtros:{}, artDraft:[], fotoDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
+var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{mostrador:'',almacen:'',almacenJefe:'',cc:''}, cfgId:null, filtros:{}, artDraft:[], fotoDraft:[], dispDraft:[], dispFotoDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
+var DISP_EQUIPO=['Chatarra','Reparación'], DISP_PROV=['Garantía recuperada','Garantía no recuperada'];
 
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function toast(m){ var t=document.getElementById('toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(function(){t.style.display='none';},2600); }
@@ -275,7 +287,7 @@ async function loadData(){
   }
   S.enviarUsers.sort(function(a,b){ return (a.nombre||'').localeCompare(b.nombre||''); });
   // Configuración de correos (Mostrador / Almacén / CC)
-  try{ var cf=await listGet(L_CONFIG); if(cf&&cf[0]){ var f=cf[0].fields||{}; S.cfgId=cf[0].id; S.cfg={ mostrador:f.GrMostradorCorreo||'', almacen:f.GrAlmacenCorreo||'', cc:f.GrCC||'' }; } }catch(e){}
+  try{ var cf=await listGet(L_CONFIG); if(cf&&cf[0]){ var f=cf[0].fields||{}; S.cfgId=cf[0].id; S.cfg={ mostrador:f.GrMostradorCorreo||'', almacen:f.GrAlmacenCorreo||'', almacenJefe:f.GrAlmacenJefeCorreo||'', cc:f.GrCC||'' }; } }catch(e){}
   S._everLoaded=true; render();
 }
 function mapFolio(i){ var f=i.fields||{}; return {
@@ -284,6 +296,12 @@ function mapFolio(i){ var f=i.fields||{}; return {
   solicita:f.GrSolicita||'', solicitaCorreo:lc(f.GrSolicitaCorreo||''),
   tipoOrigen:f.GrTipoOrigen||'', fotos:_pj(f.GrFotos,[]),
   docSolicitante:f.GrDocSolicitante||'', docSolicitanteNombre:f.GrDocSolicitanteNombre||'',
+  docMostrador:f.GrDocMostrador||'', docMostradorNombre:f.GrDocMostradorNombre||'',
+  docAlmacen:f.GrDocAlmacen||'', docAlmacenNombre:f.GrDocAlmacenNombre||'',
+  notaCredito:f.GrNotaCredito||'', notaCreditoNombre:f.GrNotaCreditoNombre||'',
+  docCierre:f.GrDocCierre||'', docCierreNombre:f.GrDocCierreNombre||'',
+  fotosDestruccion:_pj(f.GrFotosDestruccion,[]),
+  fechaEnvioGarantias:f.GrFechaEnvioGarantias||'', fechaCierre:f.GrFechaCierre||'',
   comentarioRechazo:f.GrComentarioRechazo||'', fechaAutorizacion:f.GrFechaAutorizacion||'',
   sucursal:f.GrSucursal||'', departamento:f.GrDepartamento||'', establo:f.GrEstablo||'',
   tipoDoc:f.GrTipoDocumento||'', numDoc:f.GrNumeroDocumento||'',
@@ -514,9 +532,19 @@ function pintarDetalle(){
     h+='<div class="d-sec"><div class="k">Fotografías</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'
       +t.fotos.map(function(f){ return '<button class="btn btn-sm" onclick="verArchivo(\''+esc(f.id)+'\',\''+esc(String(f.nombre||"").replace(/\x27/g,""))+'\')">🖼️ '+esc(f.nombre||'foto')+'</button>'; }).join('')+'</div></div>';
   }
-  // Documento del solicitante
-  if(t.docSolicitante){
-    h+='<div class="d-sec"><div class="k">Documento del solicitante</div><button class="btn btn-sm" onclick="verArchivo(\''+esc(t.docSolicitante)+'\',\''+esc(String(t.docSolicitanteNombre||"doc").replace(/\x27/g,""))+'\')">📄 '+esc(t.docSolicitanteNombre||'Ver documento')+'</button></div>';
+  // Documentos del proceso
+  var docBtn=function(id,nom,et){ return '<button class="btn btn-sm" onclick="verArchivo(\''+esc(id)+'\',\''+esc(String(nom||"doc").replace(/\x27/g,""))+'\')">📄 '+esc(et||nom||'Ver')+'</button>'; };
+  var docs=[];
+  if(t.docSolicitante) docs.push('<div style="margin-bottom:4px;"><span style="color:var(--dim);font-size:.76rem;">'+(t.tipoDoc==='Factura'?'Documentos del solicitante':'Devolución (solicitante)')+':</span> '+docBtn(t.docSolicitante,t.docSolicitanteNombre,t.docSolicitanteNombre||'Ver')+'</div>');
+  if(t.docMostrador) docs.push('<div style="margin-bottom:4px;"><span style="color:var(--dim);font-size:.76rem;">Aplicado por mostrador:</span> '+docBtn(t.docMostrador,t.docMostradorNombre,t.docMostradorNombre||'Ver')+'</div>');
+  if(t.notaCredito) docs.push('<div style="margin-bottom:4px;"><span style="color:var(--dim);font-size:.76rem;">Nota de crédito:</span> '+docBtn(t.notaCredito,t.notaCreditoNombre,t.notaCreditoNombre||'Ver')+'</div>');
+  if(t.docAlmacen) docs.push('<div style="margin-bottom:4px;"><span style="color:var(--dim);font-size:.76rem;">Recepción en almacén:</span> '+docBtn(t.docAlmacen,t.docAlmacenNombre,t.docAlmacenNombre||'Ver')+'</div>');
+  if(t.docCierre) docs.push('<div style="margin-bottom:4px;"><span style="color:var(--dim);font-size:.76rem;">Cierre:</span> '+docBtn(t.docCierre,t.docCierreNombre,t.docCierreNombre||'Ver')+'</div>');
+  if(docs.length) h+='<div class="d-sec"><div class="k">Documentos</div>'+docs.join('')+'</div>';
+  // Fotos de destrucción (extranjera)
+  if((t.fotosDestruccion||[]).length){
+    h+='<div class="d-sec"><div class="k">Evidencia de destrucción</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'
+      +t.fotosDestruccion.map(function(f){ return '<button class="btn btn-sm" onclick="verArchivo(\''+esc(f.id)+'\',\''+esc(String(f.nombre||"").replace(/\x27/g,""))+'\')">🖼️ '+esc(f.nombre||'foto')+'</button>'; }).join('')+'</div></div>';
   }
   h+='<div class="d-sec"><div class="k">Artículos ('+(t.articulos||[]).length+')</div>';
   (t.articulos||[]).forEach(function(a,i){
@@ -524,47 +552,97 @@ function pintarDetalle(){
       +dF('Descripción',a.desc)+dF('Cantidad',a.cantidad)
       +dF('Proveedor',(a.proveedor||'')+(a.numProv?(' ('+a.numProv+')'):'')+(a.tipoProv?(' · '+a.tipoProv):''))
       +dF('Nº serie / Modelo',(a.serie||'—')+' / '+(a.modelo||'—'))
-      +dF('Tipo de evaluación',a.evaluacion)+dF('Tipo de garantía',a.tipoGarantia)
+      +dF('Tipo de evaluación',a.evaluacion)+dF('Tipo de garantía',a.tipoGarantia||'— (lo asigna Ingeniería)')
       +dF('Falla',a.falla)+(a.comentarios?dF('Comentarios',a.comentarios):'')
       +dF('Compra / Venta',fmtD(a.fCompra)+' / '+fmtD(a.fVenta))
       +dF('Falla / Reclamación',fmtD(a.fFalla)+' / '+fmtD(a.fReclamacion))
+      +(a.disposicion?('<div class="d-field"><span class="lbl">Disposición</span><span class="val"><b style="color:var(--accent-l)">'+esc(a.disposicion)+'</b></span></div>'):'')
     +'</div>';
   });
   h+='</div>';
   document.getElementById('det-bd').innerHTML=h;
-  // Botones por contexto
+  // Botones por contexto (máquina de estados Fase 2b)
   var ft=document.getElementById('det-ft'); var b=''; var me=S.user.email;
-  if(MODO!=='solicitar' && t.origen==='Solicitud' && t.estatus==='En proceso'){
+  var R=rolGar(t), est=t.estatus;
+  var bPrim=function(fn,txt){ return '<button class="btn btn-sm btn-primary" onclick="'+fn+'">'+txt+'</button>'; };
+  if(R.esIng && t.origen==='Solicitud' && est==='En proceso'){
     b+='<button class="btn btn-sm btn-danger" onclick="accPedir(\'rechazar\')">✕ Rechazar</button>';
     b+='<button class="btn btn-sm" style="background:rgba(46,160,67,.16);border-color:rgba(46,160,67,.4);color:var(--green-l);" onclick="autorizar()">✔ Autorizar</button>';
   }
-  if(MODO==='solicitar' && t.estatus==='Abierto' && (t.solicitaCorreo===me || t.enviarACorreo===me)){
-    var esFactura=(t.tipoDoc==='Factura');
-    b+='<button class="btn btn-sm btn-primary" onclick="accPedir(\'cargardoc\')">📄 '+(esFactura?'Cargar nota de crédito':'Cargar devolución')+'</button>';
+  // Asistente administrativo (solicitante / enviar a): envía documentos cuando el folio está Abierto
+  if(MODO==='solicitar' && est==='Abierto' && R.esAsistente){
+    b+=bPrim("accPedir('cargardoc')",'📄 '+(R.esFactura?'Enviar documentos (a calidad)':'Enviar devolución (a mostrador)'));
+  }
+  // Devolución: Mostrador aplica
+  if(MODO!=='solicitar' && !R.esFactura && est==='Documento enviado por solicitante' && (R.esMostrador||R.esAdmin)){
+    b+=bPrim("accPedir('mostrador')",'🧾 Aplicar devolución (Mostrador)');
+  }
+  // Nota de crédito: Técnico de calidad registra
+  if(MODO!=='solicitar' && R.esFactura && est==='Documento enviado por solicitante' && R.esIng){
+    b+=bPrim("accPedir('notacredito')",'🧾 Registrar nota de crédito');
+  }
+  // Devolución: Almacén recibe
+  if(MODO!=='solicitar' && !R.esFactura && est==='Aplicado por mostrador' && (R.esAlmacen||R.esAdmin)){
+    b+=bPrim("accPedir('almacen')",'📦 Recibir en almacén');
+  }
+  // Devolución: Ingeniería ingresa a almacén de garantías
+  if(MODO!=='solicitar' && !R.esFactura && est==='Aplicado por almacén' && R.esIng){
+    b+=bPrim("accPedir('enalmacen')",'🛡️ Ingresar a almacén de garantías');
+  }
+  // Disposición + enviar por garantías (ambos flujos)
+  if(MODO!=='solicitar' && R.esIng && ((!R.esFactura && est==='En almacén de garantías') || (R.esFactura && est==='Nota de crédito'))){
+    b+=bPrim("abrirDisposicion()",'⚖️ Disposición y enviar por garantías');
+  }
+  // Cierre por Almacén / Jefe
+  if(MODO!=='solicitar' && est==='Enviado por garantías' && (R.esAlmacen||R.esAdmin)){
+    b+=bPrim("accPedir('cerrar')",'✅ Confirmar recepción y cerrar');
   }
   b+='<button class="btn btn-sm btn-ghost" onclick="cerrar(\'m-det\')">Cerrar</button>';
   ft.innerHTML=b;
 }
+function rolGar(t){
+  var me=S.user.email, c=S.cfg||{};
+  var esAdmin=!!(S.user&&S.user.esAdmin);
+  var esMostrador=!!me && me===lc(c.mostrador);
+  var esAlmacen=!!me && (me===lc(c.almacen) || me===lc(c.almacenJefe));
+  var esAsistente=!!me && (t.solicitaCorreo===me || t.enviarACorreo===me);
+  var esIng=(MODO!=='solicitar') && (S.completo || esAdmin || (!esMostrador && !esAlmacen));
+  return { esMostrador:esMostrador, esAlmacen:esAlmacen, esAsistente:esAsistente, esIng:esIng, esAdmin:esAdmin, esFactura:(t.tipoDoc==='Factura') };
+}
 
-/* ---------- acciones (rechazar / cargar documento) ---------- */
+/* ---------- acciones por etapa ---------- */
 var ACC_MODE='';
+// Configuración de cada acción con subida de documento y avance de estatus
+function accCfg(t){
+  var esFactura=(t&&t.tipoDoc==='Factura');
+  return {
+    cargardoc:{ ttl:(esFactura?'Enviar documentos a calidad':'Enviar devolución a mostrador'), flbl:(esFactura?'Documentos (solicitud / factura)':'Documento de devolución'), req:true, carpeta:'GAR_Documentos', pref:'DOC_', fid:'GrDocSolicitante', fnom:'GrDocSolicitanteNombre', k:'docSolicitante', kn:'docSolicitanteNombre', estatus:'Documento enviado por solicitante', ok:'Enviar', note:(esFactura?'Se enviará al técnico de calidad para registrar la nota de crédito.':'Se enviará al encargado de mostrador para aplicar la devolución.') },
+    mostrador:{ ttl:'Aplicar devolución (Mostrador)', flbl:'Comprobante de devolución aplicada', req:true, carpeta:'GAR_Documentos', pref:'MOST_', fid:'GrDocMostrador', fnom:'GrDocMostradorNombre', k:'docMostrador', kn:'docMostradorNombre', estatus:'Aplicado por mostrador', ok:'Aplicar', note:'Pasará a almacén para recepción.' },
+    almacen:{ ttl:'Recibir en almacén', flbl:'Evidencia de recepción', req:true, carpeta:'GAR_Documentos', pref:'ALM_', fid:'GrDocAlmacen', fnom:'GrDocAlmacenNombre', k:'docAlmacen', kn:'docAlmacenNombre', estatus:'Aplicado por almacén', ok:'Recibir', note:'Ingeniería podrá ingresarlo al almacén de garantías.' },
+    notacredito:{ ttl:'Registrar nota de crédito', flbl:'Nota de crédito', req:true, carpeta:'GAR_Documentos', pref:'NC_', fid:'GrNotaCredito', fnom:'GrNotaCreditoNombre', k:'notaCredito', kn:'notaCreditoNombre', estatus:'Nota de crédito', ok:'Registrar', note:'Luego podrás capturar la disposición por artículo.' },
+    enalmacen:{ ttl:'Ingresar a almacén de garantías', flbl:'', req:false, soloConfirm:true, estatus:'En almacén de garantías', ok:'Confirmar ingreso', note:'Confirmas que los artículos ingresaron al almacén de garantías para su disposición.' },
+    cerrar:{ ttl:'Confirmar recepción y cerrar', flbl:'Evidencia de recepción (opcional)', req:false, carpeta:'GAR_Documentos', pref:'CIERRE_', fid:'GrDocCierre', fnom:'GrDocCierreNombre', k:'docCierre', kn:'docCierreNombre', estatus:'Cerrado', fecha:'GrFechaCierre', ok:'Cerrar folio', note:'El almacén confirma la recepción de lo enviado por garantías. El folio quedará Cerrado.' }
+  };
+}
 function accPedir(modo){
   ACC_MODE=modo;
-  var tw=document.getElementById('acc-txt-wrap'), fw=document.getElementById('acc-file-wrap');
-  document.getElementById('acc-err').textContent='';
+  var t=S.curFolio;
+  var tw=document.getElementById('acc-txt-wrap'), fw=document.getElementById('acc-file-wrap'), nt=document.getElementById('acc-note');
+  document.getElementById('acc-err').textContent=''; nt.style.display='none'; nt.textContent='';
   if(modo==='rechazar'){
     document.getElementById('acc-ttl').textContent='Rechazar solicitud';
     document.getElementById('acc-lbl').innerHTML='Motivo del rechazo <span class="req">*</span>';
     tw.style.display=''; fw.style.display='none'; document.getElementById('acc-txt').value='';
     document.getElementById('acc-ok').textContent='Rechazar';
-  } else if(modo==='cargardoc'){
-    var t=S.curFolio; var esFactura=(t&&t.tipoDoc==='Factura');
-    document.getElementById('acc-ttl').textContent= esFactura?'Cargar nota de crédito':'Cargar devolución';
-    document.getElementById('acc-file-lbl').innerHTML=(esFactura?'Nota de crédito':'Documento de devolución')+' <span class="req">*</span>';
-    document.getElementById('acc-file').value='';
-    tw.style.display='none'; fw.style.display='';
-    document.getElementById('acc-ok').textContent='Enviar documento';
+    abrir('m-acc'); return;
   }
+  var cfg=accCfg(t)[modo]; if(!cfg) return;
+  document.getElementById('acc-ttl').textContent=cfg.ttl;
+  tw.style.display='none';
+  if(cfg.soloConfirm){ fw.style.display='none'; }
+  else { fw.style.display=''; document.getElementById('acc-file-lbl').innerHTML=cfg.flbl+(cfg.req?' <span class="req">*</span>':' <span style="color:var(--dim);font-weight:400;">(opcional)</span>'); document.getElementById('acc-file').value=''; }
+  if(cfg.note){ nt.textContent=cfg.note; nt.style.display=''; }
+  document.getElementById('acc-ok').textContent=cfg.ok;
   abrir('m-acc');
 }
 async function accConfirmar(){
@@ -575,18 +653,21 @@ async function accConfirmar(){
     btn.disabled=true; btn.textContent='Guardando…';
     try{ await listUpdate(L_FOLIOS,t.id,{ GrEstatus:'Rechazado', GrComentarioRechazo:txt }); Object.assign(t,{estatus:'Rechazado',comentarioRechazo:txt}); cerrar('m-acc'); pintarDetalle(); render(); toast('Solicitud rechazada'); }
     catch(e){ err.textContent='No se pudo. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Rechazar'; }
-  } else if(ACC_MODE==='cargardoc'){
-    var file=(document.getElementById('acc-file').files||[])[0]; if(!file){ err.textContent='Selecciona el documento.'; return; }
-    btn.disabled=true; btn.textContent='Subiendo…';
-    try{
-      var ref=await subirArchivo('GAR_Documentos',t.id,file,'DOC_');
-      var fields={ GrEstatus:'Documento enviado por solicitante' };
-      if(ref){ fields.GrDocSolicitante=ref.id; fields.GrDocSolicitanteNombre=ref.nombre; }
-      await listUpdate(L_FOLIOS,t.id,fields);
-      Object.assign(t,{estatus:'Documento enviado por solicitante', docSolicitante:ref?ref.id:t.docSolicitante, docSolicitanteNombre:ref?ref.nombre:t.docSolicitanteNombre});
-      cerrar('m-acc'); pintarDetalle(); render(); toast('Documento enviado');
-    }catch(e){ err.textContent='No se pudo subir. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Enviar documento'; }
+    return;
   }
+  var cfg=accCfg(t)[ACC_MODE]; if(!cfg) return;
+  var file=null;
+  if(!cfg.soloConfirm){ file=(document.getElementById('acc-file').files||[])[0]||null; if(cfg.req && !file){ err.textContent='Selecciona el documento.'; return; } }
+  btn.disabled=true; btn.textContent=file?'Subiendo…':'Guardando…';
+  try{
+    var fields={ GrEstatus:cfg.estatus }, ref=null;
+    if(file && cfg.carpeta){ ref=await subirArchivo(cfg.carpeta,t.id,file,cfg.pref); if(ref){ fields[cfg.fid]=ref.id; fields[cfg.fnom]=ref.nombre; } }
+    if(cfg.fecha){ fields[cfg.fecha]=nowISO(); }
+    await listUpdate(L_FOLIOS,t.id,fields);
+    var patch={ estatus:cfg.estatus }; if(ref){ patch[cfg.k]=ref.id; patch[cfg.kn]=ref.nombre; }
+    Object.assign(t,patch);
+    cerrar('m-acc'); pintarDetalle(); render(); toast('Etapa actualizada: '+cfg.estatus);
+  }catch(e){ err.textContent='No se pudo. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent=cfg.ok; }
 }
 async function autorizar(){
   var t=S.curFolio; if(!t) return;
@@ -602,17 +683,70 @@ async function autorizar(){
 function abrirConfig(){ if(!S.completo){ toast('Solo acceso completo'); return; }
   document.getElementById('cfg-mostrador').value=S.cfg.mostrador||'';
   document.getElementById('cfg-almacen').value=S.cfg.almacen||'';
+  document.getElementById('cfg-almacen-jefe').value=S.cfg.almacenJefe||'';
   document.getElementById('cfg-cc').value=S.cfg.cc||'';
   document.getElementById('cfg-err').textContent=''; abrir('m-cfg');
 }
 async function guardarConfig(){
   var err=document.getElementById('cfg-err'); err.textContent='';
-  var body={ Title:'config', GrMostradorCorreo:document.getElementById('cfg-mostrador').value.trim(), GrAlmacenCorreo:document.getElementById('cfg-almacen').value.trim(), GrCC:document.getElementById('cfg-cc').value.trim() };
+  var body={ Title:'config', GrMostradorCorreo:document.getElementById('cfg-mostrador').value.trim(), GrAlmacenCorreo:document.getElementById('cfg-almacen').value.trim(), GrAlmacenJefeCorreo:document.getElementById('cfg-almacen-jefe').value.trim(), GrCC:document.getElementById('cfg-cc').value.trim() };
   try{
     if(S.cfgId) await listUpdate(L_CONFIG,S.cfgId,body); else { var r=await listCreate(L_CONFIG,body); if(r.id)S.cfgId=r.id; }
-    S.cfg={ mostrador:body.GrMostradorCorreo, almacen:body.GrAlmacenCorreo, cc:body.GrCC };
+    S.cfg={ mostrador:body.GrMostradorCorreo, almacen:body.GrAlmacenCorreo, almacenJefe:body.GrAlmacenJefeCorreo, cc:body.GrCC };
     cerrar('m-cfg'); toast('Configuración guardada');
   }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
+}
+
+/* ---------- disposición por artículo ---------- */
+function dispOpts(tg){ if(tg==='Proveedor') return DISP_PROV; if(tg==='Equipo'||tg==='Departamento') return DISP_EQUIPO; return []; }
+function abrirDisposicion(){
+  var t=S.curFolio; if(!t) return;
+  S.dispDraft=(t.articulos||[]).map(function(a){ return Object.assign({},a); });
+  S.dispFotoDraft=[];
+  document.getElementById('disp-sub').textContent=t.folio+' · asigna tipo de garantía y disposición a cada artículo';
+  document.getElementById('disp-err').textContent='';
+  dispRender(); abrir('m-disp');
+}
+function dispRender(){
+  var t=S.curFolio, esExtra=(t&&t.tipoOrigen==='Extranjera');
+  var h=S.dispDraft.map(function(a,i){
+    var opts=dispOpts(a.tipoGarantia);
+    return '<div class="art-block">'
+      +'<div class="t" style="color:var(--accent-l);font-weight:700;margin-bottom:6px;">Artículo '+(i+1)+' — '+esc(a.num)+' · '+esc(a.desc||'')+'</div>'
+      +'<div class="grid2">'
+        +'<div class="fld"><label>Tipo de garantía <span class="req">*</span></label><select class="inp" onchange="S.dispDraft['+i+'].tipoGarantia=this.value;S.dispDraft['+i+'].disposicion=\'\';dispRender();">'+selOpts(TIPOGARANTIA,a.tipoGarantia)+'</select></div>'
+        +'<div class="fld"><label>Disposición <span class="req">*</span></label><select class="inp" '+(opts.length?'':'disabled')+' onchange="S.dispDraft['+i+'].disposicion=this.value;dispRender();">'+selOpts(opts,a.disposicion)+'</select>'+(opts.length?'':'<div style="color:var(--dim);font-size:.72rem;margin-top:3px;">Selecciona primero el tipo de garantía.</div>')+'</div>'
+      +'</div>'
+    +'</div>';
+  }).join('');
+  // Fotos de destrucción si extranjera + alguna chatarra
+  var hayChatarra=S.dispDraft.some(function(a){ return a.disposicion==='Chatarra'; });
+  if(esExtra && hayChatarra){
+    h+='<div class="fld" style="margin-top:6px;"><label>Evidencia de destrucción (origen Extranjera + Chatarra) <span class="req">*</span></label>'
+      +'<input type="file" id="disp-fotos" accept="image/*" multiple onchange="dispFotosChange()" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;">'
+      +'<div id="disp-fotos-lista" style="font-size:.76rem;color:var(--dim);margin-top:4px;">'+(S.dispFotoDraft.length?('📷 '+S.dispFotoDraft.map(function(f){return esc(f.name);}).join(', ')):'')+'</div></div>';
+  }
+  document.getElementById('disp-bd').innerHTML=h;
+}
+function dispFotosChange(){ var inp=document.getElementById('disp-fotos'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ S.dispFotoDraft.push(f); }); try{ inp.value=''; }catch(e){} var l=document.getElementById('disp-fotos-lista'); if(l) l.innerHTML=S.dispFotoDraft.length?('📷 '+S.dispFotoDraft.map(function(f){return esc(f.name);}).join(', ')):''; }
+async function dispGuardar(){
+  var t=S.curFolio; if(!t) return; var err=document.getElementById('disp-err'); err.textContent='';
+  for(var i=0;i<S.dispDraft.length;i++){ var a=S.dispDraft[i], n=i+1;
+    if(!a.tipoGarantia){ err.textContent='Artículo '+n+': selecciona el tipo de garantía.'; return; }
+    if(!a.disposicion){ err.textContent='Artículo '+n+': selecciona la disposición.'; return; }
+  }
+  var esExtra=(t.tipoOrigen==='Extranjera'), hayChatarra=S.dispDraft.some(function(a){ return a.disposicion==='Chatarra'; });
+  if(esExtra && hayChatarra && !S.dispFotoDraft.length && !(t.fotosDestruccion||[]).length){ err.textContent='Adjunta la evidencia de destrucción (Extranjera + Chatarra).'; return; }
+  var btn=document.getElementById('disp-ok'); btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    var refs=(t.fotosDestruccion||[]).slice();
+    if(S.dispFotoDraft.length){ btn.textContent='Subiendo evidencia…'; for(var fi=0;fi<S.dispFotoDraft.length;fi++){ try{ var rf=await subirArchivo('GAR_Fotos',t.id,S.dispFotoDraft[fi],'DEST_'+(fi+1)+'_'); if(rf) refs.push(rf); }catch(ef){} } }
+    var fields={ GrArticulos:JSON.stringify(S.dispDraft), GrEstatus:'Enviado por garantías', GrFechaEnvioGarantias:nowISO() };
+    if(refs.length) fields.GrFotosDestruccion=JSON.stringify(refs);
+    await listUpdate(L_FOLIOS,t.id,fields);
+    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:'Enviado por garantías', fotosDestruccion:refs, fechaEnvioGarantias:nowISO() });
+    cerrar('m-disp'); pintarDetalle(); render(); toast('Disposición guardada → Enviado por garantías');
+  }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Guardar y enviar por garantías'; }
 }
 
 /* init */
@@ -620,6 +754,7 @@ document.addEventListener('DOMContentLoaded', boot); boot();
 window.setView=setView; window.abrirNuevo=abrirNuevo; window.crearFolio=crearFolio; window.cerrar=cerrar; window.refrescar=refrescar;
 window.artAdd=artAdd; window.artRender=artRender; window.artLookup=artLookup; window.cliLookup=cliLookup; window.abrirFolio=abrirFolio; window.render=render; window.enviarChange=enviarChange;
 window.fotosChange=fotosChange; window.accPedir=accPedir; window.accConfirmar=accConfirmar; window.autorizar=autorizar; window.abrirConfig=abrirConfig; window.guardarConfig=guardarConfig; window.verArchivo=verArchivo;
+window.abrirDisposicion=abrirDisposicion; window.dispRender=dispRender; window.dispFotosChange=dispFotosChange; window.dispGuardar=dispGuardar;
 </script>
 </body>
 </html>

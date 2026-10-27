@@ -6759,6 +6759,34 @@ window.addEventListener('message', async function(e) {
       var r = await spGet(args.lista, args.queryParams);
       reply(null, { value: (r && r.value) ? r.value : [] });
 
+    } else if (op === 'usuariosConAcceso') {
+      // Devuelve los usuarios ACTIVOS que tienen acceso a una pantalla (args.pantallaID),
+      // resolviendo: Pantallas del puesto + Excepciones del usuario (misma lógica del login).
+      try {
+        var pid = args.pantallaID || '';
+        var uRes = await spGet('Usuarios', '$expand=fields&$top=1000');
+        var sidP = await getSiteId();
+        var pRes = await graphGet('sites/'+sidP+'/lists/Puestos/items?$expand=fields&$top=500');
+        var puestos = {};
+        (pRes.value || []).forEach(function (p) { var f = p.fields || {}; if (f.PuestoID) puestos[f.PuestoID] = f; });
+        function _parsePant(raw) { raw = raw || '[]'; try { return JSON.parse(String(raw).replace(/\\"/g, '"').replace(/^"|"$/g, '')); } catch (e) { try { return JSON.parse(raw); } catch (e2) { return []; } } }
+        var out = [];
+        (uRes.value || []).forEach(function (u) {
+          var f = u.fields || {};
+          if (!(f.Activo === true || f.Activo === 'true' || f.Activo === 1)) return;
+          var pf = puestos[f.PuestoID] || {};
+          var map = {};
+          _parsePant(pf.Pantallas || pf.pantallas).forEach(function (x) { if (x && x.pantallaID) map[x.pantallaID] = x.nivel; });
+          var exc = []; try { exc = JSON.parse(f.Excepciones || '[]'); } catch (e) {}
+          exc.forEach(function (x) { if (!x || !x.pantallaID) return; if (x.accion === 'agregar') map[x.pantallaID] = x.nivel; if (x.accion === 'quitar') delete map[x.pantallaID]; });
+          var esAdmin = pf.EsAdministrador === true || pf.EsAdministrador === 'true';
+          if (map[pid] || esAdmin) {
+            out.push({ nombre: f.NombreCompleto || f.Title || f.Email || '', correo: (f.Email || f.Title || '').toLowerCase() });
+          }
+        });
+        reply(null, { value: out });
+      } catch (eU) { reply('usuariosConAcceso_' + (eU && eU.message ? eU.message.slice(0,60) : 'error'), null); }
+
     } else if (op === 'get') {
       var sidG = await getSiteId();
       var qp = args.queryParams || '$expand=fields';

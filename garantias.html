@@ -121,6 +121,10 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
         <div class="fld"><label>Número de cliente <span class="req">*</span></label><input class="inp" id="f-numcli" placeholder="Nº cliente" onblur="cliLookup()"></div>
       </div>
       <div class="fld"><label>Cliente</label><input class="inp" id="f-cli" placeholder="(automático según número de cliente)" disabled></div>
+      <div class="grid2">
+        <div class="fld"><label>Enviar a</label><select class="inp" id="f-enviar" onchange="enviarChange()"><option value="">Selecciona…</option></select></div>
+        <div class="fld"><label>Correo</label><input class="inp" id="f-enviar-mail" placeholder="(automático)" disabled></div>
+      </div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px;">
         <div style="font-weight:800;font-size:.95rem;">Artículos</div>
@@ -158,7 +162,7 @@ var EVALUACION=['Pruebas en sitio','Panel de pruebas','Visual'];
 var TIPOGARANTIA=['Equipo','Departamento','Proveedor'];
 var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Atendido':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
 
-var S={ user:null, completo:false, view:'folios', folios:[], filtros:{}, artDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
+var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], filtros:{}, artDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
 
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function toast(m){ var t=document.getElementById('toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(function(){t.style.display='none';},2600); }
@@ -225,6 +229,12 @@ async function loadData(){
   var bb=document.getElementById('body'); if(bb && !S._everLoaded) bb.innerHTML='<div class="empty"><span class="spin"></span> Cargando…</div>';
   var fs=await listGet(L_FOLIOS);
   S.folios=fs.map(mapFolio);
+  // Usuarios con acceso a "Solicitud de Garantías" (para el campo "Enviar a")
+  try{ var r=await spCall('usuariosConAcceso',{pantallaID:'SolicitarGarantia'}); S.enviarUsers=(r&&r.value)?r.value:[]; }catch(e){ S.enviarUsers=[]; }
+  if(!S.enviarUsers.length){
+    try{ var us=await listGet('Usuarios'); S.enviarUsers=us.map(function(i){ var f=i.fields||{}; return { nombre:f.NombreCompleto||f.Title||'', correo:lc(f.Email||f.Title||''), activo:(f.Activo===true||f.Activo==='true'||f.Activo===1) }; }).filter(function(x){ return x.correo && x.activo; }); }catch(e){}
+  }
+  S.enviarUsers.sort(function(a,b){ return (a.nombre||'').localeCompare(b.nombre||''); });
   S._everLoaded=true; render();
 }
 function mapFolio(i){ var f=i.fields||{}; return {
@@ -234,6 +244,7 @@ function mapFolio(i){ var f=i.fields||{}; return {
   sucursal:f.GrSucursal||'', departamento:f.GrDepartamento||'', establo:f.GrEstablo||'',
   tipoDoc:f.GrTipoDocumento||'', numDoc:f.GrNumeroDocumento||'',
   numCliente:f.GrNumeroCliente||'', clienteNombre:f.GrClienteNombre||'',
+  enviarANombre:f.GrEnviarANombre||'', enviarACorreo:lc(f.GrEnviarACorreo||''),
   articulos:_pj(f.GrArticulos,[]), estatus:f.GrEstatus||'Abierto', origen:f.GrOrigen||'Ingenieria',
   fechaRegistro:f.GrFechaRegistro||f.Created||''
 }; }
@@ -299,10 +310,13 @@ function abrirNuevo(){
   document.getElementById('f-numdoc').value='';
   document.getElementById('f-numcli').value='';
   document.getElementById('f-cli').value='';
+  var selEnv=document.getElementById('f-enviar'); selEnv.innerHTML='<option value="">Selecciona…</option>'+S.enviarUsers.map(function(x){return '<option value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'">'+esc(x.nombre)+'</option>';}).join(''); selEnv.value='';
+  document.getElementById('f-enviar-mail').value='';
   S.artDraft=[nuevoArt()]; artRender();
   document.getElementById('new-ok').textContent=(MODO==='solicitar')?'Enviar solicitud':'Crear folio';
   abrir('m-new');
 }
+function enviarChange(){ var s=document.getElementById('f-enviar'); document.getElementById('f-enviar-mail').value=s.value||''; }
 function nuevoArt(){ return { num:'',desc:'',numProv:'',proveedor:'',tipoProv:'', cantidad:'',serie:'',modelo:'',evaluacion:'',falla:'',comentarios:'',fCompra:'',fVenta:'',fFalla:'',fReclamacion:'',tipoGarantia:'' }; }
 function artRender(){
   var cont=document.getElementById('f-arts');
@@ -379,6 +393,7 @@ async function crearFolio(){
   var numdoc=document.getElementById('f-numdoc').value.trim();
   var numcli=document.getElementById('f-numcli').value.trim();
   var cli=document.getElementById('f-cli').value.trim();
+  var selEnv=document.getElementById('f-enviar'); var envCorreo=selEnv.value||''; var envNombre=(selEnv.selectedIndex>0)?(selEnv.options[selEnv.selectedIndex].getAttribute('data-nom')||''):'';
   if(!solicita){ err.textContent='Escribe quién solicita.'; return; }
   if(!sucursal){ err.textContent='Selecciona la sucursal.'; return; }
   if(!depto){ err.textContent='Escribe el departamento.'; return; }
@@ -407,6 +422,7 @@ async function crearFolio(){
       GrSucursal:sucursal, GrDepartamento:depto, GrEstablo:establo,
       GrTipoDocumento:tipodoc, GrNumeroDocumento:numdoc,
       GrNumeroCliente:numcli, GrClienteNombre:cli,
+      GrEnviarANombre:envNombre, GrEnviarACorreo:envCorreo,
       GrArticulos:JSON.stringify(S.artDraft),
       GrOrigen:(esSolic?'Solicitud':'Ingenieria'),
       GrEstatus:(esSolic?'En proceso':'Abierto'),
@@ -431,6 +447,7 @@ function pintarDetalle(){
     +dF('Sucursal', t.sucursal)+dF('Departamento', t.departamento)+dF('Establo', t.establo)
     +dF('Tipo de documento', t.tipoDoc)+dF('Número de documento', t.numDoc)
     +dF('Cliente', (t.clienteNombre||'')+(t.numCliente?(' ('+t.numCliente+')'):''))
+    +(t.enviarANombre?dF('Enviar a', t.enviarANombre+(t.enviarACorreo?(' · '+t.enviarACorreo):'')):'')
   +'</div>';
   h+='<div class="d-sec"><div class="k">Artículos ('+(t.articulos||[]).length+')</div>';
   (t.articulos||[]).forEach(function(a,i){
@@ -451,7 +468,7 @@ function pintarDetalle(){
 /* init */
 document.addEventListener('DOMContentLoaded', boot); boot();
 window.setView=setView; window.abrirNuevo=abrirNuevo; window.crearFolio=crearFolio; window.cerrar=cerrar; window.refrescar=refrescar;
-window.artAdd=artAdd; window.artRender=artRender; window.artLookup=artLookup; window.cliLookup=cliLookup; window.abrirFolio=abrirFolio; window.render=render;
+window.artAdd=artAdd; window.artRender=artRender; window.artLookup=artLookup; window.cliLookup=cliLookup; window.abrirFolio=abrirFolio; window.render=render; window.enviarChange=enviarChange;
 </script>
 </body>
 </html>

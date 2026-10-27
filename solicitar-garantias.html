@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Garantías — Madero Equipos</title>
+<style>
+:root{
+  --bg:#0a0e14; --panel:#0f1824; --card:#111c2b; --border:rgba(255,255,255,.1);
+  --text:#e6edf3; --dim:#8b949e; --muted:#6e7681; --accent:#1f6feb; --accent-l:#58a6ff;
+  --green:#2ea043; --green-l:#4ade80; --yellow:#d4a017; --red:#ef4444; --purple:#a855f7; --orange:#f59e0b;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;}
+button{font-family:inherit;cursor:pointer;}
+a{color:var(--accent-l);}
+#app{display:flex;flex-direction:column;height:100vh;}
+.topbar{display:flex;align-items:center;gap:16px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--panel);flex-wrap:wrap;}
+.tb-brand{display:flex;flex-direction:column;flex:0 0 auto;}
+.tb-brand .ttl{font-size:1.02rem;font-weight:800;display:flex;align-items:center;gap:8px;}
+.tb-brand .sub{font-size:.7rem;color:var(--dim);margin-top:1px;}
+.tabs{display:flex;gap:6px;flex:1;flex-wrap:wrap;align-items:center;}
+.nav-item{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:20px;cursor:pointer;font-size:.82rem;color:var(--dim);border:1px solid transparent;background:transparent;white-space:nowrap;}
+.nav-item:hover{background:rgba(255,255,255,.05);color:var(--text);}
+.nav-item.active{background:rgba(31,111,235,.18);border-color:rgba(88,166,255,.4);color:var(--text);font-weight:600;}
+.badge{background:#fff;color:#ef4444;border-radius:20px;font-size:.62rem;font-weight:800;padding:1px 7px;margin-left:2px;line-height:1.4;}
+.tb-tools{display:flex;align-items:center;gap:8px;flex:0 0 auto;flex-wrap:wrap;}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.main-head{padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.main-head .h-ttl{font-size:1.15rem;font-weight:800;}
+.main-head .h-sub{font-size:.74rem;color:var(--dim);margin-top:2px;}
+.main-body{flex:1;overflow:auto;padding:16px 20px;}
+.empty{color:var(--muted);text-align:center;padding:60px 20px;font-size:.92rem;}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:var(--accent-l);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;}
+@keyframes sp{to{transform:rotate(360deg);}}
+.btn{border-radius:8px;padding:8px 12px;font-size:.82rem;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text);}
+.btn:hover{background:rgba(255,255,255,.1);}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.btn-primary:hover{background:#2a7ff0;}
+.btn-ghost{background:transparent;}
+.btn-sm{padding:5px 10px;font-size:.76rem;}
+.btn-danger{background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35);color:#fca5a5;}
+.inp{background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:8px 10px;font-size:.84rem;outline:none;width:100%;}
+.inp:disabled{opacity:.7;cursor:not-allowed;background:rgba(255,255,255,.03);}
+select.inp{appearance:auto;}
+textarea.inp{resize:vertical;min-height:56px;font-family:inherit;}
+.flt{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+.flt .inp{width:auto;min-width:150px;padding:6px 9px;font-size:.78rem;}
+.st{font-size:.64rem;border-radius:20px;padding:2px 9px;white-space:nowrap;font-weight:700;}
+/* tabla */
+table.gtab{width:100%;border-collapse:collapse;font-size:.82rem;}
+table.gtab th,table.gtab td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
+table.gtab th{color:var(--dim);font-weight:700;font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;position:sticky;top:0;background:var(--panel);}
+table.gtab tr.click{cursor:pointer;}
+table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
+.tbl-wrap{border:1px solid var(--border);border-radius:11px;overflow:auto;}
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:500;padding:20px;}
+.modal-bg.show{display:flex;}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:14px;width:860px;max-width:97vw;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;}
+.modal-hd{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+.modal-hd h3{font-size:1.08rem;}
+.modal-hd .x{background:transparent;border:none;color:var(--dim);font-size:1.3rem;}
+.modal-bd{padding:18px 20px;overflow:auto;}
+.modal-ft{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;}
+.fld{margin-bottom:12px;}
+.fld label{display:block;font-size:.74rem;color:var(--dim);margin-bottom:4px;}
+.req{color:#fca5a5;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+@media(max-width:680px){.grid2,.grid3{grid-template-columns:1fr;}}
+.art-block{border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;background:rgba(255,255,255,.02);}
+.art-block .art-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.art-block .art-hd .t{font-weight:700;color:var(--accent-l);font-size:.86rem;}
+.art-x{border:none;background:transparent;color:#fca5a5;font-size:1.1rem;cursor:pointer;}
+.d-field{display:flex;gap:8px;font-size:.84rem;margin-bottom:6px;flex-wrap:wrap;}
+.d-field .lbl{color:var(--dim);min-width:160px;}
+.d-field .val{font-weight:600;flex:1;}
+.d-sec{margin-bottom:14px;}
+.d-sec .k{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px;}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1b2838;border:1px solid var(--border);border-radius:9px;padding:11px 18px;font-size:.84rem;z-index:9999;display:none;box-shadow:0 10px 30px rgba(0,0,0,.4);}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="topbar">
+    <div class="tb-brand"><div class="ttl">🛡️ Garantías</div><div class="sub">Folios y solicitudes de garantía</div></div>
+    <nav class="tabs" id="nav-tabs">
+      <button class="nav-item active" id="tab-folios" onclick="setView('folios')">📋 Folios</button>
+      <button class="nav-item" id="tab-solicitudes" onclick="setView('solicitudes')">📨 Solicitudes <span class="badge" id="sol-badge" style="display:none;">0</span></button>
+    </nav>
+    <div class="tb-tools">
+      <button class="btn btn-sm" id="btn-cfg" onclick="abrirConfig()" style="display:none;">⚙️ Configuración</button>
+      <button class="btn btn-primary btn-sm" onclick="abrirNuevo()">＋ Nuevo folio</button>
+      <button class="btn btn-sm" id="btn-refresh" onclick="refrescar()">🔄 Actualizar</button>
+    </div>
+  </div>
+  <section class="main">
+    <div class="main-head"><div><div class="h-ttl" id="h-ttl">Folios</div><div class="h-sub" id="h-sub"></div></div></div>
+    <div class="main-body" id="body"><div class="empty"><span class="spin"></span> Cargando…</div></div>
+  </section>
+</div>
+
+<!-- Modal: nuevo folio -->
+<div class="modal-bg" id="m-new">
+  <div class="modal">
+    <div class="modal-hd"><h3 id="new-ttl">Nuevo folio de garantía</h3><button class="x" onclick="cerrar('m-new')">✕</button></div>
+    <div class="modal-bd">
+      <div class="grid2">
+        <div class="fld"><label>Técnico quien realiza folio <span class="req">*</span></label><input class="inp" id="f-tec" disabled></div>
+        <div class="fld"><label>Solicita <span class="req">*</span></label><input class="inp" id="f-solicita" placeholder="Nombre de quien solicita"></div>
+      </div>
+      <div class="grid3">
+        <div class="fld"><label>Origen <span class="req">*</span></label><select class="inp" id="f-origen"></select></div>
+        <div class="fld"><label>Sucursal <span class="req">*</span></label><select class="inp" id="f-sucursal"></select></div>
+        <div class="fld"><label>Departamento <span class="req">*</span></label><input class="inp" id="f-depto"></div>
+      </div>
+      <div class="grid2">
+        <div class="fld"><label>Establo</label><input class="inp" id="f-establo"></div>
+        <div class="fld"><label>Fotografías de la pieza</label><input type="file" id="f-fotos" multiple accept="image/*" style="display:block;width:100%;box-sizing:border-box;padding:7px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.8rem;cursor:pointer;" onchange="fotosChange()"><div id="f-fotos-lista" style="font-size:.74rem;color:var(--dim);margin-top:4px;"></div></div>
+      </div>
+      <div class="grid3">
+        <div class="fld"><label>Tipo de documento <span class="req">*</span></label><select class="inp" id="f-tipodoc"></select></div>
+        <div class="fld"><label>Número de documento <span class="req">*</span></label><input class="inp" id="f-numdoc"></div>
+        <div class="fld"><label>Número de cliente <span class="req">*</span></label><input class="inp" id="f-numcli" placeholder="Nº cliente" onblur="cliLookup()"></div>
+      </div>
+      <div class="fld"><label>Cliente</label><input class="inp" id="f-cli" placeholder="(automático según número de cliente)" disabled></div>
+      <div class="grid2">
+        <div class="fld"><label>Enviar a</label><select class="inp" id="f-enviar" onchange="enviarChange()"><option value="">Selecciona…</option></select></div>
+        <div class="fld"><label>Correo</label><input class="inp" id="f-enviar-mail" placeholder="(automático)" disabled></div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px;">
+        <div style="font-weight:800;font-size:.95rem;">Artículos</div>
+        <button class="btn btn-sm" type="button" onclick="artAdd()">＋ Agregar artículo</button>
+      </div>
+      <div id="f-arts"></div>
+
+      <div style="color:#fca5a5;font-size:.82rem;min-height:18px;margin-top:6px;" id="new-err"></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="cerrar('m-new')">Cancelar</button>
+      <button class="btn btn-primary" id="new-ok" onclick="crearFolio()">Crear folio</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: detalle folio -->
+<div class="modal-bg" id="m-det">
+  <div class="modal">
+    <div class="modal-hd"><div><h3 id="det-ttl">Folio</h3><div class="h-sub" id="det-sub" style="color:var(--dim);font-size:.72rem;margin-top:3px;"></div></div><button class="x" onclick="cerrar('m-det')">✕</button></div>
+    <div class="modal-bd" id="det-bd"></div>
+    <div class="modal-ft" id="det-ft"></div>
+  </div>
+</div>
+
+<!-- Modal: acción (rechazar / subir documento) -->
+<div class="modal-bg" id="m-acc">
+  <div class="modal" style="width:480px;">
+    <div class="modal-hd"><h3 id="acc-ttl">Acción</h3><button class="x" onclick="cerrar('m-acc')">✕</button></div>
+    <div class="modal-bd">
+      <div id="acc-txt-wrap" class="fld"><label id="acc-lbl">Comentario</label><textarea class="inp" id="acc-txt" rows="3"></textarea></div>
+      <div id="acc-file-wrap" class="fld" style="display:none;"><label id="acc-file-lbl">Documento</label><input type="file" id="acc-file" accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm,.png,.jpg,.jpeg" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;"></div>
+      <div style="color:#fca5a5;font-size:.8rem;min-height:18px;" id="acc-err"></div>
+    </div>
+    <div class="modal-ft"><button class="btn btn-ghost" onclick="cerrar('m-acc')">Cancelar</button><button class="btn btn-primary" id="acc-ok" onclick="accConfirmar()">Confirmar</button></div>
+  </div>
+</div>
+
+<!-- Modal: configuración -->
+<div class="modal-bg" id="m-cfg">
+  <div class="modal" style="width:520px;">
+    <div class="modal-hd"><h3>Configuración de correos</h3><button class="x" onclick="cerrar('m-cfg')">✕</button></div>
+    <div class="modal-bd">
+      <div class="fld"><label>Correo — Encargado de Mostrador</label><input class="inp" id="cfg-mostrador" placeholder="correo@..."></div>
+      <div class="fld"><label>Correo — Asistente administrativo de almacén</label><input class="inp" id="cfg-almacen" placeholder="correo@..."></div>
+      <div class="fld"><label>CC (separados por ;)</label><input class="inp" id="cfg-cc" placeholder="correo1@...; correo2@..."></div>
+      <div style="color:var(--dim);font-size:.78rem;">Estos correos se usan para el avance de etapas (por correo) y las notificaciones de la siguiente sub-etapa.</div>
+      <div style="color:#fca5a5;font-size:.8rem;min-height:18px;" id="cfg-err"></div>
+    </div>
+    <div class="modal-ft"><button class="btn btn-ghost" onclick="cerrar('m-cfg')">Cancelar</button><button class="btn btn-primary" onclick="guardarConfig()">Guardar</button></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ═══════════════ GARANTÍAS (embebida) ═══════════════ */
+var L_FOLIOS='GAR_Folios', L_ARTICULOS='Articulos_Sap', L_CLIENTES='Clientes_Sap', L_CONFIG='GAR_Config';
+var MODO='solicitar'; /* pantalla dedicada: Solicitud de garantías */
+var SUCURSALES=['Torreón','Aguascalientes','Querétaro','Jalisco','Delicias','Houston','Chile','Puerto Rico','Shanghái'];
+var TIPODOC=['Orden de trabajo','Devolución','Factura','Orden de Fabricación','Pedido','Proyecto'];
+var ORIGENES=['Local','Nacional','Extranjera'];
+var EVALUACION=['Pruebas en sitio','Panel de pruebas','Visual'];
+var TIPOGARANTIA=['Equipo','Departamento','Proveedor'];
+var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Documento enviado por solicitante':'#a855f7','Aplicado por mostrador':'#a855f7','Aplicado por almacén':'#a855f7','En almacén de garantías':'#58a6ff','Nota de crédito':'#a855f7','Enviado por garantías':'#f59e0b','Atendido':'#2ea043','Cerrado':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
+
+var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{mostrador:'',almacen:'',cc:''}, cfgId:null, filtros:{}, artDraft:[], fotoDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
+
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function toast(m){ var t=document.getElementById('toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(function(){t.style.display='none';},2600); }
+function abrir(id){ document.getElementById(id).classList.add('show'); }
+function cerrar(id){ document.getElementById(id).classList.remove('show'); if(id==='m-det') S.curFolio=null; }
+function _pj(s,def){ try{ var v=JSON.parse(s||''); return v==null?def:v; }catch(e){ return def; } }
+function nowISO(){ return new Date().toISOString(); }
+function lc(s){ return (s||'').toLowerCase(); }
+function fmtD(s){ if(!s) return '—'; var d=new Date(s); if(isNaN(d)) return esc(s); return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}); }
+function fmtDT(s){ if(!s) return '—'; var d=new Date(s); if(isNaN(d)) return '—'; return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }
+function hex2rgba(hex,a){ hex=hex||'#888'; var m=hex.replace('#',''); if(m.length===3) m=m[0]+m[0]+m[1]+m[1]+m[2]+m[2]; return 'rgba('+parseInt(m.substr(0,2),16)+','+parseInt(m.substr(2,2),16)+','+parseInt(m.substr(4,2),16)+','+a+')'; }
+
+/* puente */
+var _bridge={ seq:0, pend:{} };
+function _parent(){ return (window.parent && window.parent!==window) ? window.parent : null; }
+window.addEventListener('message', function(e){
+  var d=e.data||{};
+  if(d.type==='SGD_AUTH'){ onAuth(d); return; }
+  if(d.type==='SP_BRIDGE_RESPONSE'){ var p=_bridge.pend[d.callId]; if(!p) return; delete _bridge.pend[d.callId]; if(d.error) p.rej(new Error(d.error)); else p.res(d.result); }
+});
+function spCall(op,args){
+  return new Promise(function(res,rej){
+    var par=_parent(); if(!par){ rej(new Error('sin_portal')); return; }
+    var id='gar_'+(++_bridge.seq)+'_'+Date.now(); _bridge.pend[id]={res:res,rej:rej};
+    par.postMessage({ type:'SP_BRIDGE_REQUEST', callId:id, op:op, args:args||{} }, '*');
+    setTimeout(function(){ if(_bridge.pend[id]){ delete _bridge.pend[id]; rej(new Error('Tiempo de espera agotado')); } }, 25000);
+  });
+}
+async function listGet(lista){ var r=await spCall('list',{lista:lista, queryParams:'$expand=fields&$top=5000'}); return (r&&r.value)?r.value:[]; }
+async function listCreate(lista,fields){ var r=await spCall('create',{lista:lista, fields:fields}); return { id:(r&&r.id!=null)?r.id:null }; }
+async function listUpdate(lista,id,fields){ return spCall('update',{lista:lista, itemId:id, fields:fields}); }
+async function listDelete(lista,id){ return spCall('delete',{lista:lista, itemId:id}); }
+function fileB64(file){ return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){ res(String(r.result).split(',')[1]||''); }; r.onerror=rej; r.readAsDataURL(file); }); }
+async function subirArchivo(carpeta,itemId,file,prefijo){ var b64=await fileB64(file); var safe=(file.name||'archivo').replace(/[^\w.\- áéíóúÁÉÍÓÚñÑ]/g,'_'); var up=await spCall('uploadAttachment',{carpeta:carpeta,itemId:itemId,fileName:(prefijo||'')+safe,contentBase64:b64}); return (up&&up.id)?{id:up.id,nombre:(file.name||safe)}:null; }
+async function verArchivo(ref,nombre){ try{ var r=await spCall('getFileBase64',{driveId:ref}); if(r&&r.base64){ var mime=r.mime||'application/octet-stream'; var bin=atob(r.base64); var ar=new Uint8Array(bin.length); for(var i=0;i<bin.length;i++)ar[i]=bin.charCodeAt(i); var blob=new Blob([ar],{type:mime}); var url=URL.createObjectURL(blob); window.open(url,'_blank'); setTimeout(function(){URL.revokeObjectURL(url);},60000); } else toast('No se pudo abrir'); }catch(e){ toast('No se pudo abrir'); } }
+
+function boot(){
+  var par=_parent();
+  if(!par){ document.getElementById('body').innerHTML='<div class="empty">Esta pantalla se abre embebida desde el portal. Entra desde el módulo de Ingeniería.</div>'; return; }
+  par.postMessage({ type:'GAR_READY' }, '*');
+  setTimeout(function(){ if(!S.user){ par.postMessage({ type:'GAR_READY' }, '*'); } }, 1200);
+  setTimeout(function(){ if(!S.user){ par.postMessage({ type:'GAR_READY' }, '*'); } }, 3000);
+}
+function onAuth(d){
+  var u=(d&&d.user)||{};
+  if(d && d.isDemoMode){ document.getElementById('body').innerHTML='<div class="empty">No disponible en modo demo.</div>'; return; }
+  S.user={ email:lc(u.correo), nombre:u.nombre||u.correo||'Usuario', esAdmin:!!u.esAdmin };
+  S.completo=(d&&d.nivel==='completo')||!!u.esAdmin;
+  applyModo();
+  var bc=document.getElementById('btn-cfg'); if(bc) bc.style.display=(MODO!=='solicitar'&&S.completo)?'inline-block':'none';
+  if(!S._loaded){
+    S._loaded=true;
+    loadData().catch(function(e){ document.getElementById('body').innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existe la lista GAR_Folios?<br><small>'+esc(e.message||e)+'</small></div>'; });
+    if(!S._autoT){ S._autoT=setInterval(function(){ if(S.user && !document.querySelector('.modal-bg.show')){ loadData(true).catch(function(){}); } }, 60000); }
+  }
+}
+function applyModo(){
+  if(MODO==='solicitar'){
+    var nt=document.getElementById('nav-tabs'); if(nt) nt.style.display='none';
+    var ht=document.getElementById('h-ttl'); if(ht) ht.textContent='Mis solicitudes';
+    var brand=document.querySelector('.tb-brand .ttl'); if(brand) brand.textContent='🛡️ Solicitud de garantías';
+    var nb=document.querySelector('.tb-tools .btn-primary'); if(nb) nb.textContent='＋ Nueva solicitud';
+    S.view='folios';
+  }
+}
+async function refrescar(){ var b=document.getElementById('btn-refresh'); if(b){ b.disabled=true; b.textContent='⏳'; } try{ await loadData(); }catch(e){ toast('Error al actualizar'); } finally{ if(b){ b.disabled=false; b.textContent='🔄 Actualizar'; } } }
+
+async function loadData(){
+  var bb=document.getElementById('body'); if(bb && !S._everLoaded) bb.innerHTML='<div class="empty"><span class="spin"></span> Cargando…</div>';
+  var fs=await listGet(L_FOLIOS);
+  S.folios=fs.map(mapFolio);
+  // Usuarios con acceso a "Solicitud de Garantías" (para el campo "Enviar a")
+  try{ var r=await spCall('usuariosConAcceso',{pantallaID:'SolicitarGarantia'}); S.enviarUsers=(r&&r.value)?r.value:[]; }catch(e){ S.enviarUsers=[]; }
+  if(!S.enviarUsers.length){
+    try{ var us=await listGet('Usuarios'); S.enviarUsers=us.map(function(i){ var f=i.fields||{}; return { nombre:f.NombreCompleto||f.Title||'', correo:lc(f.Email||f.Title||''), activo:(f.Activo===true||f.Activo==='true'||f.Activo===1) }; }).filter(function(x){ return x.correo && x.activo; }); }catch(e){}
+  }
+  S.enviarUsers.sort(function(a,b){ return (a.nombre||'').localeCompare(b.nombre||''); });
+  // Configuración de correos (Mostrador / Almacén / CC)
+  try{ var cf=await listGet(L_CONFIG); if(cf&&cf[0]){ var f=cf[0].fields||{}; S.cfgId=cf[0].id; S.cfg={ mostrador:f.GrMostradorCorreo||'', almacen:f.GrAlmacenCorreo||'', cc:f.GrCC||'' }; } }catch(e){}
+  S._everLoaded=true; render();
+}
+function mapFolio(i){ var f=i.fields||{}; return {
+  id:i.id, folio:f.Title||('#'+i.id),
+  tecnicoNombre:f.GrTecnicoNombre||'', tecnicoCorreo:lc(f.GrTecnicoCorreo||''),
+  solicita:f.GrSolicita||'', solicitaCorreo:lc(f.GrSolicitaCorreo||''),
+  tipoOrigen:f.GrTipoOrigen||'', fotos:_pj(f.GrFotos,[]),
+  docSolicitante:f.GrDocSolicitante||'', docSolicitanteNombre:f.GrDocSolicitanteNombre||'',
+  comentarioRechazo:f.GrComentarioRechazo||'', fechaAutorizacion:f.GrFechaAutorizacion||'',
+  sucursal:f.GrSucursal||'', departamento:f.GrDepartamento||'', establo:f.GrEstablo||'',
+  tipoDoc:f.GrTipoDocumento||'', numDoc:f.GrNumeroDocumento||'',
+  numCliente:f.GrNumeroCliente||'', clienteNombre:f.GrClienteNombre||'',
+  enviarANombre:f.GrEnviarANombre||'', enviarACorreo:lc(f.GrEnviarACorreo||''),
+  articulos:_pj(f.GrArticulos,[]), estatus:f.GrEstatus||'Abierto', origen:f.GrOrigen||'Ingenieria',
+  fechaRegistro:f.GrFechaRegistro||f.Created||''
+}; }
+
+/* ---------- navegación / render ---------- */
+function setView(v){ S.view=v;
+  var a=document.getElementById('tab-folios'), b=document.getElementById('tab-solicitudes');
+  if(a)a.classList.toggle('active',v==='folios'); if(b)b.classList.toggle('active',v==='solicitudes');
+  render();
+}
+function updBadge(){ var b=document.getElementById('sol-badge'); if(!b) return; var n=S.folios.filter(function(t){return t.origen==='Solicitud'&&t.estatus==='En proceso';}).length; if(n>0){ b.textContent=n; b.style.display='inline-block'; } else b.style.display='none'; }
+function render(){
+  updBadge();
+  if(MODO==='solicitar') return renderTabla('mis');
+  var ht=document.getElementById('h-ttl'); if(ht) ht.textContent=(S.view==='solicitudes'?'Solicitudes':'Folios');
+  if(S.view==='solicitudes') return renderTabla('solicitudes');
+  return renderTabla('folios');
+}
+function renderTabla(tipo){
+  var body=document.getElementById('body'), me=S.user.email, f=S.filtros||{};
+  var items;
+  if(tipo==='mis') items=S.folios.filter(function(t){ return t.solicitaCorreo===me || t.enviarACorreo===me; });
+  else if(tipo==='solicitudes') items=S.folios.filter(function(t){ return t.origen==='Solicitud' && t.estatus==='En proceso'; });
+  else items=S.folios.filter(function(t){ return t.estatus!=='En proceso' && t.estatus!=='Rechazado'; }); // folios
+  if(f.q){ var q=lc(f.q); items=items.filter(function(t){ return lc(t.folio+' '+t.solicita+' '+t.sucursal+' '+t.clienteNombre+' '+t.numDoc+' '+t.numCliente+' '+t.departamento).indexOf(q)>=0; }); }
+  items.sort(function(a,b){ return (new Date(b.fechaRegistro||0))-(new Date(a.fechaRegistro||0)); });
+  document.getElementById('h-sub').textContent=items.length+(tipo==='solicitudes'?' solicitud(es)':' folio(s)');
+  var h='<div class="flt"><input class="inp" placeholder="🔎 Buscar folio, cliente, documento…" value="'+esc(f.q||'')+'" oninput="S.filtros.q=this.value;render();" style="min-width:260px;"><button class="btn btn-sm btn-ghost" onclick="S.filtros={};render();">Limpiar</button></div>';
+  if(!items.length){ h+='<div class="empty">No hay '+(tipo==='solicitudes'?'solicitudes pendientes':'folios')+'.</div>'; body.innerHTML=h; return; }
+  h+='<div class="tbl-wrap"><table class="gtab"><tr>'
+    +'<th>Folio</th><th>Fecha</th><th>Estatus</th><th>Solicita</th><th>Sucursal</th><th>Cliente</th><th>Tipo doc.</th><th>Nº doc.</th><th>Artículos</th><th>Técnico</th></tr>';
+  h+=items.map(function(t){
+    return '<tr class="click" onclick="abrirFolio(\''+t.id+'\')">'
+      +'<td><b>'+esc(t.folio)+'</b></td>'
+      +'<td>'+fmtD(t.fechaRegistro)+'</td>'
+      +'<td><span class="st" style="background:'+hex2rgba(EST_COLOR[t.estatus],.16)+';color:'+(EST_COLOR[t.estatus]||'#888')+'">'+esc(t.estatus)+'</span></td>'
+      +'<td>'+esc(t.solicita||'—')+'</td>'
+      +'<td>'+esc(t.sucursal||'—')+'</td>'
+      +'<td>'+esc(t.clienteNombre||t.numCliente||'—')+'</td>'
+      +'<td>'+esc(t.tipoDoc||'—')+'</td>'
+      +'<td>'+esc(t.numDoc||'—')+'</td>'
+      +'<td>'+((t.articulos||[]).length)+'</td>'
+      +'<td>'+esc(t.tecnicoNombre||'—')+'</td>'
+    +'</tr>';
+  }).join('');
+  h+='</table></div>';
+  body.innerHTML=h;
+}
+
+/* ---------- nuevo folio ---------- */
+function selOpts(arr,val){ return '<option value="">Selecciona…</option>'+arr.map(function(x){return '<option'+(val===x?' selected':'')+'>'+esc(x)+'</option>';}).join(''); }
+function abrirNuevo(){
+  document.getElementById('new-err').textContent='';
+  document.getElementById('new-ttl').textContent=(MODO==='solicitar')?'Nueva solicitud de garantía':'Nuevo folio de garantía';
+  document.getElementById('f-tec').value=S.user.nombre;
+  var tl=document.querySelector('#m-new label'); // primer label (Técnico)
+  if(tl) tl.innerHTML=(MODO==='solicitar'?'Usuario quien solicita':'Técnico quien realiza folio')+' <span class="req">*</span>';
+  document.getElementById('f-solicita').value='';
+  document.getElementById('f-origen').innerHTML=selOpts(ORIGENES, MODO==='solicitar'?'':'Local');
+  document.getElementById('f-sucursal').innerHTML=selOpts(SUCURSALES,'');
+  document.getElementById('f-depto').value='';
+  document.getElementById('f-establo').value='';
+  S.fotoDraft=[]; document.getElementById('f-fotos').value=''; document.getElementById('f-fotos-lista').innerHTML='';
+  document.getElementById('f-tipodoc').innerHTML=selOpts(TIPODOC,'');
+  document.getElementById('f-numdoc').value='';
+  document.getElementById('f-numcli').value='';
+  document.getElementById('f-cli').value='';
+  var selEnv=document.getElementById('f-enviar'); selEnv.innerHTML='<option value="">Selecciona…</option>'+S.enviarUsers.map(function(x){return '<option value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'">'+esc(x.nombre)+'</option>';}).join(''); selEnv.value='';
+  document.getElementById('f-enviar-mail').value='';
+  S.artDraft=[nuevoArt()]; artRender();
+  document.getElementById('new-ok').textContent=(MODO==='solicitar')?'Enviar solicitud':'Crear folio';
+  abrir('m-new');
+}
+function enviarChange(){ var s=document.getElementById('f-enviar'); document.getElementById('f-enviar-mail').value=s.value||''; }
+function fotosChange(){ var inp=document.getElementById('f-fotos'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ S.fotoDraft.push(f); }); try{ inp.value=''; }catch(e){} document.getElementById('f-fotos-lista').innerHTML=S.fotoDraft.length? ('📷 '+S.fotoDraft.map(function(f){return esc(f.name);}).join(', ')) : ''; }
+function nuevoArt(){ return { num:'',desc:'',numProv:'',proveedor:'',tipoProv:'', cantidad:'',serie:'',modelo:'',evaluacion:'',falla:'',comentarios:'',fCompra:'',fVenta:'',fFalla:'',fReclamacion:'',tipoGarantia:'' }; }
+function artRender(){
+  var cont=document.getElementById('f-arts');
+  cont.innerHTML=S.artDraft.map(function(a,i){
+    return '<div class="art-block">'
+      +'<div class="art-hd"><span class="t">Artículo '+(i+1)+'</span>'+(S.artDraft.length>1?'<button class="art-x" type="button" onclick="S.artDraft.splice('+i+',1);artRender();">✕</button>':'')+'</div>'
+      +'<div class="grid3">'
+        +fInp(i,'num','Número de artículo *','ES200055',8,'onblur="artLookup('+i+')" oninput="S.artDraft['+i+'].num=this.value.toUpperCase();this.value=this.value.toUpperCase();"')
+        +fDis(i,'desc','Descripción')
+        +fInp(i,'cantidad','Cantidad *','',null,'type="number" min="1" oninput="S.artDraft['+i+'].cantidad=this.value;"')
+      +'</div>'
+      +'<div class="grid3">'
+        +fDis(i,'numProv','Número de proveedor')
+        +fDis(i,'proveedor','Proveedor')
+        +fDis(i,'tipoProv','Tipo de proveedor')
+      +'</div>'
+      +'<div class="grid3">'
+        +fInp(i,'serie','Número de serie','',null,'oninput="S.artDraft['+i+'].serie=this.value;"')
+        +fInp(i,'modelo','Modelo','',null,'oninput="S.artDraft['+i+'].modelo=this.value;"')
+        +fSel(i,'evaluacion','Tipo de evaluación *',EVALUACION)
+      +'</div>'
+      +'<div class="fld"><label>Descripción detallada de la falla <span class="req">*</span></label><textarea class="inp" oninput="S.artDraft['+i+'].falla=this.value;">'+esc(a.falla)+'</textarea></div>'
+      +'<div class="fld"><label>Comentarios</label><textarea class="inp" oninput="S.artDraft['+i+'].comentarios=this.value;">'+esc(a.comentarios)+'</textarea></div>'
+      +'<div class="grid3">'
+        +fInp(i,'fCompra','Fecha de compra','',null,'type="date" oninput="S.artDraft['+i+'].fCompra=this.value;"')
+        +fInp(i,'fVenta','Fecha de venta / instalación *','',null,'type="date" oninput="S.artDraft['+i+'].fVenta=this.value;"')
+        +fInp(i,'fFalla','Fecha de falla *','',null,'type="date" oninput="S.artDraft['+i+'].fFalla=this.value;"')
+      +'</div>'
+      +(MODO==='solicitar'
+        ? '<div class="grid2">'+fInp(i,'fReclamacion','Fecha de reclamación *','',null,'type="date" oninput="S.artDraft['+i+'].fReclamacion=this.value;"')+'</div>'
+        : '<div class="grid2">'+fInp(i,'fReclamacion','Fecha de reclamación *','',null,'type="date" oninput="S.artDraft['+i+'].fReclamacion=this.value;"')+fSel(i,'tipoGarantia','Tipo de garantía *',TIPOGARANTIA)+'</div>')
+    +'</div>';
+  }).join('');
+}
+function fInp(i,key,label,ph,maxlen,extra){ var a=S.artDraft[i]; return '<div class="fld"><label>'+label.replace('*','<span class="req">*</span>')+'</label><input class="inp" value="'+esc(a[key])+'"'+(ph?(' placeholder="'+esc(ph)+'"'):'')+(maxlen?(' maxlength="'+maxlen+'"'):'')+' '+(extra||'')+'></div>'; }
+function fDis(i,key,label){ var a=S.artDraft[i]; return '<div class="fld"><label>'+label+'</label><input class="inp" value="'+esc(a[key])+'" disabled></div>'; }
+function fSel(i,key,label,arr){ var a=S.artDraft[i]; return '<div class="fld"><label>'+label.replace('*','<span class="req">*</span>')+'</label><select class="inp" onchange="S.artDraft['+i+'].'+key+'=this.value;">'+selOpts(arr,a[key])+'</select></div>'; }
+function artAdd(){ S.artDraft.push(nuevoArt()); artRender(); }
+async function artLookup(i){
+  var a=S.artDraft[i]; if(!a) return; var num=(a.num||'').trim().toUpperCase(); a.num=num;
+  if(!num){ a.desc=a.numProv=a.proveedor=a.tipoProv=''; artRender(); return; }
+  a.desc='Buscando…'; artRender();
+  try{
+    var r=await spCall('list',{lista:L_ARTICULOS, queryParams:"$expand=fields&$top=1&$filter=fields/Title eq '"+num.replace(/'/g,"''")+"'"});
+    var it=(r&&r.value&&r.value[0])?r.value[0].fields:null;
+    if(it){ a.desc=it.Descripcion||it['Descripción']||''; a.numProv=it.NumeroProveedor||it.Num_Proveedor||''; a.proveedor=it.Proveedor||''; a.tipoProv=it.TipoProveedor||it.Tipo_Proveedor||''; }
+    else { a.desc='(no encontrado)'; a.numProv=a.proveedor=a.tipoProv=''; }
+  }catch(e){ a.desc='(no se pudo buscar)'; console.warn('[art]',e&&e.message); }
+  artRender();
+}
+async function cliLookup(){
+  var inp=document.getElementById('f-numcli'), out=document.getElementById('f-cli');
+  var num=(inp.value||'').trim(); if(!num){ out.value=''; return; }
+  out.value='Buscando…';
+  try{
+    var r=await spCall('list',{lista:L_CLIENTES, queryParams:"$expand=fields&$top=1&$filter=fields/Title eq '"+num.replace(/'/g,"''")+"'"});
+    var it=(r&&r.value&&r.value[0])?r.value[0].fields:null;
+    out.value = it ? (it.Nombre||it.Cliente||it.Descripcion||it['Descripción']||'(sin nombre)') : '(no encontrado)';
+  }catch(e){ out.value='(no se pudo buscar)'; console.warn('[cli]',e&&e.message); }
+}
+function numeroNuevo(prefijo){
+  var y=new Date().getFullYear(), n=0, re=new RegExp('^'+prefijo+'-(\\d{4})-(\\d+)');
+  S.folios.forEach(function(t){ var m=re.exec(t.folio||''); if(m&&m[1]==String(y)){ var k=parseInt(m[2],10); if(k>n)n=k; } });
+  return prefijo+'-'+y+'-'+String(n+1).padStart(4,'0');
+}
+async function crearFolio(){
+  var err=document.getElementById('new-err'); err.textContent='';
+  var solicita=document.getElementById('f-solicita').value.trim();
+  var sucursal=document.getElementById('f-sucursal').value;
+  var depto=document.getElementById('f-depto').value.trim();
+  var establo=document.getElementById('f-establo').value.trim();
+  var tipodoc=document.getElementById('f-tipodoc').value;
+  var numdoc=document.getElementById('f-numdoc').value.trim();
+  var numcli=document.getElementById('f-numcli').value.trim();
+  var cli=document.getElementById('f-cli').value.trim();
+  var origen=document.getElementById('f-origen').value;
+  var selEnv=document.getElementById('f-enviar'); var envCorreo=selEnv.value||''; var envNombre=(selEnv.selectedIndex>0)?(selEnv.options[selEnv.selectedIndex].getAttribute('data-nom')||''):'';
+  if(!solicita){ err.textContent='Escribe quién solicita.'; return; }
+  if(!origen){ err.textContent='Selecciona el origen.'; return; }
+  if(!sucursal){ err.textContent='Selecciona la sucursal.'; return; }
+  if(!depto){ err.textContent='Escribe el departamento.'; return; }
+  if(!tipodoc){ err.textContent='Selecciona el tipo de documento.'; return; }
+  if(!numdoc){ err.textContent='Escribe el número de documento.'; return; }
+  if(!numcli){ err.textContent='Escribe el número de cliente.'; return; }
+  if(!S.artDraft.length){ err.textContent='Agrega al menos un artículo.'; return; }
+  for(var k=0;k<S.artDraft.length;k++){ var a=S.artDraft[k], n=k+1;
+    if(!(a.num||'').trim()){ err.textContent='Artículo '+n+': falta el número de artículo.'; return; }
+    if(!(''+a.cantidad).trim()){ err.textContent='Artículo '+n+': falta la cantidad.'; return; }
+    if(!a.evaluacion){ err.textContent='Artículo '+n+': selecciona el tipo de evaluación.'; return; }
+    if(!(a.falla||'').trim()){ err.textContent='Artículo '+n+': falta la descripción de la falla.'; return; }
+    if(!a.fVenta){ err.textContent='Artículo '+n+': falta la fecha de venta / instalación.'; return; }
+    if(!a.fFalla){ err.textContent='Artículo '+n+': falta la fecha de falla.'; return; }
+    if(!a.fReclamacion){ err.textContent='Artículo '+n+': falta la fecha de reclamación.'; return; }
+    if(MODO!=='solicitar' && !a.tipoGarantia){ err.textContent='Artículo '+n+': selecciona el tipo de garantía.'; return; }
+  }
+  var esSolic=(MODO==='solicitar');
+  var btn=document.getElementById('new-ok'); btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    var folio=esSolic?numeroNuevo('SOL'):numeroNuevo('GAR');
+    var fields={
+      Title: folio,
+      GrTecnicoNombre:(esSolic?'':S.user.nombre), GrTecnicoCorreo:(esSolic?'':S.user.email),
+      GrSolicita:solicita, GrSolicitaCorreo:(esSolic?S.user.email:''),
+      GrTipoOrigen:origen,
+      GrSucursal:sucursal, GrDepartamento:depto, GrEstablo:establo,
+      GrTipoDocumento:tipodoc, GrNumeroDocumento:numdoc,
+      GrNumeroCliente:numcli, GrClienteNombre:cli,
+      GrEnviarANombre:envNombre, GrEnviarACorreo:envCorreo,
+      GrArticulos:JSON.stringify(S.artDraft),
+      GrOrigen:(esSolic?'Solicitud':'Ingenieria'),
+      GrEstatus:(esSolic?'En proceso':'Abierto'),
+      GrFechaRegistro:nowISO()
+    };
+    var cr=await listCreate(L_FOLIOS, fields);
+    var itemId=cr&&cr.id;
+    // Subir fotografías
+    if(itemId && S.fotoDraft.length){
+      btn.textContent='Subiendo fotos…'; var refs=[];
+      for(var fi=0;fi<S.fotoDraft.length;fi++){ try{ var rf=await subirArchivo('GAR_Fotos',itemId,S.fotoDraft[fi],(fi+1)+'_'); if(rf) refs.push(rf); }catch(ef){} }
+      if(refs.length){ try{ await listUpdate(L_FOLIOS,itemId,{ GrFotos:JSON.stringify(refs) }); }catch(e){} }
+    }
+    cerrar('m-new'); await loadData(); toast(esSolic?('Solicitud enviada: '+folio):('Folio creado: '+folio));
+  }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
+  finally{ btn.disabled=false; btn.textContent=(MODO==='solicitar')?'Enviar solicitud':'Crear folio'; }
+}
+
+/* ---------- detalle ---------- */
+function abrirFolio(id){ var t=S.folios.find(function(x){return String(x.id)===String(id);}); if(!t) return; S.curFolio=t; pintarDetalle(); abrir('m-det'); }
+function dF(l,v){ return '<div class="d-field"><span class="lbl">'+esc(l)+'</span><span class="val">'+esc(v||'—')+'</span></div>'; }
+function pintarDetalle(){
+  var t=S.curFolio; if(!t) return;
+  document.getElementById('det-ttl').textContent=t.folio;
+  document.getElementById('det-sub').textContent=(t.estatus)+' · registrado '+fmtDT(t.fechaRegistro);
+  var h='';
+  if(t.estatus==='Rechazado'){ h+='<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:.84rem;"><b>Solicitud rechazada</b>'+(t.comentarioRechazo?('<br>Motivo: '+esc(t.comentarioRechazo)):'')+'</div>'; }
+  h+='<div class="d-sec">'
+    +'<div class="d-field"><span class="lbl">Estatus</span><span class="val"><span class="st" style="background:'+hex2rgba(EST_COLOR[t.estatus],.16)+';color:'+(EST_COLOR[t.estatus]||'#888')+'">'+esc(t.estatus)+'</span></span></div>'
+    +dF('Técnico', t.tecnicoNombre||'— (sin asignar)')
+    +dF('Solicita', t.solicita)
+    +dF('Origen', t.tipoOrigen)
+    +dF('Sucursal', t.sucursal)+dF('Departamento', t.departamento)+dF('Establo', t.establo)
+    +dF('Tipo de documento', t.tipoDoc)+dF('Número de documento', t.numDoc)
+    +dF('Cliente', (t.clienteNombre||'')+(t.numCliente?(' ('+t.numCliente+')'):''))
+    +(t.enviarANombre?dF('Enviar a', t.enviarANombre+(t.enviarACorreo?(' · '+t.enviarACorreo):'')):'')
+  +'</div>';
+  // Fotos
+  if((t.fotos||[]).length){
+    h+='<div class="d-sec"><div class="k">Fotografías</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'
+      +t.fotos.map(function(f){ return '<button class="btn btn-sm" onclick="verArchivo(\''+esc(f.id)+'\',\''+esc(String(f.nombre||"").replace(/\x27/g,""))+'\')">🖼️ '+esc(f.nombre||'foto')+'</button>'; }).join('')+'</div></div>';
+  }
+  // Documento del solicitante
+  if(t.docSolicitante){
+    h+='<div class="d-sec"><div class="k">Documento del solicitante</div><button class="btn btn-sm" onclick="verArchivo(\''+esc(t.docSolicitante)+'\',\''+esc(String(t.docSolicitanteNombre||"doc").replace(/\x27/g,""))+'\')">📄 '+esc(t.docSolicitanteNombre||'Ver documento')+'</button></div>';
+  }
+  h+='<div class="d-sec"><div class="k">Artículos ('+(t.articulos||[]).length+')</div>';
+  (t.articulos||[]).forEach(function(a,i){
+    h+='<div class="art-block"><div class="t" style="color:var(--accent-l);font-weight:700;margin-bottom:6px;">Artículo '+(i+1)+' — '+esc(a.num)+'</div>'
+      +dF('Descripción',a.desc)+dF('Cantidad',a.cantidad)
+      +dF('Proveedor',(a.proveedor||'')+(a.numProv?(' ('+a.numProv+')'):'')+(a.tipoProv?(' · '+a.tipoProv):''))
+      +dF('Nº serie / Modelo',(a.serie||'—')+' / '+(a.modelo||'—'))
+      +dF('Tipo de evaluación',a.evaluacion)+dF('Tipo de garantía',a.tipoGarantia)
+      +dF('Falla',a.falla)+(a.comentarios?dF('Comentarios',a.comentarios):'')
+      +dF('Compra / Venta',fmtD(a.fCompra)+' / '+fmtD(a.fVenta))
+      +dF('Falla / Reclamación',fmtD(a.fFalla)+' / '+fmtD(a.fReclamacion))
+    +'</div>';
+  });
+  h+='</div>';
+  document.getElementById('det-bd').innerHTML=h;
+  // Botones por contexto
+  var ft=document.getElementById('det-ft'); var b=''; var me=S.user.email;
+  if(MODO!=='solicitar' && t.origen==='Solicitud' && t.estatus==='En proceso'){
+    b+='<button class="btn btn-sm btn-danger" onclick="accPedir(\'rechazar\')">✕ Rechazar</button>';
+    b+='<button class="btn btn-sm" style="background:rgba(46,160,67,.16);border-color:rgba(46,160,67,.4);color:var(--green-l);" onclick="autorizar()">✔ Autorizar</button>';
+  }
+  if(MODO==='solicitar' && t.estatus==='Abierto' && (t.solicitaCorreo===me || t.enviarACorreo===me)){
+    var esFactura=(t.tipoDoc==='Factura');
+    b+='<button class="btn btn-sm btn-primary" onclick="accPedir(\'cargardoc\')">📄 '+(esFactura?'Cargar nota de crédito':'Cargar devolución')+'</button>';
+  }
+  b+='<button class="btn btn-sm btn-ghost" onclick="cerrar(\'m-det\')">Cerrar</button>';
+  ft.innerHTML=b;
+}
+
+/* ---------- acciones (rechazar / cargar documento) ---------- */
+var ACC_MODE='';
+function accPedir(modo){
+  ACC_MODE=modo;
+  var tw=document.getElementById('acc-txt-wrap'), fw=document.getElementById('acc-file-wrap');
+  document.getElementById('acc-err').textContent='';
+  if(modo==='rechazar'){
+    document.getElementById('acc-ttl').textContent='Rechazar solicitud';
+    document.getElementById('acc-lbl').innerHTML='Motivo del rechazo <span class="req">*</span>';
+    tw.style.display=''; fw.style.display='none'; document.getElementById('acc-txt').value='';
+    document.getElementById('acc-ok').textContent='Rechazar';
+  } else if(modo==='cargardoc'){
+    var t=S.curFolio; var esFactura=(t&&t.tipoDoc==='Factura');
+    document.getElementById('acc-ttl').textContent= esFactura?'Cargar nota de crédito':'Cargar devolución';
+    document.getElementById('acc-file-lbl').innerHTML=(esFactura?'Nota de crédito':'Documento de devolución')+' <span class="req">*</span>';
+    document.getElementById('acc-file').value='';
+    tw.style.display='none'; fw.style.display='';
+    document.getElementById('acc-ok').textContent='Enviar documento';
+  }
+  abrir('m-acc');
+}
+async function accConfirmar(){
+  var t=S.curFolio; if(!t) return; var err=document.getElementById('acc-err'); err.textContent='';
+  var btn=document.getElementById('acc-ok');
+  if(ACC_MODE==='rechazar'){
+    var txt=document.getElementById('acc-txt').value.trim(); if(!txt){ err.textContent='Escribe el motivo.'; return; }
+    btn.disabled=true; btn.textContent='Guardando…';
+    try{ await listUpdate(L_FOLIOS,t.id,{ GrEstatus:'Rechazado', GrComentarioRechazo:txt }); Object.assign(t,{estatus:'Rechazado',comentarioRechazo:txt}); cerrar('m-acc'); pintarDetalle(); render(); toast('Solicitud rechazada'); }
+    catch(e){ err.textContent='No se pudo. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Rechazar'; }
+  } else if(ACC_MODE==='cargardoc'){
+    var file=(document.getElementById('acc-file').files||[])[0]; if(!file){ err.textContent='Selecciona el documento.'; return; }
+    btn.disabled=true; btn.textContent='Subiendo…';
+    try{
+      var ref=await subirArchivo('GAR_Documentos',t.id,file,'DOC_');
+      var fields={ GrEstatus:'Documento enviado por solicitante' };
+      if(ref){ fields.GrDocSolicitante=ref.id; fields.GrDocSolicitanteNombre=ref.nombre; }
+      await listUpdate(L_FOLIOS,t.id,fields);
+      Object.assign(t,{estatus:'Documento enviado por solicitante', docSolicitante:ref?ref.id:t.docSolicitante, docSolicitanteNombre:ref?ref.nombre:t.docSolicitanteNombre});
+      cerrar('m-acc'); pintarDetalle(); render(); toast('Documento enviado');
+    }catch(e){ err.textContent='No se pudo subir. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Enviar documento'; }
+  }
+}
+async function autorizar(){
+  var t=S.curFolio; if(!t) return;
+  var nuevoFolio=numeroNuevo('GAR');
+  try{
+    await listUpdate(L_FOLIOS,t.id,{ Title:nuevoFolio, GrEstatus:'Abierto', GrTecnicoNombre:S.user.nombre, GrTecnicoCorreo:S.user.email, GrFechaAutorizacion:nowISO() });
+    Object.assign(t,{ folio:nuevoFolio, estatus:'Abierto', tecnicoNombre:S.user.nombre, tecnicoCorreo:S.user.email });
+    cerrar('m-det'); await loadData(); toast('Solicitud autorizada → folio '+nuevoFolio);
+  }catch(e){ toast('No se pudo autorizar'); }
+}
+
+/* ---------- configuración ---------- */
+function abrirConfig(){ if(!S.completo){ toast('Solo acceso completo'); return; }
+  document.getElementById('cfg-mostrador').value=S.cfg.mostrador||'';
+  document.getElementById('cfg-almacen').value=S.cfg.almacen||'';
+  document.getElementById('cfg-cc').value=S.cfg.cc||'';
+  document.getElementById('cfg-err').textContent=''; abrir('m-cfg');
+}
+async function guardarConfig(){
+  var err=document.getElementById('cfg-err'); err.textContent='';
+  var body={ Title:'config', GrMostradorCorreo:document.getElementById('cfg-mostrador').value.trim(), GrAlmacenCorreo:document.getElementById('cfg-almacen').value.trim(), GrCC:document.getElementById('cfg-cc').value.trim() };
+  try{
+    if(S.cfgId) await listUpdate(L_CONFIG,S.cfgId,body); else { var r=await listCreate(L_CONFIG,body); if(r.id)S.cfgId=r.id; }
+    S.cfg={ mostrador:body.GrMostradorCorreo, almacen:body.GrAlmacenCorreo, cc:body.GrCC };
+    cerrar('m-cfg'); toast('Configuración guardada');
+  }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
+}
+
+/* init */
+document.addEventListener('DOMContentLoaded', boot); boot();
+window.setView=setView; window.abrirNuevo=abrirNuevo; window.crearFolio=crearFolio; window.cerrar=cerrar; window.refrescar=refrescar;
+window.artAdd=artAdd; window.artRender=artRender; window.artLookup=artLookup; window.cliLookup=cliLookup; window.abrirFolio=abrirFolio; window.render=render; window.enviarChange=enviarChange;
+window.fotosChange=fotosChange; window.accPedir=accPedir; window.accConfirmar=accConfirmar; window.autorizar=autorizar; window.abrirConfig=abrirConfig; window.guardarConfig=guardarConfig; window.verArchivo=verArchivo;
+</script>
+</body>
+</html>

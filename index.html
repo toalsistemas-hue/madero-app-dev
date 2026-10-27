@@ -2288,7 +2288,7 @@ tr:last-child td{border-bottom:none;}
 
 <!-- PAGE: SOLICITUD DE GARANTÍAS (misma pantalla en modo solicitar) -->
 <div class="page" id="page-SolicitarGarantia" style="padding:0;margin:0;position:relative;">
-  <iframe id="sgar-iframe" src="garantias.html?modo=solicitar"
+  <iframe id="sgar-iframe" src="solicitar-garantias.html"
     style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
     title="Solicitud de garantías"></iframe>
 </div>
@@ -6704,7 +6704,9 @@ window.addEventListener('message', function (e) {
 window.addEventListener('message', function (e) {
   if (!e.data || e.data.type !== 'GAR_READY') return;
   try {
-    var nivelG = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas['Garantias'] || '') : '';
+    var _sgar = document.getElementById('sgar-iframe');
+    var _pidG = (_sgar && e.source === _sgar.contentWindow) ? 'SolicitarGarantia' : 'Garantias';
+    var nivelG = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas[_pidG] || '') : '';
     if (state.currentUser && state.currentUser.esAdmin) nivelG = 'completo';
     if (e.source) e.source.postMessage({
       type: 'SGD_AUTH',

@@ -392,10 +392,9 @@ function artRender(){
         +fInp(i,'fVenta','Fecha de venta / instalación *','',null,'type="date" oninput="S.artDraft['+i+'].fVenta=this.value;"')
         +fInp(i,'fFalla','Fecha de falla *','',null,'type="date" oninput="S.artDraft['+i+'].fFalla=this.value;"')
       +'</div>'
-      +'<div class="grid2">'
-        +fInp(i,'fReclamacion','Fecha de reclamación *','',null,'type="date" oninput="S.artDraft['+i+'].fReclamacion=this.value;"')
-        +fSel(i,'tipoGarantia','Tipo de garantía *',TIPOGARANTIA)
-      +'</div>'
+      +(MODO==='solicitar'
+        ? '<div class="grid2">'+fInp(i,'fReclamacion','Fecha de reclamación *','',null,'type="date" oninput="S.artDraft['+i+'].fReclamacion=this.value;"')+'</div>'
+        : '<div class="grid2">'+fInp(i,'fReclamacion','Fecha de reclamación *','',null,'type="date" oninput="S.artDraft['+i+'].fReclamacion=this.value;"')+fSel(i,'tipoGarantia','Tipo de garantía *',TIPOGARANTIA)+'</div>')
     +'</div>';
   }).join('');
 }
@@ -458,7 +457,7 @@ async function crearFolio(){
     if(!a.fVenta){ err.textContent='Artículo '+n+': falta la fecha de venta / instalación.'; return; }
     if(!a.fFalla){ err.textContent='Artículo '+n+': falta la fecha de falla.'; return; }
     if(!a.fReclamacion){ err.textContent='Artículo '+n+': falta la fecha de reclamación.'; return; }
-    if(!a.tipoGarantia){ err.textContent='Artículo '+n+': selecciona el tipo de garantía.'; return; }
+    if(MODO!=='solicitar' && !a.tipoGarantia){ err.textContent='Artículo '+n+': selecciona el tipo de garantía.'; return; }
   }
   var esSolic=(MODO==='solicitar');
   var btn=document.getElementById('new-ok'); btn.disabled=true; btn.textContent='Guardando…';

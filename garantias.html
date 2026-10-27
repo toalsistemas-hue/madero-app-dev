@@ -310,7 +310,7 @@ function render(){
 function renderTabla(tipo){
   var body=document.getElementById('body'), me=S.user.email, f=S.filtros||{};
   var items;
-  if(tipo==='mis') items=S.folios.filter(function(t){ return t.solicitaCorreo===me || t.enviarACorreo===me; });
+  if(tipo==='mis') items=S.folios.filter(function(t){ return !!me && ((t.solicitaCorreo && t.solicitaCorreo===me) || (t.enviarACorreo && t.enviarACorreo===me)); });
   else if(tipo==='solicitudes') items=S.folios.filter(function(t){ return t.origen==='Solicitud' && t.estatus==='En proceso'; });
   else items=S.folios.filter(function(t){ return t.estatus!=='En proceso' && t.estatus!=='Rechazado'; }); // folios
   if(f.q){ var q=lc(f.q); items=items.filter(function(t){ return lc(t.folio+' '+t.solicita+' '+t.sucursal+' '+t.clienteNombre+' '+t.numDoc+' '+t.numCliente+' '+t.departamento).indexOf(q)>=0; }); }

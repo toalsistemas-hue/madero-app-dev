@@ -91,6 +91,7 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
       <button class="nav-item" id="tab-solicitudes" onclick="setView('solicitudes')">📨 Solicitudes <span class="badge" id="sol-badge" style="display:none;">0</span></button>
     </nav>
     <div class="tb-tools">
+      <button class="btn btn-sm" id="btn-cfg" onclick="abrirConfig()" style="display:none;">⚙️ Configuración</button>
       <button class="btn btn-primary btn-sm" onclick="abrirNuevo()">＋ Nuevo folio</button>
       <button class="btn btn-sm" id="btn-refresh" onclick="refrescar()">🔄 Actualizar</button>
     </div>
@@ -111,9 +112,13 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
         <div class="fld"><label>Solicita <span class="req">*</span></label><input class="inp" id="f-solicita" placeholder="Nombre de quien solicita"></div>
       </div>
       <div class="grid3">
+        <div class="fld"><label>Origen <span class="req">*</span></label><select class="inp" id="f-origen"></select></div>
         <div class="fld"><label>Sucursal <span class="req">*</span></label><select class="inp" id="f-sucursal"></select></div>
         <div class="fld"><label>Departamento <span class="req">*</span></label><input class="inp" id="f-depto"></div>
+      </div>
+      <div class="grid2">
         <div class="fld"><label>Establo</label><input class="inp" id="f-establo"></div>
+        <div class="fld"><label>Fotografías de la pieza</label><input type="file" id="f-fotos" multiple accept="image/*" style="display:block;width:100%;box-sizing:border-box;padding:7px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.8rem;cursor:pointer;" onchange="fotosChange()"><div id="f-fotos-lista" style="font-size:.74rem;color:var(--dim);margin-top:4px;"></div></div>
       </div>
       <div class="grid3">
         <div class="fld"><label>Tipo de documento <span class="req">*</span></label><select class="inp" id="f-tipodoc"></select></div>
@@ -146,7 +151,35 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
   <div class="modal">
     <div class="modal-hd"><div><h3 id="det-ttl">Folio</h3><div class="h-sub" id="det-sub" style="color:var(--dim);font-size:.72rem;margin-top:3px;"></div></div><button class="x" onclick="cerrar('m-det')">✕</button></div>
     <div class="modal-bd" id="det-bd"></div>
-    <div class="modal-ft"><button class="btn btn-sm btn-ghost" onclick="cerrar('m-det')">Cerrar</button></div>
+    <div class="modal-ft" id="det-ft"></div>
+  </div>
+</div>
+
+<!-- Modal: acción (rechazar / subir documento) -->
+<div class="modal-bg" id="m-acc">
+  <div class="modal" style="width:480px;">
+    <div class="modal-hd"><h3 id="acc-ttl">Acción</h3><button class="x" onclick="cerrar('m-acc')">✕</button></div>
+    <div class="modal-bd">
+      <div id="acc-txt-wrap" class="fld"><label id="acc-lbl">Comentario</label><textarea class="inp" id="acc-txt" rows="3"></textarea></div>
+      <div id="acc-file-wrap" class="fld" style="display:none;"><label id="acc-file-lbl">Documento</label><input type="file" id="acc-file" accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm,.png,.jpg,.jpeg" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;"></div>
+      <div style="color:#fca5a5;font-size:.8rem;min-height:18px;" id="acc-err"></div>
+    </div>
+    <div class="modal-ft"><button class="btn btn-ghost" onclick="cerrar('m-acc')">Cancelar</button><button class="btn btn-primary" id="acc-ok" onclick="accConfirmar()">Confirmar</button></div>
+  </div>
+</div>
+
+<!-- Modal: configuración -->
+<div class="modal-bg" id="m-cfg">
+  <div class="modal" style="width:520px;">
+    <div class="modal-hd"><h3>Configuración de correos</h3><button class="x" onclick="cerrar('m-cfg')">✕</button></div>
+    <div class="modal-bd">
+      <div class="fld"><label>Correo — Encargado de Mostrador</label><input class="inp" id="cfg-mostrador" placeholder="correo@..."></div>
+      <div class="fld"><label>Correo — Asistente administrativo de almacén</label><input class="inp" id="cfg-almacen" placeholder="correo@..."></div>
+      <div class="fld"><label>CC (separados por ;)</label><input class="inp" id="cfg-cc" placeholder="correo1@...; correo2@..."></div>
+      <div style="color:var(--dim);font-size:.78rem;">Estos correos se usan para el avance de etapas (por correo) y las notificaciones de la siguiente sub-etapa.</div>
+      <div style="color:#fca5a5;font-size:.8rem;min-height:18px;" id="cfg-err"></div>
+    </div>
+    <div class="modal-ft"><button class="btn btn-ghost" onclick="cerrar('m-cfg')">Cancelar</button><button class="btn btn-primary" onclick="guardarConfig()">Guardar</button></div>
   </div>
 </div>
 
@@ -154,15 +187,16 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
 
 <script>
 /* ═══════════════ GARANTÍAS (embebida) ═══════════════ */
-var L_FOLIOS='GAR_Folios', L_ARTICULOS='Articulos_Sap', L_CLIENTES='Clientes_Sap';
+var L_FOLIOS='GAR_Folios', L_ARTICULOS='Articulos_Sap', L_CLIENTES='Clientes_Sap', L_CONFIG='GAR_Config';
 var MODO=(function(){ try{ return (new URLSearchParams(location.search).get('modo')==='solicitar')?'solicitar':'ing'; }catch(e){ return 'ing'; } })();
 var SUCURSALES=['Torreón','Aguascalientes','Querétaro','Jalisco','Delicias','Houston','Chile','Puerto Rico','Shanghái'];
 var TIPODOC=['Orden de trabajo','Devolución','Factura','Orden de Fabricación','Pedido','Proyecto'];
+var ORIGENES=['Local','Nacional','Extranjera'];
 var EVALUACION=['Pruebas en sitio','Panel de pruebas','Visual'];
 var TIPOGARANTIA=['Equipo','Departamento','Proveedor'];
-var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Atendido':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
+var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Documento enviado por solicitante':'#a855f7','Aplicado por mostrador':'#a855f7','Aplicado por almacén':'#a855f7','En almacén de garantías':'#58a6ff','Nota de crédito':'#a855f7','Enviado por garantías':'#f59e0b','Atendido':'#2ea043','Cerrado':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
 
-var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], filtros:{}, artDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
+var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{mostrador:'',almacen:'',cc:''}, cfgId:null, filtros:{}, artDraft:[], fotoDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
 
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function toast(m){ var t=document.getElementById('toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(function(){t.style.display='none';},2600); }
@@ -194,6 +228,10 @@ function spCall(op,args){
 async function listGet(lista){ var r=await spCall('list',{lista:lista, queryParams:'$expand=fields&$top=5000'}); return (r&&r.value)?r.value:[]; }
 async function listCreate(lista,fields){ var r=await spCall('create',{lista:lista, fields:fields}); return { id:(r&&r.id!=null)?r.id:null }; }
 async function listUpdate(lista,id,fields){ return spCall('update',{lista:lista, itemId:id, fields:fields}); }
+async function listDelete(lista,id){ return spCall('delete',{lista:lista, itemId:id}); }
+function fileB64(file){ return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){ res(String(r.result).split(',')[1]||''); }; r.onerror=rej; r.readAsDataURL(file); }); }
+async function subirArchivo(carpeta,itemId,file,prefijo){ var b64=await fileB64(file); var safe=(file.name||'archivo').replace(/[^\w.\- áéíóúÁÉÍÓÚñÑ]/g,'_'); var up=await spCall('uploadAttachment',{carpeta:carpeta,itemId:itemId,fileName:(prefijo||'')+safe,contentBase64:b64}); return (up&&up.id)?{id:up.id,nombre:(file.name||safe)}:null; }
+async function verArchivo(ref,nombre){ try{ var r=await spCall('getFileBase64',{driveId:ref}); if(r&&r.base64){ var mime=r.mime||'application/octet-stream'; var bin=atob(r.base64); var ar=new Uint8Array(bin.length); for(var i=0;i<bin.length;i++)ar[i]=bin.charCodeAt(i); var blob=new Blob([ar],{type:mime}); var url=URL.createObjectURL(blob); window.open(url,'_blank'); setTimeout(function(){URL.revokeObjectURL(url);},60000); } else toast('No se pudo abrir'); }catch(e){ toast('No se pudo abrir'); } }
 
 function boot(){
   var par=_parent();
@@ -208,6 +246,7 @@ function onAuth(d){
   S.user={ email:lc(u.correo), nombre:u.nombre||u.correo||'Usuario', esAdmin:!!u.esAdmin };
   S.completo=(d&&d.nivel==='completo')||!!u.esAdmin;
   applyModo();
+  var bc=document.getElementById('btn-cfg'); if(bc) bc.style.display=(MODO!=='solicitar'&&S.completo)?'inline-block':'none';
   if(!S._loaded){
     S._loaded=true;
     loadData().catch(function(e){ document.getElementById('body').innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existe la lista GAR_Folios?<br><small>'+esc(e.message||e)+'</small></div>'; });
@@ -235,12 +274,17 @@ async function loadData(){
     try{ var us=await listGet('Usuarios'); S.enviarUsers=us.map(function(i){ var f=i.fields||{}; return { nombre:f.NombreCompleto||f.Title||'', correo:lc(f.Email||f.Title||''), activo:(f.Activo===true||f.Activo==='true'||f.Activo===1) }; }).filter(function(x){ return x.correo && x.activo; }); }catch(e){}
   }
   S.enviarUsers.sort(function(a,b){ return (a.nombre||'').localeCompare(b.nombre||''); });
+  // Configuración de correos (Mostrador / Almacén / CC)
+  try{ var cf=await listGet(L_CONFIG); if(cf&&cf[0]){ var f=cf[0].fields||{}; S.cfgId=cf[0].id; S.cfg={ mostrador:f.GrMostradorCorreo||'', almacen:f.GrAlmacenCorreo||'', cc:f.GrCC||'' }; } }catch(e){}
   S._everLoaded=true; render();
 }
 function mapFolio(i){ var f=i.fields||{}; return {
   id:i.id, folio:f.Title||('#'+i.id),
   tecnicoNombre:f.GrTecnicoNombre||'', tecnicoCorreo:lc(f.GrTecnicoCorreo||''),
   solicita:f.GrSolicita||'', solicitaCorreo:lc(f.GrSolicitaCorreo||''),
+  tipoOrigen:f.GrTipoOrigen||'', fotos:_pj(f.GrFotos,[]),
+  docSolicitante:f.GrDocSolicitante||'', docSolicitanteNombre:f.GrDocSolicitanteNombre||'',
+  comentarioRechazo:f.GrComentarioRechazo||'', fechaAutorizacion:f.GrFechaAutorizacion||'',
   sucursal:f.GrSucursal||'', departamento:f.GrDepartamento||'', establo:f.GrEstablo||'',
   tipoDoc:f.GrTipoDocumento||'', numDoc:f.GrNumeroDocumento||'',
   numCliente:f.GrNumeroCliente||'', clienteNombre:f.GrClienteNombre||'',
@@ -266,7 +310,7 @@ function render(){
 function renderTabla(tipo){
   var body=document.getElementById('body'), me=S.user.email, f=S.filtros||{};
   var items;
-  if(tipo==='mis') items=S.folios.filter(function(t){ return t.solicitaCorreo===me || t.tecnicoCorreo===me; });
+  if(tipo==='mis') items=S.folios.filter(function(t){ return t.solicitaCorreo===me || t.enviarACorreo===me; });
   else if(tipo==='solicitudes') items=S.folios.filter(function(t){ return t.origen==='Solicitud' && t.estatus==='En proceso'; });
   else items=S.folios.filter(function(t){ return t.estatus!=='En proceso' && t.estatus!=='Rechazado'; }); // folios
   if(f.q){ var q=lc(f.q); items=items.filter(function(t){ return lc(t.folio+' '+t.solicita+' '+t.sucursal+' '+t.clienteNombre+' '+t.numDoc+' '+t.numCliente+' '+t.departamento).indexOf(q)>=0; }); }
@@ -303,9 +347,11 @@ function abrirNuevo(){
   var tl=document.querySelector('#m-new label'); // primer label (Técnico)
   if(tl) tl.innerHTML=(MODO==='solicitar'?'Usuario quien solicita':'Técnico quien realiza folio')+' <span class="req">*</span>';
   document.getElementById('f-solicita').value='';
+  document.getElementById('f-origen').innerHTML=selOpts(ORIGENES, MODO==='solicitar'?'':'Local');
   document.getElementById('f-sucursal').innerHTML=selOpts(SUCURSALES,'');
   document.getElementById('f-depto').value='';
   document.getElementById('f-establo').value='';
+  S.fotoDraft=[]; document.getElementById('f-fotos').value=''; document.getElementById('f-fotos-lista').innerHTML='';
   document.getElementById('f-tipodoc').innerHTML=selOpts(TIPODOC,'');
   document.getElementById('f-numdoc').value='';
   document.getElementById('f-numcli').value='';
@@ -317,6 +363,7 @@ function abrirNuevo(){
   abrir('m-new');
 }
 function enviarChange(){ var s=document.getElementById('f-enviar'); document.getElementById('f-enviar-mail').value=s.value||''; }
+function fotosChange(){ var inp=document.getElementById('f-fotos'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ S.fotoDraft.push(f); }); try{ inp.value=''; }catch(e){} document.getElementById('f-fotos-lista').innerHTML=S.fotoDraft.length? ('📷 '+S.fotoDraft.map(function(f){return esc(f.name);}).join(', ')) : ''; }
 function nuevoArt(){ return { num:'',desc:'',numProv:'',proveedor:'',tipoProv:'', cantidad:'',serie:'',modelo:'',evaluacion:'',falla:'',comentarios:'',fCompra:'',fVenta:'',fFalla:'',fReclamacion:'',tipoGarantia:'' }; }
 function artRender(){
   var cont=document.getElementById('f-arts');
@@ -378,10 +425,10 @@ async function cliLookup(){
     out.value = it ? (it.Nombre||it.Cliente||it.Descripcion||it['Descripción']||'(sin nombre)') : '(no encontrado)';
   }catch(e){ out.value='(no se pudo buscar)'; console.warn('[cli]',e&&e.message); }
 }
-async function folioNuevo(){
-  var y=new Date().getFullYear(), n=0;
-  S.folios.forEach(function(t){ var m=/GAR-(\d{4})-(\d+)/.exec(t.folio||''); if(m&&m[1]==String(y)){ var k=parseInt(m[2],10); if(k>n)n=k; } });
-  return 'GAR-'+y+'-'+String(n+1).padStart(4,'0');
+function numeroNuevo(prefijo){
+  var y=new Date().getFullYear(), n=0, re=new RegExp('^'+prefijo+'-(\\d{4})-(\\d+)');
+  S.folios.forEach(function(t){ var m=re.exec(t.folio||''); if(m&&m[1]==String(y)){ var k=parseInt(m[2],10); if(k>n)n=k; } });
+  return prefijo+'-'+y+'-'+String(n+1).padStart(4,'0');
 }
 async function crearFolio(){
   var err=document.getElementById('new-err'); err.textContent='';
@@ -393,8 +440,10 @@ async function crearFolio(){
   var numdoc=document.getElementById('f-numdoc').value.trim();
   var numcli=document.getElementById('f-numcli').value.trim();
   var cli=document.getElementById('f-cli').value.trim();
+  var origen=document.getElementById('f-origen').value;
   var selEnv=document.getElementById('f-enviar'); var envCorreo=selEnv.value||''; var envNombre=(selEnv.selectedIndex>0)?(selEnv.options[selEnv.selectedIndex].getAttribute('data-nom')||''):'';
   if(!solicita){ err.textContent='Escribe quién solicita.'; return; }
+  if(!origen){ err.textContent='Selecciona el origen.'; return; }
   if(!sucursal){ err.textContent='Selecciona la sucursal.'; return; }
   if(!depto){ err.textContent='Escribe el departamento.'; return; }
   if(!tipodoc){ err.textContent='Selecciona el tipo de documento.'; return; }
@@ -414,11 +463,12 @@ async function crearFolio(){
   var esSolic=(MODO==='solicitar');
   var btn=document.getElementById('new-ok'); btn.disabled=true; btn.textContent='Guardando…';
   try{
-    var folio=await folioNuevo();
+    var folio=esSolic?numeroNuevo('SOL'):numeroNuevo('GAR');
     var fields={
       Title: folio,
       GrTecnicoNombre:(esSolic?'':S.user.nombre), GrTecnicoCorreo:(esSolic?'':S.user.email),
       GrSolicita:solicita, GrSolicitaCorreo:(esSolic?S.user.email:''),
+      GrTipoOrigen:origen,
       GrSucursal:sucursal, GrDepartamento:depto, GrEstablo:establo,
       GrTipoDocumento:tipodoc, GrNumeroDocumento:numdoc,
       GrNumeroCliente:numcli, GrClienteNombre:cli,
@@ -428,7 +478,14 @@ async function crearFolio(){
       GrEstatus:(esSolic?'En proceso':'Abierto'),
       GrFechaRegistro:nowISO()
     };
-    await listCreate(L_FOLIOS, fields);
+    var cr=await listCreate(L_FOLIOS, fields);
+    var itemId=cr&&cr.id;
+    // Subir fotografías
+    if(itemId && S.fotoDraft.length){
+      btn.textContent='Subiendo fotos…'; var refs=[];
+      for(var fi=0;fi<S.fotoDraft.length;fi++){ try{ var rf=await subirArchivo('GAR_Fotos',itemId,S.fotoDraft[fi],(fi+1)+'_'); if(rf) refs.push(rf); }catch(ef){} }
+      if(refs.length){ try{ await listUpdate(L_FOLIOS,itemId,{ GrFotos:JSON.stringify(refs) }); }catch(e){} }
+    }
     cerrar('m-new'); await loadData(); toast(esSolic?('Solicitud enviada: '+folio):('Folio creado: '+folio));
   }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
   finally{ btn.disabled=false; btn.textContent=(MODO==='solicitar')?'Enviar solicitud':'Crear folio'; }
@@ -441,14 +498,27 @@ function pintarDetalle(){
   var t=S.curFolio; if(!t) return;
   document.getElementById('det-ttl').textContent=t.folio;
   document.getElementById('det-sub').textContent=(t.estatus)+' · registrado '+fmtDT(t.fechaRegistro);
-  var h='<div class="d-sec">'
+  var h='';
+  if(t.estatus==='Rechazado'){ h+='<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:.84rem;"><b>Solicitud rechazada</b>'+(t.comentarioRechazo?('<br>Motivo: '+esc(t.comentarioRechazo)):'')+'</div>'; }
+  h+='<div class="d-sec">'
+    +'<div class="d-field"><span class="lbl">Estatus</span><span class="val"><span class="st" style="background:'+hex2rgba(EST_COLOR[t.estatus],.16)+';color:'+(EST_COLOR[t.estatus]||'#888')+'">'+esc(t.estatus)+'</span></span></div>'
     +dF('Técnico', t.tecnicoNombre||'— (sin asignar)')
     +dF('Solicita', t.solicita)
+    +dF('Origen', t.tipoOrigen)
     +dF('Sucursal', t.sucursal)+dF('Departamento', t.departamento)+dF('Establo', t.establo)
     +dF('Tipo de documento', t.tipoDoc)+dF('Número de documento', t.numDoc)
     +dF('Cliente', (t.clienteNombre||'')+(t.numCliente?(' ('+t.numCliente+')'):''))
     +(t.enviarANombre?dF('Enviar a', t.enviarANombre+(t.enviarACorreo?(' · '+t.enviarACorreo):'')):'')
   +'</div>';
+  // Fotos
+  if((t.fotos||[]).length){
+    h+='<div class="d-sec"><div class="k">Fotografías</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'
+      +t.fotos.map(function(f){ return '<button class="btn btn-sm" onclick="verArchivo(\''+esc(f.id)+'\',\''+esc(String(f.nombre||"").replace(/\x27/g,""))+'\')">🖼️ '+esc(f.nombre||'foto')+'</button>'; }).join('')+'</div></div>';
+  }
+  // Documento del solicitante
+  if(t.docSolicitante){
+    h+='<div class="d-sec"><div class="k">Documento del solicitante</div><button class="btn btn-sm" onclick="verArchivo(\''+esc(t.docSolicitante)+'\',\''+esc(String(t.docSolicitanteNombre||"doc").replace(/\x27/g,""))+'\')">📄 '+esc(t.docSolicitanteNombre||'Ver documento')+'</button></div>';
+  }
   h+='<div class="d-sec"><div class="k">Artículos ('+(t.articulos||[]).length+')</div>';
   (t.articulos||[]).forEach(function(a,i){
     h+='<div class="art-block"><div class="t" style="color:var(--accent-l);font-weight:700;margin-bottom:6px;">Artículo '+(i+1)+' — '+esc(a.num)+'</div>'
@@ -463,12 +533,94 @@ function pintarDetalle(){
   });
   h+='</div>';
   document.getElementById('det-bd').innerHTML=h;
+  // Botones por contexto
+  var ft=document.getElementById('det-ft'); var b=''; var me=S.user.email;
+  if(MODO!=='solicitar' && t.origen==='Solicitud' && t.estatus==='En proceso'){
+    b+='<button class="btn btn-sm btn-danger" onclick="accPedir(\'rechazar\')">✕ Rechazar</button>';
+    b+='<button class="btn btn-sm" style="background:rgba(46,160,67,.16);border-color:rgba(46,160,67,.4);color:var(--green-l);" onclick="autorizar()">✔ Autorizar</button>';
+  }
+  if(MODO==='solicitar' && t.estatus==='Abierto' && (t.solicitaCorreo===me || t.enviarACorreo===me)){
+    var esFactura=(t.tipoDoc==='Factura');
+    b+='<button class="btn btn-sm btn-primary" onclick="accPedir(\'cargardoc\')">📄 '+(esFactura?'Cargar nota de crédito':'Cargar devolución')+'</button>';
+  }
+  b+='<button class="btn btn-sm btn-ghost" onclick="cerrar(\'m-det\')">Cerrar</button>';
+  ft.innerHTML=b;
+}
+
+/* ---------- acciones (rechazar / cargar documento) ---------- */
+var ACC_MODE='';
+function accPedir(modo){
+  ACC_MODE=modo;
+  var tw=document.getElementById('acc-txt-wrap'), fw=document.getElementById('acc-file-wrap');
+  document.getElementById('acc-err').textContent='';
+  if(modo==='rechazar'){
+    document.getElementById('acc-ttl').textContent='Rechazar solicitud';
+    document.getElementById('acc-lbl').innerHTML='Motivo del rechazo <span class="req">*</span>';
+    tw.style.display=''; fw.style.display='none'; document.getElementById('acc-txt').value='';
+    document.getElementById('acc-ok').textContent='Rechazar';
+  } else if(modo==='cargardoc'){
+    var t=S.curFolio; var esFactura=(t&&t.tipoDoc==='Factura');
+    document.getElementById('acc-ttl').textContent= esFactura?'Cargar nota de crédito':'Cargar devolución';
+    document.getElementById('acc-file-lbl').innerHTML=(esFactura?'Nota de crédito':'Documento de devolución')+' <span class="req">*</span>';
+    document.getElementById('acc-file').value='';
+    tw.style.display='none'; fw.style.display='';
+    document.getElementById('acc-ok').textContent='Enviar documento';
+  }
+  abrir('m-acc');
+}
+async function accConfirmar(){
+  var t=S.curFolio; if(!t) return; var err=document.getElementById('acc-err'); err.textContent='';
+  var btn=document.getElementById('acc-ok');
+  if(ACC_MODE==='rechazar'){
+    var txt=document.getElementById('acc-txt').value.trim(); if(!txt){ err.textContent='Escribe el motivo.'; return; }
+    btn.disabled=true; btn.textContent='Guardando…';
+    try{ await listUpdate(L_FOLIOS,t.id,{ GrEstatus:'Rechazado', GrComentarioRechazo:txt }); Object.assign(t,{estatus:'Rechazado',comentarioRechazo:txt}); cerrar('m-acc'); pintarDetalle(); render(); toast('Solicitud rechazada'); }
+    catch(e){ err.textContent='No se pudo. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Rechazar'; }
+  } else if(ACC_MODE==='cargardoc'){
+    var file=(document.getElementById('acc-file').files||[])[0]; if(!file){ err.textContent='Selecciona el documento.'; return; }
+    btn.disabled=true; btn.textContent='Subiendo…';
+    try{
+      var ref=await subirArchivo('GAR_Documentos',t.id,file,'DOC_');
+      var fields={ GrEstatus:'Documento enviado por solicitante' };
+      if(ref){ fields.GrDocSolicitante=ref.id; fields.GrDocSolicitanteNombre=ref.nombre; }
+      await listUpdate(L_FOLIOS,t.id,fields);
+      Object.assign(t,{estatus:'Documento enviado por solicitante', docSolicitante:ref?ref.id:t.docSolicitante, docSolicitanteNombre:ref?ref.nombre:t.docSolicitanteNombre});
+      cerrar('m-acc'); pintarDetalle(); render(); toast('Documento enviado');
+    }catch(e){ err.textContent='No se pudo subir. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Enviar documento'; }
+  }
+}
+async function autorizar(){
+  var t=S.curFolio; if(!t) return;
+  var nuevoFolio=numeroNuevo('GAR');
+  try{
+    await listUpdate(L_FOLIOS,t.id,{ Title:nuevoFolio, GrEstatus:'Abierto', GrTecnicoNombre:S.user.nombre, GrTecnicoCorreo:S.user.email, GrFechaAutorizacion:nowISO() });
+    Object.assign(t,{ folio:nuevoFolio, estatus:'Abierto', tecnicoNombre:S.user.nombre, tecnicoCorreo:S.user.email });
+    cerrar('m-det'); await loadData(); toast('Solicitud autorizada → folio '+nuevoFolio);
+  }catch(e){ toast('No se pudo autorizar'); }
+}
+
+/* ---------- configuración ---------- */
+function abrirConfig(){ if(!S.completo){ toast('Solo acceso completo'); return; }
+  document.getElementById('cfg-mostrador').value=S.cfg.mostrador||'';
+  document.getElementById('cfg-almacen').value=S.cfg.almacen||'';
+  document.getElementById('cfg-cc').value=S.cfg.cc||'';
+  document.getElementById('cfg-err').textContent=''; abrir('m-cfg');
+}
+async function guardarConfig(){
+  var err=document.getElementById('cfg-err'); err.textContent='';
+  var body={ Title:'config', GrMostradorCorreo:document.getElementById('cfg-mostrador').value.trim(), GrAlmacenCorreo:document.getElementById('cfg-almacen').value.trim(), GrCC:document.getElementById('cfg-cc').value.trim() };
+  try{
+    if(S.cfgId) await listUpdate(L_CONFIG,S.cfgId,body); else { var r=await listCreate(L_CONFIG,body); if(r.id)S.cfgId=r.id; }
+    S.cfg={ mostrador:body.GrMostradorCorreo, almacen:body.GrAlmacenCorreo, cc:body.GrCC };
+    cerrar('m-cfg'); toast('Configuración guardada');
+  }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
 }
 
 /* init */
 document.addEventListener('DOMContentLoaded', boot); boot();
 window.setView=setView; window.abrirNuevo=abrirNuevo; window.crearFolio=crearFolio; window.cerrar=cerrar; window.refrescar=refrescar;
 window.artAdd=artAdd; window.artRender=artRender; window.artLookup=artLookup; window.cliLookup=cliLookup; window.abrirFolio=abrirFolio; window.render=render; window.enviarChange=enviarChange;
+window.fotosChange=fotosChange; window.accPedir=accPedir; window.accConfirmar=accConfirmar; window.autorizar=autorizar; window.abrirConfig=abrirConfig; window.guardarConfig=guardarConfig; window.verArchivo=verArchivo;
 </script>
 </body>
 </html>

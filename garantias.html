@@ -126,8 +126,8 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
         <div class="fld"><label>Número de cliente <span class="req">*</span></label><input class="inp" id="f-numcli" placeholder="Nº cliente" onblur="cliLookup()"></div>
       </div>
       <div class="fld"><label>Cliente</label><input class="inp" id="f-cli" placeholder="(automático según número de cliente)" disabled></div>
-      <div class="grid2">
-        <div class="fld"><label>Enviar a</label><select class="inp" id="f-enviar" onchange="enviarChange()"><option value="">Selecciona…</option></select></div>
+      <div class="grid2" id="f-enviar-row">
+        <div class="fld"><label>Enviar a <span class="req">*</span></label><select class="inp" id="f-enviar" onchange="enviarChange()"><option value="">Selecciona…</option></select></div>
         <div class="fld"><label>Correo</label><input class="inp" id="f-enviar-mail" placeholder="(automático)" disabled></div>
       </div>
 
@@ -174,6 +174,7 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
   <div class="modal" style="width:520px;">
     <div class="modal-hd"><h3>Configuración de correos</h3><button class="x" onclick="cerrar('m-cfg')">✕</button></div>
     <div class="modal-bd">
+      <div class="fld"><label>Correos — Técnicos de calidad (reciben las solicitudes; separa con ;)</label><input class="inp" id="cfg-calidad" placeholder="correo1@...; correo2@..."></div>
       <div class="fld"><label>Correo — Encargado de Mostrador</label><input class="inp" id="cfg-mostrador" placeholder="correo@..."></div>
       <div class="fld"><label>Correo — Almacén</label><input class="inp" id="cfg-almacen" placeholder="correo@..."></div>
       <div class="fld"><label>Correo — Jefe de Almacén (respaldo para cerrar)</label><input class="inp" id="cfg-almacen-jefe" placeholder="correo@..."></div>
@@ -207,7 +208,7 @@ var EVALUACION=['Pruebas en sitio','Panel de pruebas','Visual'];
 var TIPOGARANTIA=['Equipo','Departamento','Proveedor'];
 var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Documento enviado por solicitante':'#a855f7','Aplicado por mostrador':'#a855f7','Aplicado por almacén':'#a855f7','En almacén de garantías':'#58a6ff','Nota de crédito':'#a855f7','Enviado por garantías':'#f59e0b','Atendido':'#2ea043','Cerrado':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
 
-var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{mostrador:'',almacen:'',almacenJefe:'',cc:''}, cfgId:null, filtros:{}, artDraft:[], fotoDraft:[], dispDraft:[], dispFotoDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
+var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{calidad:'',mostrador:'',almacen:'',almacenJefe:'',cc:''}, cfgId:null, filtros:{}, artDraft:[], fotoDraft:[], dispDraft:[], dispFotoDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
 var DISP_EQUIPO=['Chatarra','Reparación'], DISP_PROV=['Garantía recuperada','Garantía no recuperada'];
 
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -287,7 +288,7 @@ async function loadData(){
   }
   S.enviarUsers.sort(function(a,b){ return (a.nombre||'').localeCompare(b.nombre||''); });
   // Configuración de correos (Mostrador / Almacén / CC)
-  try{ var cf=await listGet(L_CONFIG); if(cf&&cf[0]){ var f=cf[0].fields||{}; S.cfgId=cf[0].id; S.cfg={ mostrador:f.GrMostradorCorreo||'', almacen:f.GrAlmacenCorreo||'', almacenJefe:f.GrAlmacenJefeCorreo||'', cc:f.GrCC||'' }; } }catch(e){}
+  try{ var cf=await listGet(L_CONFIG); if(cf&&cf[0]){ var f=cf[0].fields||{}; S.cfgId=cf[0].id; S.cfg={ calidad:f.GrCalidadCorreo||'', mostrador:f.GrMostradorCorreo||'', almacen:f.GrAlmacenCorreo||'', almacenJefe:f.GrAlmacenJefeCorreo||'', cc:f.GrCC||'' }; } }catch(e){}
   S._everLoaded=true; render();
 }
 function mapFolio(i){ var f=i.fields||{}; return {
@@ -376,6 +377,7 @@ function abrirNuevo(){
   document.getElementById('f-cli').value='';
   var selEnv=document.getElementById('f-enviar'); selEnv.innerHTML='<option value="">Selecciona…</option>'+S.enviarUsers.map(function(x){return '<option value="'+esc(x.correo)+'" data-nom="'+esc(x.nombre)+'">'+esc(x.nombre)+'</option>';}).join(''); selEnv.value='';
   document.getElementById('f-enviar-mail').value='';
+  var envRow=document.getElementById('f-enviar-row'); if(envRow) envRow.style.display=(MODO==='solicitar')?'none':'';
   S.artDraft=[nuevoArt()]; artRender();
   document.getElementById('new-ok').textContent=(MODO==='solicitar')?'Enviar solicitud':'Crear folio';
   abrir('m-new');
@@ -466,6 +468,7 @@ async function crearFolio(){
   if(!tipodoc){ err.textContent='Selecciona el tipo de documento.'; return; }
   if(!numdoc){ err.textContent='Escribe el número de documento.'; return; }
   if(!numcli){ err.textContent='Escribe el número de cliente.'; return; }
+  if(MODO!=='solicitar' && !envCorreo){ err.textContent='Selecciona a quién enviar el folio ("Enviar a").'; return; }
   if(!S.artDraft.length){ err.textContent='Agrega al menos un artículo.'; return; }
   for(var k=0;k<S.artDraft.length;k++){ var a=S.artDraft[k], n=k+1;
     if(!(a.num||'').trim()){ err.textContent='Artículo '+n+': falta el número de artículo.'; return; }
@@ -681,6 +684,7 @@ async function autorizar(){
 
 /* ---------- configuración ---------- */
 function abrirConfig(){ if(!S.completo){ toast('Solo acceso completo'); return; }
+  document.getElementById('cfg-calidad').value=S.cfg.calidad||'';
   document.getElementById('cfg-mostrador').value=S.cfg.mostrador||'';
   document.getElementById('cfg-almacen').value=S.cfg.almacen||'';
   document.getElementById('cfg-almacen-jefe').value=S.cfg.almacenJefe||'';
@@ -689,10 +693,10 @@ function abrirConfig(){ if(!S.completo){ toast('Solo acceso completo'); return; 
 }
 async function guardarConfig(){
   var err=document.getElementById('cfg-err'); err.textContent='';
-  var body={ Title:'config', GrMostradorCorreo:document.getElementById('cfg-mostrador').value.trim(), GrAlmacenCorreo:document.getElementById('cfg-almacen').value.trim(), GrAlmacenJefeCorreo:document.getElementById('cfg-almacen-jefe').value.trim(), GrCC:document.getElementById('cfg-cc').value.trim() };
+  var body={ Title:'config', GrCalidadCorreo:document.getElementById('cfg-calidad').value.trim(), GrMostradorCorreo:document.getElementById('cfg-mostrador').value.trim(), GrAlmacenCorreo:document.getElementById('cfg-almacen').value.trim(), GrAlmacenJefeCorreo:document.getElementById('cfg-almacen-jefe').value.trim(), GrCC:document.getElementById('cfg-cc').value.trim() };
   try{
     if(S.cfgId) await listUpdate(L_CONFIG,S.cfgId,body); else { var r=await listCreate(L_CONFIG,body); if(r.id)S.cfgId=r.id; }
-    S.cfg={ mostrador:body.GrMostradorCorreo, almacen:body.GrAlmacenCorreo, almacenJefe:body.GrAlmacenJefeCorreo, cc:body.GrCC };
+    S.cfg={ calidad:body.GrCalidadCorreo, mostrador:body.GrMostradorCorreo, almacen:body.GrAlmacenCorreo, almacenJefe:body.GrAlmacenJefeCorreo, cc:body.GrCC };
     cerrar('m-cfg'); toast('Configuración guardada');
   }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
 }

@@ -161,7 +161,7 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
     <div class="modal-hd"><h3 id="acc-ttl">Acción</h3><button class="x" onclick="cerrar('m-acc')">✕</button></div>
     <div class="modal-bd">
       <div id="acc-txt-wrap" class="fld"><label id="acc-lbl">Comentario</label><textarea class="inp" id="acc-txt" rows="3"></textarea></div>
-      <div id="acc-file-wrap" class="fld" style="display:none;"><label id="acc-file-lbl">Documento</label><input type="file" id="acc-file" accept=".pdf,.doc,.docx,.xls,.xlsx,.xlsm,.png,.jpg,.jpeg" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;"></div>
+      <div id="acc-file-wrap" class="fld" style="display:none;"><label id="acc-file-lbl">Documento</label><input type="file" id="acc-file" accept="application/pdf,.pdf" multiple onchange="accFilesChange()" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;"><div id="acc-file-lista" style="font-size:.76rem;color:var(--dim);margin-top:4px;"></div></div>
       <div id="acc-note" style="color:var(--dim);font-size:.82rem;margin-bottom:6px;display:none;"></div>
       <div style="color:#fca5a5;font-size:.8rem;min-height:18px;" id="acc-err"></div>
     </div>
@@ -208,7 +208,7 @@ var EVALUACION=['Pruebas en sitio','Panel de pruebas','Visual'];
 var TIPOGARANTIA=['Equipo','Departamento','Proveedor'];
 var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Documento enviado por solicitante':'#a855f7','Aplicado por mostrador':'#a855f7','Aplicado por almacén':'#a855f7','En almacén de garantías':'#58a6ff','Nota de crédito':'#a855f7','Enviado por garantías':'#f59e0b','Atendido':'#2ea043','Cerrado':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
 
-var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{calidad:'',mostrador:'',almacen:'',almacenJefe:'',cc:''}, cfgId:null, filtros:{}, artDraft:[], fotoDraft:[], dispDraft:[], dispFotoDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
+var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{calidad:'',mostrador:'',almacen:'',almacenJefe:'',cc:''}, cfgId:null, filtros:{}, artDraft:[], fotoDraft:[], dispDraft:[], dispFotoDraft:[], dispDocDraft:[], accFileDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
 var DISP_EQUIPO=['Chatarra','Reparación'], DISP_PROV=['Garantía recuperada','Garantía no recuperada'];
 
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -296,11 +296,15 @@ function mapFolio(i){ var f=i.fields||{}; return {
   tecnicoNombre:f.GrTecnicoNombre||'', tecnicoCorreo:lc(f.GrTecnicoCorreo||''),
   solicita:f.GrSolicita||'', solicitaCorreo:lc(f.GrSolicitaCorreo||''),
   tipoOrigen:f.GrTipoOrigen||'', fotos:_pj(f.GrFotos,[]),
-  docSolicitante:f.GrDocSolicitante||'', docSolicitanteNombre:f.GrDocSolicitanteNombre||'',
-  docMostrador:f.GrDocMostrador||'', docMostradorNombre:f.GrDocMostradorNombre||'',
-  docAlmacen:f.GrDocAlmacen||'', docAlmacenNombre:f.GrDocAlmacenNombre||'',
-  notaCredito:f.GrNotaCredito||'', notaCreditoNombre:f.GrNotaCreditoNombre||'',
-  docCierre:f.GrDocCierre||'', docCierreNombre:f.GrDocCierreNombre||'',
+  docsSolicitante:_pj(f.GrDocsSolicitante, (f.GrDocSolicitante?[{id:f.GrDocSolicitante,nombre:f.GrDocSolicitanteNombre||'documento'}]:[])),
+  comentSolicitante:f.GrComentarioSolicitante||'',
+  docsMostrador:_pj(f.GrDocsMostrador, (f.GrDocMostrador?[{id:f.GrDocMostrador,nombre:f.GrDocMostradorNombre||'documento'}]:[])),
+  comentMostrador:f.GrComentarioMostrador||'',
+  docsAlmacen:_pj(f.GrDocsAlmacen, (f.GrDocAlmacen?[{id:f.GrDocAlmacen,nombre:f.GrDocAlmacenNombre||'documento'}]:[])),
+  docsGarantias:_pj(f.GrDocsGarantias,[]),
+  docsDisposicion:_pj(f.GrDocsDisposicion,[]),
+  docsCierre:_pj(f.GrDocsCierre, (f.GrDocCierre?[{id:f.GrDocCierre,nombre:f.GrDocCierreNombre||'documento'}]:[])),
+  usuarioSolicitaNombre:f.GrUsuarioSolicitaNombre||'', usuarioSolicitaCorreo:lc(f.GrUsuarioSolicitaCorreo||''),
   fotosDestruccion:_pj(f.GrFotosDestruccion,[]),
   fechaEnvioGarantias:f.GrFechaEnvioGarantias||'', fechaCierre:f.GrFechaCierre||'',
   comentarioRechazo:f.GrComentarioRechazo||'', fechaAutorizacion:f.GrFechaAutorizacion||'',
@@ -488,6 +492,7 @@ async function crearFolio(){
       Title: folio,
       GrTecnicoNombre:(esSolic?'':S.user.nombre), GrTecnicoCorreo:(esSolic?'':S.user.email),
       GrSolicita:solicita, GrSolicitaCorreo:(esSolic?S.user.email:''),
+      GrUsuarioSolicitaNombre:S.user.nombre, GrUsuarioSolicitaCorreo:S.user.email,
       GrTipoOrigen:origen,
       GrSucursal:sucursal, GrDepartamento:depto, GrEstablo:establo,
       GrTipoDocumento:tipodoc, GrNumeroDocumento:numdoc,
@@ -524,6 +529,7 @@ function pintarDetalle(){
     +'<div class="d-field"><span class="lbl">Estatus</span><span class="val"><span class="st" style="background:'+hex2rgba(EST_COLOR[t.estatus],.16)+';color:'+(EST_COLOR[t.estatus]||'#888')+'">'+esc(t.estatus)+'</span></span></div>'
     +dF('Técnico', t.tecnicoNombre||'— (sin asignar)')
     +dF('Solicita', t.solicita)
+    +(t.usuarioSolicitaNombre?dF('Usuario que solicita', t.usuarioSolicitaNombre+(t.usuarioSolicitaCorreo?(' · '+t.usuarioSolicitaCorreo):'')):'')
     +dF('Origen', t.tipoOrigen)
     +dF('Sucursal', t.sucursal)+dF('Departamento', t.departamento)+dF('Establo', t.establo)
     +dF('Tipo de documento', t.tipoDoc)+dF('Número de documento', t.numDoc)
@@ -535,15 +541,18 @@ function pintarDetalle(){
     h+='<div class="d-sec"><div class="k">Fotografías</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'
       +t.fotos.map(function(f){ return '<button class="btn btn-sm" onclick="verArchivo(\''+esc(f.id)+'\',\''+esc(String(f.nombre||"").replace(/\x27/g,""))+'\')">🖼️ '+esc(f.nombre||'foto')+'</button>'; }).join('')+'</div></div>';
   }
-  // Documentos del proceso
-  var docBtn=function(id,nom,et){ return '<button class="btn btn-sm" onclick="verArchivo(\''+esc(id)+'\',\''+esc(String(nom||"doc").replace(/\x27/g,""))+'\')">📄 '+esc(et||nom||'Ver')+'</button>'; };
-  var docs=[];
-  if(t.docSolicitante) docs.push('<div style="margin-bottom:4px;"><span style="color:var(--dim);font-size:.76rem;">'+(t.tipoDoc==='Factura'?'Documentos del solicitante':'Devolución (solicitante)')+':</span> '+docBtn(t.docSolicitante,t.docSolicitanteNombre,t.docSolicitanteNombre||'Ver')+'</div>');
-  if(t.docMostrador) docs.push('<div style="margin-bottom:4px;"><span style="color:var(--dim);font-size:.76rem;">Aplicado por mostrador:</span> '+docBtn(t.docMostrador,t.docMostradorNombre,t.docMostradorNombre||'Ver')+'</div>');
-  if(t.notaCredito) docs.push('<div style="margin-bottom:4px;"><span style="color:var(--dim);font-size:.76rem;">Nota de crédito:</span> '+docBtn(t.notaCredito,t.notaCreditoNombre,t.notaCreditoNombre||'Ver')+'</div>');
-  if(t.docAlmacen) docs.push('<div style="margin-bottom:4px;"><span style="color:var(--dim);font-size:.76rem;">Recepción en almacén:</span> '+docBtn(t.docAlmacen,t.docAlmacenNombre,t.docAlmacenNombre||'Ver')+'</div>');
-  if(t.docCierre) docs.push('<div style="margin-bottom:4px;"><span style="color:var(--dim);font-size:.76rem;">Cierre:</span> '+docBtn(t.docCierre,t.docCierreNombre,t.docCierreNombre||'Ver')+'</div>');
-  if(docs.length) h+='<div class="d-sec"><div class="k">Documentos</div>'+docs.join('')+'</div>';
+  // Documentos del proceso (arreglos por etapa)
+  var docBtn=function(f){ return '<button class="btn btn-sm" onclick="verArchivo(\''+esc(f.id)+'\',\''+esc(String(f.nombre||"doc").replace(/\x27/g,""))+'\')">📄 '+esc(f.nombre||'Ver')+'</button>'; };
+  var docRow=function(label,arr,coment){ if(!arr||!arr.length) return ''; return '<div style="margin-bottom:6px;"><span style="color:var(--dim);font-size:.76rem;">'+esc(label)+':</span> '+arr.map(docBtn).join(' ')+(coment?('<div style="color:var(--muted);font-size:.76rem;margin-top:2px;">💬 '+esc(coment)+'</div>'):'')+'</div>'; };
+  var esFac=(t.tipoDoc==='Factura');
+  var docs='';
+  docs+=docRow(esFac?'Nota de crédito (solicitante)':'Devolución (solicitante)', t.docsSolicitante, t.comentSolicitante);
+  docs+=docRow('Aplicado por mostrador', t.docsMostrador, t.comentMostrador);
+  docs+=docRow('Enviado por almacén', t.docsAlmacen);
+  docs+=docRow('Entrada a almacén de garantías', t.docsGarantias);
+  docs+=docRow('Devolución de garantías a almacén', t.docsDisposicion);
+  docs+=docRow('Cierre', t.docsCierre);
+  if(docs) h+='<div class="d-sec"><div class="k">Documentos</div>'+docs+'</div>';
   // Fotos de destrucción (extranjera)
   if((t.fotosDestruccion||[]).length){
     h+='<div class="d-sec"><div class="k">Evidencia de destrucción</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'
@@ -574,19 +583,15 @@ function pintarDetalle(){
   }
   // Asistente administrativo (solicitante / enviar a): envía documentos cuando el folio está Abierto
   if(MODO==='solicitar' && est==='Abierto' && R.esAsistente){
-    b+=bPrim("accPedir('cargardoc')",'📄 '+(R.esFactura?'Enviar documentos (a calidad)':'Enviar devolución (a mostrador)'));
+    b+=bPrim("accPedir('cargardoc')",'📄 '+(R.esFactura?'Enviar nota de crédito':'Enviar devolución (a mostrador)'));
   }
   // Devolución: Mostrador aplica
   if(MODO!=='solicitar' && !R.esFactura && est==='Documento enviado por solicitante' && (R.esMostrador||R.esAdmin)){
     b+=bPrim("accPedir('mostrador')",'🧾 Aplicar devolución (Mostrador)');
   }
-  // Nota de crédito: Técnico de calidad registra
-  if(MODO!=='solicitar' && R.esFactura && est==='Documento enviado por solicitante' && R.esIng){
-    b+=bPrim("accPedir('notacredito')",'🧾 Registrar nota de crédito');
-  }
   // Devolución: Almacén recibe
   if(MODO!=='solicitar' && !R.esFactura && est==='Aplicado por mostrador' && (R.esAlmacen||R.esAdmin)){
-    b+=bPrim("accPedir('almacen')",'📦 Recibir en almacén');
+    b+=bPrim("accPedir('almacen')",'📦 Enviar por almacén');
   }
   // Devolución: Ingeniería ingresa a almacén de garantías
   if(MODO!=='solicitar' && !R.esFactura && est==='Aplicado por almacén' && R.esIng){
@@ -613,25 +618,25 @@ function rolGar(t){
   return { esMostrador:esMostrador, esAlmacen:esAlmacen, esAsistente:esAsistente, esIng:esIng, esAdmin:esAdmin, esFactura:(t.tipoDoc==='Factura') };
 }
 
-/* ---------- acciones por etapa ---------- */
+/* ---------- acciones por etapa (multi-PDF + comentarios) ---------- */
 var ACC_MODE='';
-// Configuración de cada acción con subida de documento y avance de estatus
 function accCfg(t){
   var esFactura=(t&&t.tipoDoc==='Factura');
   return {
-    cargardoc:{ ttl:(esFactura?'Enviar documentos a calidad':'Enviar devolución a mostrador'), flbl:(esFactura?'Documentos (solicitud / factura)':'Documento de devolución'), req:true, carpeta:'GAR_Documentos', pref:'DOC_', fid:'GrDocSolicitante', fnom:'GrDocSolicitanteNombre', k:'docSolicitante', kn:'docSolicitanteNombre', estatus:'Documento enviado por solicitante', ok:'Enviar', note:(esFactura?'Se enviará al técnico de calidad para registrar la nota de crédito.':'Se enviará al encargado de mostrador para aplicar la devolución.') },
-    mostrador:{ ttl:'Aplicar devolución (Mostrador)', flbl:'Comprobante de devolución aplicada', req:true, carpeta:'GAR_Documentos', pref:'MOST_', fid:'GrDocMostrador', fnom:'GrDocMostradorNombre', k:'docMostrador', kn:'docMostradorNombre', estatus:'Aplicado por mostrador', ok:'Aplicar', note:'Pasará a almacén para recepción.' },
-    almacen:{ ttl:'Recibir en almacén', flbl:'Evidencia de recepción', req:true, carpeta:'GAR_Documentos', pref:'ALM_', fid:'GrDocAlmacen', fnom:'GrDocAlmacenNombre', k:'docAlmacen', kn:'docAlmacenNombre', estatus:'Aplicado por almacén', ok:'Recibir', note:'Ingeniería podrá ingresarlo al almacén de garantías.' },
-    notacredito:{ ttl:'Registrar nota de crédito', flbl:'Nota de crédito', req:true, carpeta:'GAR_Documentos', pref:'NC_', fid:'GrNotaCredito', fnom:'GrNotaCreditoNombre', k:'notaCredito', kn:'notaCreditoNombre', estatus:'Nota de crédito', ok:'Registrar', note:'Luego podrás capturar la disposición por artículo.' },
-    enalmacen:{ ttl:'Ingresar a almacén de garantías', flbl:'', req:false, soloConfirm:true, estatus:'En almacén de garantías', ok:'Confirmar ingreso', note:'Confirmas que los artículos ingresaron al almacén de garantías para su disposición.' },
-    cerrar:{ ttl:'Confirmar recepción y cerrar', flbl:'Evidencia de recepción (opcional)', req:false, carpeta:'GAR_Documentos', pref:'CIERRE_', fid:'GrDocCierre', fnom:'GrDocCierreNombre', k:'docCierre', kn:'docCierreNombre', estatus:'Cerrado', fecha:'GrFechaCierre', ok:'Cerrar folio', note:'El almacén confirma la recepción de lo enviado por garantías. El folio quedará Cerrado.' }
+    cargardoc:{ ttl:(esFactura?'Enviar nota de crédito':'Enviar devolución a mostrador'), flbl:(esFactura?'Nota de crédito (PDF)':'Documento(s) de devolución (PDF)'), req:true, multi:true, coment:true, carpeta:'GAR_Documentos', pref:'DOC_', docsField:'GrDocsSolicitante', komentField:'GrComentarioSolicitante', k:'docsSolicitante', kComent:'comentSolicitante', estatus:(esFactura?'Nota de crédito':'Documento enviado por solicitante'), ok:'Enviar', note:(esFactura?'El documento quedará como la nota de crédito y pasará al técnico de garantías.':'Se enviará al encargado de mostrador para aplicar la devolución.') },
+    mostrador:{ ttl:'Aplicar devolución (Mostrador)', flbl:'Comprobante(s) de devolución aplicada (PDF)', req:true, multi:true, coment:true, carpeta:'GAR_Documentos', pref:'MOST_', docsField:'GrDocsMostrador', komentField:'GrComentarioMostrador', k:'docsMostrador', kComent:'comentMostrador', estatus:'Aplicado por mostrador', ok:'Aplicar', note:'Pasará a almacén para recepción.' },
+    almacen:{ ttl:'Enviar por almacén', flbl:'Documento(s) de salida de almacén (PDF)', req:true, multi:true, carpeta:'GAR_Documentos', pref:'ALM_', docsField:'GrDocsAlmacen', k:'docsAlmacen', estatus:'Aplicado por almacén', ok:'Enviar', note:'Se enviará al técnico de garantías.' },
+    enalmacen:{ ttl:'Ingresar a almacén de garantías', flbl:'Documento(s) de entrada (PDF)', req:false, multi:true, carpeta:'GAR_Documentos', pref:'GAR_', docsField:'GrDocsGarantias', k:'docsGarantias', estatus:'En almacén de garantías', ok:'Confirmar ingreso', note:'Confirmas la entrada al almacén de garantías. Puedes adjuntar documentos (opcional).' },
+    cerrar:{ ttl:'Confirmar recepción y cerrar', flbl:'Evidencia de recepción (PDF, opcional)', req:false, multi:true, carpeta:'GAR_Documentos', pref:'CIERRE_', docsField:'GrDocsCierre', k:'docsCierre', estatus:'Cerrado', fecha:'GrFechaCierre', ok:'Cerrar folio', note:'El almacén confirma la recepción de lo enviado por garantías. El folio quedará Cerrado.' }
   };
 }
+function accFilesChange(){ var inp=document.getElementById('acc-file'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ if(/\.pdf$/i.test(f.name)) S.accFileDraft.push(f); }); try{ inp.value=''; }catch(e){} var l=document.getElementById('acc-file-lista'); if(l) l.innerHTML=S.accFileDraft.length?('📎 '+S.accFileDraft.map(function(f){return esc(f.name);}).join(', ')+' <button class="btn btn-sm btn-ghost" onclick="S.accFileDraft=[];accFilesChange();">limpiar</button>'):''; }
 function accPedir(modo){
-  ACC_MODE=modo;
+  ACC_MODE=modo; S.accFileDraft=[];
   var t=S.curFolio;
   var tw=document.getElementById('acc-txt-wrap'), fw=document.getElementById('acc-file-wrap'), nt=document.getElementById('acc-note');
   document.getElementById('acc-err').textContent=''; nt.style.display='none'; nt.textContent='';
+  document.getElementById('acc-file').value=''; var l=document.getElementById('acc-file-lista'); if(l) l.innerHTML='';
   if(modo==='rechazar'){
     document.getElementById('acc-ttl').textContent='Rechazar solicitud';
     document.getElementById('acc-lbl').innerHTML='Motivo del rechazo <span class="req">*</span>';
@@ -641,9 +646,9 @@ function accPedir(modo){
   }
   var cfg=accCfg(t)[modo]; if(!cfg) return;
   document.getElementById('acc-ttl').textContent=cfg.ttl;
-  tw.style.display='none';
-  if(cfg.soloConfirm){ fw.style.display='none'; }
-  else { fw.style.display=''; document.getElementById('acc-file-lbl').innerHTML=cfg.flbl+(cfg.req?' <span class="req">*</span>':' <span style="color:var(--dim);font-weight:400;">(opcional)</span>'); document.getElementById('acc-file').value=''; }
+  fw.style.display=''; document.getElementById('acc-file-lbl').innerHTML=cfg.flbl+(cfg.req?' <span class="req">*</span>':' <span style="color:var(--dim);font-weight:400;">(opcional)</span>');
+  if(cfg.coment){ tw.style.display=''; document.getElementById('acc-lbl').innerHTML='Comentarios <span style="color:var(--dim);font-weight:400;">(opcional)</span>'; document.getElementById('acc-txt').value=''; }
+  else tw.style.display='none';
   if(cfg.note){ nt.textContent=cfg.note; nt.style.display=''; }
   document.getElementById('acc-ok').textContent=cfg.ok;
   abrir('m-acc');
@@ -659,15 +664,19 @@ async function accConfirmar(){
     return;
   }
   var cfg=accCfg(t)[ACC_MODE]; if(!cfg) return;
-  var file=null;
-  if(!cfg.soloConfirm){ file=(document.getElementById('acc-file').files||[])[0]||null; if(cfg.req && !file){ err.textContent='Selecciona el documento.'; return; } }
-  btn.disabled=true; btn.textContent=file?'Subiendo…':'Guardando…';
+  var files=S.accFileDraft.slice();
+  if(cfg.req && !files.length){ err.textContent='Adjunta al menos un documento PDF.'; return; }
+  var coment=cfg.coment?document.getElementById('acc-txt').value.trim():'';
+  btn.disabled=true; btn.textContent=files.length?'Subiendo…':'Guardando…';
   try{
-    var fields={ GrEstatus:cfg.estatus }, ref=null;
-    if(file && cfg.carpeta){ ref=await subirArchivo(cfg.carpeta,t.id,file,cfg.pref); if(ref){ fields[cfg.fid]=ref.id; fields[cfg.fnom]=ref.nombre; } }
-    if(cfg.fecha){ fields[cfg.fecha]=nowISO(); }
+    var refs=(t[cfg.k]||[]).slice();
+    for(var i=0;i<files.length;i++){ try{ var rf=await subirArchivo(cfg.carpeta,t.id,files[i],cfg.pref+(i+1)+'_'); if(rf) refs.push(rf); }catch(ef){} }
+    var fields={ GrEstatus:cfg.estatus };
+    fields[cfg.docsField]=JSON.stringify(refs);
+    if(cfg.komentField && coment) fields[cfg.komentField]=coment;
+    if(cfg.fecha) fields[cfg.fecha]=nowISO();
     await listUpdate(L_FOLIOS,t.id,fields);
-    var patch={ estatus:cfg.estatus }; if(ref){ patch[cfg.k]=ref.id; patch[cfg.kn]=ref.nombre; }
+    var patch={ estatus:cfg.estatus }; patch[cfg.k]=refs; if(cfg.kComent && coment) patch[cfg.kComent]=coment;
     Object.assign(t,patch);
     cerrar('m-acc'); pintarDetalle(); render(); toast('Etapa actualizada: '+cfg.estatus);
   }catch(e){ err.textContent='No se pudo. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent=cfg.ok; }
@@ -706,7 +715,7 @@ function dispOpts(tg){ if(tg==='Proveedor') return DISP_PROV; if(tg==='Equipo'||
 function abrirDisposicion(){
   var t=S.curFolio; if(!t) return;
   S.dispDraft=(t.articulos||[]).map(function(a){ return Object.assign({},a); });
-  S.dispFotoDraft=[];
+  S.dispFotoDraft=[]; S.dispDocDraft=[];
   document.getElementById('disp-sub').textContent=t.folio+' · asigna tipo de garantía y disposición a cada artículo';
   document.getElementById('disp-err').textContent='';
   dispRender(); abrir('m-disp');
@@ -730,9 +739,14 @@ function dispRender(){
       +'<input type="file" id="disp-fotos" accept="image/*" multiple onchange="dispFotosChange()" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;">'
       +'<div id="disp-fotos-lista" style="font-size:.76rem;color:var(--dim);margin-top:4px;">'+(S.dispFotoDraft.length?('📷 '+S.dispFotoDraft.map(function(f){return esc(f.name);}).join(', ')):'')+'</div></div>';
   }
+  // Documentos de devolución de garantías al almacén (PDF, opcional)
+  h+='<div class="fld" style="margin-top:6px;"><label>Documentos de devolución al almacén (PDF) <span style="color:var(--dim);font-weight:400;">(opcional)</span></label>'
+    +'<input type="file" id="disp-docs" accept="application/pdf,.pdf" multiple onchange="dispDocsChange()" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;">'
+    +'<div id="disp-docs-lista" style="font-size:.76rem;color:var(--dim);margin-top:4px;">'+(S.dispDocDraft.length?('📎 '+S.dispDocDraft.map(function(f){return esc(f.name);}).join(', ')):'')+'</div></div>';
   document.getElementById('disp-bd').innerHTML=h;
 }
 function dispFotosChange(){ var inp=document.getElementById('disp-fotos'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ S.dispFotoDraft.push(f); }); try{ inp.value=''; }catch(e){} var l=document.getElementById('disp-fotos-lista'); if(l) l.innerHTML=S.dispFotoDraft.length?('📷 '+S.dispFotoDraft.map(function(f){return esc(f.name);}).join(', ')):''; }
+function dispDocsChange(){ var inp=document.getElementById('disp-docs'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ if(/\.pdf$/i.test(f.name)) S.dispDocDraft.push(f); }); try{ inp.value=''; }catch(e){} var l=document.getElementById('disp-docs-lista'); if(l) l.innerHTML=S.dispDocDraft.length?('📎 '+S.dispDocDraft.map(function(f){return esc(f.name);}).join(', ')):''; }
 async function dispGuardar(){
   var t=S.curFolio; if(!t) return; var err=document.getElementById('disp-err'); err.textContent='';
   for(var i=0;i<S.dispDraft.length;i++){ var a=S.dispDraft[i], n=i+1;
@@ -745,10 +759,13 @@ async function dispGuardar(){
   try{
     var refs=(t.fotosDestruccion||[]).slice();
     if(S.dispFotoDraft.length){ btn.textContent='Subiendo evidencia…'; for(var fi=0;fi<S.dispFotoDraft.length;fi++){ try{ var rf=await subirArchivo('GAR_Fotos',t.id,S.dispFotoDraft[fi],'DEST_'+(fi+1)+'_'); if(rf) refs.push(rf); }catch(ef){} } }
+    var docRefs=(t.docsDisposicion||[]).slice();
+    if(S.dispDocDraft.length){ btn.textContent='Subiendo documentos…'; for(var di=0;di<S.dispDocDraft.length;di++){ try{ var rd=await subirArchivo('GAR_Documentos',t.id,S.dispDocDraft[di],'DISP_'+(di+1)+'_'); if(rd) docRefs.push(rd); }catch(ed){} } }
     var fields={ GrArticulos:JSON.stringify(S.dispDraft), GrEstatus:'Enviado por garantías', GrFechaEnvioGarantias:nowISO() };
     if(refs.length) fields.GrFotosDestruccion=JSON.stringify(refs);
+    if(docRefs.length) fields.GrDocsDisposicion=JSON.stringify(docRefs);
     await listUpdate(L_FOLIOS,t.id,fields);
-    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:'Enviado por garantías', fotosDestruccion:refs, fechaEnvioGarantias:nowISO() });
+    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:'Enviado por garantías', fotosDestruccion:refs, docsDisposicion:docRefs, fechaEnvioGarantias:nowISO() });
     cerrar('m-disp'); pintarDetalle(); render(); toast('Disposición guardada → Enviado por garantías');
   }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Guardar y enviar por garantías'; }
 }
@@ -758,7 +775,7 @@ document.addEventListener('DOMContentLoaded', boot); boot();
 window.setView=setView; window.abrirNuevo=abrirNuevo; window.crearFolio=crearFolio; window.cerrar=cerrar; window.refrescar=refrescar;
 window.artAdd=artAdd; window.artRender=artRender; window.artLookup=artLookup; window.cliLookup=cliLookup; window.abrirFolio=abrirFolio; window.render=render; window.enviarChange=enviarChange;
 window.fotosChange=fotosChange; window.accPedir=accPedir; window.accConfirmar=accConfirmar; window.autorizar=autorizar; window.abrirConfig=abrirConfig; window.guardarConfig=guardarConfig; window.verArchivo=verArchivo;
-window.abrirDisposicion=abrirDisposicion; window.dispRender=dispRender; window.dispFotosChange=dispFotosChange; window.dispGuardar=dispGuardar;
+window.abrirDisposicion=abrirDisposicion; window.dispRender=dispRender; window.dispFotosChange=dispFotosChange; window.dispGuardar=dispGuardar; window.accFilesChange=accFilesChange; window.dispDocsChange=dispDocsChange;
 </script>
 </body>
 </html>

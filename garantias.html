@@ -301,9 +301,10 @@ function mapFolio(i){ var f=i.fields||{}; return {
   docsMostrador:_pj(f.GrDocsMostrador, (f.GrDocMostrador?[{id:f.GrDocMostrador,nombre:f.GrDocMostradorNombre||'documento'}]:[])),
   comentMostrador:f.GrComentarioMostrador||'',
   docsAlmacen:_pj(f.GrDocsAlmacen, (f.GrDocAlmacen?[{id:f.GrDocAlmacen,nombre:f.GrDocAlmacenNombre||'documento'}]:[])),
-  docsGarantias:_pj(f.GrDocsGarantias,[]),
-  docsDisposicion:_pj(f.GrDocsDisposicion,[]),
-  docsCierre:_pj(f.GrDocsCierre, (f.GrDocCierre?[{id:f.GrDocCierre,nombre:f.GrDocCierreNombre||'documento'}]:[])),
+  comentAlmacen:f.GrComentarioAlmacen||'',
+  docsGarantias:_pj(f.GrDocsGarantias,[]), comentGarantias:f.GrComentarioGarantias||'',
+  docsDisposicion:_pj(f.GrDocsDisposicion,[]), comentDisposicion:f.GrComentarioDisposicion||'',
+  docsCierre:_pj(f.GrDocsCierre, (f.GrDocCierre?[{id:f.GrDocCierre,nombre:f.GrDocCierreNombre||'documento'}]:[])), comentCierre:f.GrComentarioCierre||'',
   usuarioSolicitaNombre:f.GrUsuarioSolicitaNombre||'', usuarioSolicitaCorreo:lc(f.GrUsuarioSolicitaCorreo||''),
   fotosDestruccion:_pj(f.GrFotosDestruccion,[]),
   fechaEnvioGarantias:f.GrFechaEnvioGarantias||'', fechaCierre:f.GrFechaCierre||'',
@@ -543,16 +544,21 @@ function pintarDetalle(){
   }
   // Documentos del proceso (arreglos por etapa)
   var docBtn=function(f){ return '<button class="btn btn-sm" onclick="verArchivo(\''+esc(f.id)+'\',\''+esc(String(f.nombre||"doc").replace(/\x27/g,""))+'\')">📄 '+esc(f.nombre||'Ver')+'</button>'; };
-  var docRow=function(label,arr,coment){ if(!arr||!arr.length) return ''; return '<div style="margin-bottom:6px;"><span style="color:var(--dim);font-size:.76rem;">'+esc(label)+':</span> '+arr.map(docBtn).join(' ')+(coment?('<div style="color:var(--muted);font-size:.76rem;margin-top:2px;">💬 '+esc(coment)+'</div>'):'')+'</div>'; };
+  var docRow=function(label,arr,coment){ arr=arr||[]; if(!arr.length && !coment) return ''; return '<div style="margin-bottom:6px;"><span style="color:var(--dim);font-size:.76rem;">'+esc(label)+':</span> '+(arr.length?arr.map(docBtn).join(' '):'<span style="color:var(--dim);font-size:.76rem;">(sin documento)</span>')+(coment?('<div style="color:var(--muted);font-size:.76rem;margin-top:2px;">💬 '+esc(coment)+'</div>'):'')+'</div>'; };
   var esFac=(t.tipoDoc==='Factura');
+  // Visibilidad: en la pantalla de Solicitud (asistente administrativo) solo ve su documento y el de mostrador.
+  // En la pantalla de Garantías (técnico de calidad, mostrador, almacén, jefe) ve toda la trazabilidad.
+  var verTodo=(MODO!=='solicitar');
   var docs='';
   docs+=docRow(esFac?'Nota de crédito (solicitante)':'Devolución (solicitante)', t.docsSolicitante, t.comentSolicitante);
   docs+=docRow('Aplicado por mostrador', t.docsMostrador, t.comentMostrador);
-  docs+=docRow('Enviado por almacén', t.docsAlmacen);
-  docs+=docRow('Entrada a almacén de garantías', t.docsGarantias);
-  docs+=docRow('Devolución de garantías a almacén', t.docsDisposicion);
-  docs+=docRow('Cierre', t.docsCierre);
-  if(docs) h+='<div class="d-sec"><div class="k">Documentos</div>'+docs+'</div>';
+  if(verTodo){
+    docs+=docRow('Enviado por almacén', t.docsAlmacen, t.comentAlmacen);
+    docs+=docRow('Entrada a almacén de garantías', t.docsGarantias, t.comentGarantias);
+    docs+=docRow('Devolución de garantías a almacén', t.docsDisposicion, t.comentDisposicion);
+    docs+=docRow('Cierre', t.docsCierre, t.comentCierre);
+  }
+  if(docs) h+='<div class="d-sec"><div class="k">Documentos</div>'+docs+(verTodo?'':'<div style="color:var(--dim);font-size:.72rem;margin-top:4px;">La trazabilidad completa está disponible para el área de garantías.</div>')+'</div>';
   // Fotos de destrucción (extranjera)
   if((t.fotosDestruccion||[]).length){
     h+='<div class="d-sec"><div class="k">Evidencia de destrucción</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'
@@ -625,9 +631,9 @@ function accCfg(t){
   return {
     cargardoc:{ ttl:(esFactura?'Enviar nota de crédito':'Enviar devolución a mostrador'), flbl:(esFactura?'Nota de crédito (PDF)':'Documento(s) de devolución (PDF)'), req:true, multi:true, coment:true, carpeta:'GAR_Documentos', pref:'DOC_', docsField:'GrDocsSolicitante', komentField:'GrComentarioSolicitante', k:'docsSolicitante', kComent:'comentSolicitante', estatus:(esFactura?'Nota de crédito':'Documento enviado por solicitante'), ok:'Enviar', note:(esFactura?'El documento quedará como la nota de crédito y pasará al técnico de garantías.':'Se enviará al encargado de mostrador para aplicar la devolución.') },
     mostrador:{ ttl:'Aplicar devolución (Mostrador)', flbl:'Comprobante(s) de devolución aplicada (PDF)', req:true, multi:true, coment:true, carpeta:'GAR_Documentos', pref:'MOST_', docsField:'GrDocsMostrador', komentField:'GrComentarioMostrador', k:'docsMostrador', kComent:'comentMostrador', estatus:'Aplicado por mostrador', ok:'Aplicar', note:'Pasará a almacén para recepción.' },
-    almacen:{ ttl:'Enviar por almacén', flbl:'Documento(s) de salida de almacén (PDF)', req:true, multi:true, carpeta:'GAR_Documentos', pref:'ALM_', docsField:'GrDocsAlmacen', k:'docsAlmacen', estatus:'Aplicado por almacén', ok:'Enviar', note:'Se enviará al técnico de garantías.' },
-    enalmacen:{ ttl:'Ingresar a almacén de garantías', flbl:'Documento(s) de entrada (PDF)', req:false, multi:true, carpeta:'GAR_Documentos', pref:'GAR_', docsField:'GrDocsGarantias', k:'docsGarantias', estatus:'En almacén de garantías', ok:'Confirmar ingreso', note:'Confirmas la entrada al almacén de garantías. Puedes adjuntar documentos (opcional).' },
-    cerrar:{ ttl:'Confirmar recepción y cerrar', flbl:'Evidencia de recepción (PDF, opcional)', req:false, multi:true, carpeta:'GAR_Documentos', pref:'CIERRE_', docsField:'GrDocsCierre', k:'docsCierre', estatus:'Cerrado', fecha:'GrFechaCierre', ok:'Cerrar folio', note:'El almacén confirma la recepción de lo enviado por garantías. El folio quedará Cerrado.' }
+    almacen:{ ttl:'Enviar por almacén', flbl:'Documento(s) de salida de almacén (PDF)', req:true, multi:true, coment:true, carpeta:'GAR_Documentos', pref:'ALM_', docsField:'GrDocsAlmacen', komentField:'GrComentarioAlmacen', k:'docsAlmacen', kComent:'comentAlmacen', estatus:'Aplicado por almacén', ok:'Enviar', note:'Se enviará al técnico de garantías.' },
+    enalmacen:{ ttl:'Ingresar a almacén de garantías', flbl:'Documento(s) de entrada (PDF)', req:false, multi:true, coment:true, carpeta:'GAR_Documentos', pref:'GAR_', docsField:'GrDocsGarantias', komentField:'GrComentarioGarantias', k:'docsGarantias', kComent:'comentGarantias', estatus:'En almacén de garantías', ok:'Confirmar ingreso', note:'Confirmas la entrada al almacén de garantías. Puedes adjuntar documentos (opcional).' },
+    cerrar:{ ttl:'Confirmar recepción y cerrar', flbl:'Evidencia de recepción (PDF, opcional)', req:false, multi:true, coment:true, carpeta:'GAR_Documentos', pref:'CIERRE_', docsField:'GrDocsCierre', komentField:'GrComentarioCierre', k:'docsCierre', kComent:'comentCierre', estatus:'Cerrado', fecha:'GrFechaCierre', ok:'Cerrar folio', note:'El almacén confirma la recepción de lo enviado por garantías. El folio quedará Cerrado.' }
   };
 }
 function accFilesChange(){ var inp=document.getElementById('acc-file'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ if(/\.pdf$/i.test(f.name)) S.accFileDraft.push(f); }); try{ inp.value=''; }catch(e){} var l=document.getElementById('acc-file-lista'); if(l) l.innerHTML=S.accFileDraft.length?('📎 '+S.accFileDraft.map(function(f){return esc(f.name);}).join(', ')+' <button class="btn btn-sm btn-ghost" onclick="S.accFileDraft=[];accFilesChange();">limpiar</button>'):''; }
@@ -715,7 +721,7 @@ function dispOpts(tg){ if(tg==='Proveedor') return DISP_PROV; if(tg==='Equipo'||
 function abrirDisposicion(){
   var t=S.curFolio; if(!t) return;
   S.dispDraft=(t.articulos||[]).map(function(a){ return Object.assign({},a); });
-  S.dispFotoDraft=[]; S.dispDocDraft=[];
+  S.dispFotoDraft=[]; S.dispDocDraft=[]; S._dispComent='';
   document.getElementById('disp-sub').textContent=t.folio+' · asigna tipo de garantía y disposición a cada artículo';
   document.getElementById('disp-err').textContent='';
   dispRender(); abrir('m-disp');
@@ -743,6 +749,7 @@ function dispRender(){
   h+='<div class="fld" style="margin-top:6px;"><label>Documentos de devolución al almacén (PDF) <span style="color:var(--dim);font-weight:400;">(opcional)</span></label>'
     +'<input type="file" id="disp-docs" accept="application/pdf,.pdf" multiple onchange="dispDocsChange()" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;">'
     +'<div id="disp-docs-lista" style="font-size:.76rem;color:var(--dim);margin-top:4px;">'+(S.dispDocDraft.length?('📎 '+S.dispDocDraft.map(function(f){return esc(f.name);}).join(', ')):'')+'</div></div>';
+  h+='<div class="fld"><label>Comentarios <span style="color:var(--dim);font-weight:400;">(opcional)</span></label><textarea class="inp" id="disp-coment" rows="2" oninput="S._dispComent=this.value;">'+esc(S._dispComent||'')+'</textarea></div>';
   document.getElementById('disp-bd').innerHTML=h;
 }
 function dispFotosChange(){ var inp=document.getElementById('disp-fotos'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ S.dispFotoDraft.push(f); }); try{ inp.value=''; }catch(e){} var l=document.getElementById('disp-fotos-lista'); if(l) l.innerHTML=S.dispFotoDraft.length?('📷 '+S.dispFotoDraft.map(function(f){return esc(f.name);}).join(', ')):''; }
@@ -761,11 +768,13 @@ async function dispGuardar(){
     if(S.dispFotoDraft.length){ btn.textContent='Subiendo evidencia…'; for(var fi=0;fi<S.dispFotoDraft.length;fi++){ try{ var rf=await subirArchivo('GAR_Fotos',t.id,S.dispFotoDraft[fi],'DEST_'+(fi+1)+'_'); if(rf) refs.push(rf); }catch(ef){} } }
     var docRefs=(t.docsDisposicion||[]).slice();
     if(S.dispDocDraft.length){ btn.textContent='Subiendo documentos…'; for(var di=0;di<S.dispDocDraft.length;di++){ try{ var rd=await subirArchivo('GAR_Documentos',t.id,S.dispDocDraft[di],'DISP_'+(di+1)+'_'); if(rd) docRefs.push(rd); }catch(ed){} } }
+    var dComent=(S._dispComent||'').trim();
     var fields={ GrArticulos:JSON.stringify(S.dispDraft), GrEstatus:'Enviado por garantías', GrFechaEnvioGarantias:nowISO() };
     if(refs.length) fields.GrFotosDestruccion=JSON.stringify(refs);
     if(docRefs.length) fields.GrDocsDisposicion=JSON.stringify(docRefs);
+    if(dComent) fields.GrComentarioDisposicion=dComent;
     await listUpdate(L_FOLIOS,t.id,fields);
-    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:'Enviado por garantías', fotosDestruccion:refs, docsDisposicion:docRefs, fechaEnvioGarantias:nowISO() });
+    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:'Enviado por garantías', fotosDestruccion:refs, docsDisposicion:docRefs, comentDisposicion:(dComent||t.comentDisposicion), fechaEnvioGarantias:nowISO() });
     cerrar('m-disp'); pintarDetalle(); render(); toast('Disposición guardada → Enviado por garantías');
   }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Guardar y enviar por garantías'; }
 }

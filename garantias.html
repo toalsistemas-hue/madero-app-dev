@@ -191,7 +191,16 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
   <div class="modal" style="width:640px;">
     <div class="modal-hd"><div><h3>Disposición de artículos</h3><div class="h-sub" id="disp-sub" style="color:var(--dim);font-size:.72rem;margin-top:3px;"></div></div><button class="x" onclick="cerrar('m-disp')">✕</button></div>
     <div class="modal-bd" id="disp-bd"></div>
-    <div class="modal-ft"><div style="color:#fca5a5;font-size:.8rem;flex:1;" id="disp-err"></div><button class="btn btn-ghost" onclick="cerrar('m-disp')">Cancelar</button><button class="btn btn-primary" id="disp-ok" onclick="dispGuardar()">Guardar y enviar por garantías</button></div>
+    <div class="modal-ft"><div style="color:#fca5a5;font-size:.8rem;flex:1;" id="disp-err"></div><button class="btn btn-ghost" onclick="cerrar('m-disp')">Cancelar</button><button class="btn btn-primary" id="disp-ok" onclick="dispGuardar()">Enviar seleccionados por garantías</button></div>
+  </div>
+</div>
+
+<!-- Modal: confirmar recepción por artículo (cierre) -->
+<div class="modal-bg" id="m-cierre">
+  <div class="modal" style="width:620px;">
+    <div class="modal-hd"><div><h3>Confirmar recepción</h3><div class="h-sub" id="cierre-sub" style="color:var(--dim);font-size:.72rem;margin-top:3px;"></div></div><button class="x" onclick="cerrar('m-cierre')">✕</button></div>
+    <div class="modal-bd" id="cierre-bd"></div>
+    <div class="modal-ft"><div style="color:#fca5a5;font-size:.8rem;flex:1;" id="cierre-err"></div><button class="btn btn-ghost" onclick="cerrar('m-cierre')">Cancelar</button><button class="btn btn-primary" id="cierre-ok" onclick="cierreGuardar()">Confirmar recepción</button></div>
   </div>
 </div>
 
@@ -208,7 +217,7 @@ var EVALUACION=['Pruebas en sitio','Panel de pruebas','Visual'];
 var TIPOGARANTIA=['Equipo','Departamento','Proveedor'];
 var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Documento enviado por solicitante':'#a855f7','Aplicado por mostrador':'#a855f7','Aplicado por almacén':'#a855f7','En almacén de garantías':'#58a6ff','Nota de crédito':'#a855f7','Enviado por garantías':'#f59e0b','Atendido':'#2ea043','Cerrado':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
 
-var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{calidad:'',mostrador:'',almacen:'',almacenJefe:'',cc:''}, cfgId:null, filtros:{}, artDraft:[], fotoDraft:[], dispDraft:[], dispFotoDraft:[], dispDocDraft:[], accFileDraft:[], curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
+var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{calidad:'',mostrador:'',almacen:'',almacenJefe:'',cc:''}, cfgId:null, filtros:{}, artDraft:[], fotoDraft:[], dispDraft:[], dispFotoDraft:[], dispDocDraft:[], accFileDraft:[], cierreDocDraft:[], _cierreComent:'', _dispComent:'', curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
 var DISP_EQUIPO=['Chatarra','Reparación'], DISP_PROV=['Garantía recuperada','Garantía no recuperada'];
 
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -575,6 +584,9 @@ function pintarDetalle(){
       +dF('Compra / Venta',fmtD(a.fCompra)+' / '+fmtD(a.fVenta))
       +dF('Falla / Reclamación',fmtD(a.fFalla)+' / '+fmtD(a.fReclamacion))
       +(a.disposicion?('<div class="d-field"><span class="lbl">Disposición</span><span class="val"><b style="color:var(--accent-l)">'+esc(a.disposicion)+'</b></span></div>'):'')
+      +((a.tipoGarantia==='Proveedor'&&(a.cantRecuperada!=null||a.cantNoRecuperada!=null))?dF('Recuperadas / No recuperadas',(Number(a.cantRecuperada)||0)+' / '+(Number(a.cantNoRecuperada)||0)):'')
+      +((a.pedimento||a.rma)?dF('Pedimento / RMA',(a.pedimento||'—')+' / '+(a.rma||'—')):'')
+      +(a.estadoArt?('<div class="d-field"><span class="lbl">Estado artículo</span><span class="val"><span class="st" style="font-size:.66rem;background:'+hex2rgba(ARTEST_COLOR[a.estadoArt],.16)+';color:'+(ARTEST_COLOR[a.estadoArt]||"#888")+'">'+esc(a.estadoArt)+'</span></span></div>'):'')
     +'</div>';
   });
   h+='</div>';
@@ -603,13 +615,16 @@ function pintarDetalle(){
   if(MODO!=='solicitar' && !R.esFactura && est==='Aplicado por almacén' && R.esIng){
     b+=bPrim("accPedir('enalmacen')",'🛡️ Ingresar a almacén de garantías');
   }
-  // Disposición + enviar por garantías (ambos flujos)
-  if(MODO!=='solicitar' && R.esIng && ((!R.esFactura && est==='En almacén de garantías') || (R.esFactura && est==='Nota de crédito'))){
+  // Disposición y envío por garantías (por artículo; mientras haya pendientes)
+  var _arts=t.articulos||[];
+  var hayPend=_arts.some(function(a){return (a.estadoArt||'Pendiente')==='Pendiente';});
+  var hayEnv=_arts.some(function(a){return a.estadoArt==='Enviado';});
+  if(MODO!=='solicitar' && R.esIng && hayPend && ((!R.esFactura && (est==='En almacén de garantías'||est==='Enviado por garantías')) || (R.esFactura && (est==='Nota de crédito'||est==='Enviado por garantías')))){
     b+=bPrim("abrirDisposicion()",'⚖️ Disposición y enviar por garantías');
   }
-  // Cierre por Almacén / Jefe
-  if(MODO!=='solicitar' && est==='Enviado por garantías' && (R.esAlmacen||R.esAdmin)){
-    b+=bPrim("accPedir('cerrar')",'✅ Confirmar recepción y cerrar');
+  // Cierre por artículo (Almacén / Jefe): mientras haya artículos enviados sin confirmar
+  if(MODO!=='solicitar' && hayEnv && (R.esAlmacen||R.esAdmin)){
+    b+=bPrim("abrirCierre()",'✅ Confirmar recepción');
   }
   b+='<button class="btn btn-sm btn-ghost" onclick="cerrar(\'m-det\')">Cerrar</button>';
   ft.innerHTML=b;
@@ -716,36 +731,62 @@ async function guardarConfig(){
   }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
 }
 
-/* ---------- disposición por artículo ---------- */
+/* ---------- disposición y cierre por artículo (Etapa 3) ---------- */
+var ARTEST_COLOR={'Pendiente':'#f59e0b','Enviado':'#58a6ff','Confirmado':'#2ea043'};
 function dispOpts(tg){ if(tg==='Proveedor') return DISP_PROV; if(tg==='Equipo'||tg==='Departamento') return DISP_EQUIPO; return []; }
+function artEstado(a){ return a.estadoArt||'Pendiente'; }
+function dispProvCalc(a){ var r=Number(a.cantRecuperada)||0, nr=Number(a.cantNoRecuperada)||0; if(r>0&&nr>0) return 'Garantía parcial'; if(r>0) return 'Garantía recuperada'; if(nr>0) return 'Garantía no recuperada'; return ''; }
+function dispResumen(a){
+  if(a.tipoGarantia==='Proveedor'){ var r=Number(a.cantRecuperada)||0, nr=Number(a.cantNoRecuperada)||0; return 'Proveedor · '+(a.disposicion||dispProvCalc(a))+' · Recuperadas: '+r+' / No recuperadas: '+nr+(a.pedimento?(' · Pedimento: '+esc(a.pedimento)):'')+(a.rma?(' · RMA: '+esc(a.rma)):''); }
+  return esc(a.tipoGarantia||'')+' · '+esc(a.disposicion||'');
+}
+function rollupEstatus(t, arts){
+  if(!arts.length) return t.estatus;
+  if(arts.every(function(a){return artEstado(a)==='Confirmado';})) return 'Cerrado';
+  if(arts.some(function(a){return artEstado(a)==='Enviado'||artEstado(a)==='Confirmado';})) return 'Enviado por garantías';
+  return t.estatus;
+}
 function abrirDisposicion(){
   var t=S.curFolio; if(!t) return;
-  S.dispDraft=(t.articulos||[]).map(function(a){ return Object.assign({},a); });
+  S.dispDraft=(t.articulos||[]).map(function(a){ var c=Object.assign({},a); c._send=false; return c; });
   S.dispFotoDraft=[]; S.dispDocDraft=[]; S._dispComent='';
-  document.getElementById('disp-sub').textContent=t.folio+' · asigna tipo de garantía y disposición a cada artículo';
+  document.getElementById('disp-sub').textContent=t.folio+' · asigna la disposición y envía por garantías los artículos que correspondan';
   document.getElementById('disp-err').textContent='';
   dispRender(); abrir('m-disp');
 }
 function dispRender(){
   var t=S.curFolio, esExtra=(t&&t.tipoOrigen==='Extranjera');
   var h=S.dispDraft.map(function(a,i){
-    var opts=dispOpts(a.tipoGarantia);
-    return '<div class="art-block">'
-      +'<div class="t" style="color:var(--accent-l);font-weight:700;margin-bottom:6px;">Artículo '+(i+1)+' — '+esc(a.num)+' · '+esc(a.desc||'')+'</div>'
-      +'<div class="grid2">'
-        +'<div class="fld"><label>Tipo de garantía <span class="req">*</span></label><select class="inp" onchange="S.dispDraft['+i+'].tipoGarantia=this.value;S.dispDraft['+i+'].disposicion=\'\';dispRender();">'+selOpts(TIPOGARANTIA,a.tipoGarantia)+'</select></div>'
-        +'<div class="fld"><label>Disposición <span class="req">*</span></label><select class="inp" '+(opts.length?'':'disabled')+' onchange="S.dispDraft['+i+'].disposicion=this.value;dispRender();">'+selOpts(opts,a.disposicion)+'</select>'+(opts.length?'':'<div style="color:var(--dim);font-size:.72rem;margin-top:3px;">Selecciona primero el tipo de garantía.</div>')+'</div>'
-      +'</div>'
-    +'</div>';
+    var est=artEstado(a);
+    var head='<div class="t" style="color:var(--accent-l);font-weight:700;margin-bottom:6px;">Artículo '+(i+1)+' — '+esc(a.num)+' · '+esc(a.desc||'')+' <span class="st" style="font-size:.66rem;background:'+hex2rgba(ARTEST_COLOR[est],.16)+';color:'+(ARTEST_COLOR[est]||'#888')+'">'+esc(est)+'</span></div>';
+    if(est!=='Pendiente'){ return '<div class="art-block" style="opacity:.85;">'+head+'<div style="font-size:.82rem;color:var(--muted);">'+dispResumen(a)+'</div></div>'; }
+    var isProv=(a.tipoGarantia==='Proveedor');
+    var block='<div class="art-block">'+head
+      +'<label class="chk-lbl" style="margin-bottom:6px;display:block;"><input type="checkbox" '+(a._send?'checked':'')+' onchange="S.dispDraft['+i+']._send=this.checked;dispRender();"> Enviar este artículo por garantías ahora</label>'
+      +'<div class="grid2"><div class="fld"><label>Tipo de garantía <span class="req">*</span></label><select class="inp" onchange="S.dispDraft['+i+'].tipoGarantia=this.value;S.dispDraft['+i+'].disposicion=\'\';dispRender();">'+selOpts(TIPOGARANTIA,a.tipoGarantia)+'</select></div>';
+    if(isProv){
+      block+='<div class="fld"><label>Cantidad del artículo</label><input class="inp" value="'+esc(a.cantidad||'')+'" disabled></div></div>'
+        +'<div class="grid2">'
+          +'<div class="fld"><label>Piezas recuperadas</label><input class="inp" type="number" min="0" value="'+esc(a.cantRecuperada!=null?a.cantRecuperada:'')+'" oninput="S.dispDraft['+i+'].cantRecuperada=this.value;"></div>'
+          +'<div class="fld"><label>Piezas no recuperadas</label><input class="inp" type="number" min="0" value="'+esc(a.cantNoRecuperada!=null?a.cantNoRecuperada:'')+'" oninput="S.dispDraft['+i+'].cantNoRecuperada=this.value;"></div>'
+        +'</div>'
+        +'<div class="grid2">'
+          +'<div class="fld"><label>Pedimento <span style="color:var(--dim);font-weight:400;">(si aplica)</span></label><input class="inp" value="'+esc(a.pedimento||'')+'" oninput="S.dispDraft['+i+'].pedimento=this.value;"></div>'
+          +'<div class="fld"><label>RMA <span style="color:var(--dim);font-weight:400;">(si aplica)</span></label><input class="inp" value="'+esc(a.rma||'')+'" oninput="S.dispDraft['+i+'].rma=this.value;"></div>'
+        +'</div>';
+    } else {
+      var opts=dispOpts(a.tipoGarantia);
+      block+='<div class="fld"><label>Disposición <span class="req">*</span></label><select class="inp" '+(opts.length?'':'disabled')+' onchange="S.dispDraft['+i+'].disposicion=this.value;dispRender();">'+selOpts(opts,a.disposicion)+'</select>'+(opts.length?'':'<div style="color:var(--dim);font-size:.72rem;margin-top:3px;">Selecciona primero el tipo de garantía.</div>')+'</div></div>';
+    }
+    return block+'</div>';
   }).join('');
-  // Fotos de destrucción si extranjera + alguna chatarra
-  var hayChatarra=S.dispDraft.some(function(a){ return a.disposicion==='Chatarra'; });
-  if(esExtra && hayChatarra){
+  // Evidencia de destrucción si extranjera + alguna chatarra entre los seleccionados a enviar
+  var hayChatarraSel=S.dispDraft.some(function(a){ return a._send && artEstado(a)==='Pendiente' && a.tipoGarantia!=='Proveedor' && a.disposicion==='Chatarra'; });
+  if(esExtra && hayChatarraSel){
     h+='<div class="fld" style="margin-top:6px;"><label>Evidencia de destrucción (origen Extranjera + Chatarra) <span class="req">*</span></label>'
       +'<input type="file" id="disp-fotos" accept="image/*" multiple onchange="dispFotosChange()" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;">'
       +'<div id="disp-fotos-lista" style="font-size:.76rem;color:var(--dim);margin-top:4px;">'+(S.dispFotoDraft.length?('📷 '+S.dispFotoDraft.map(function(f){return esc(f.name);}).join(', ')):'')+'</div></div>';
   }
-  // Documentos de devolución de garantías al almacén (PDF, opcional)
   h+='<div class="fld" style="margin-top:6px;"><label>Documentos de devolución al almacén (PDF) <span style="color:var(--dim);font-weight:400;">(opcional)</span></label>'
     +'<input type="file" id="disp-docs" accept="application/pdf,.pdf" multiple onchange="dispDocsChange()" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;">'
     +'<div id="disp-docs-lista" style="font-size:.76rem;color:var(--dim);margin-top:4px;">'+(S.dispDocDraft.length?('📎 '+S.dispDocDraft.map(function(f){return esc(f.name);}).join(', ')):'')+'</div></div>';
@@ -756,27 +797,87 @@ function dispFotosChange(){ var inp=document.getElementById('disp-fotos'); var n
 function dispDocsChange(){ var inp=document.getElementById('disp-docs'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ if(/\.pdf$/i.test(f.name)) S.dispDocDraft.push(f); }); try{ inp.value=''; }catch(e){} var l=document.getElementById('disp-docs-lista'); if(l) l.innerHTML=S.dispDocDraft.length?('📎 '+S.dispDocDraft.map(function(f){return esc(f.name);}).join(', ')):''; }
 async function dispGuardar(){
   var t=S.curFolio; if(!t) return; var err=document.getElementById('disp-err'); err.textContent='';
-  for(var i=0;i<S.dispDraft.length;i++){ var a=S.dispDraft[i], n=i+1;
+  var sel=S.dispDraft.filter(function(a){ return a._send && artEstado(a)==='Pendiente'; });
+  if(!sel.length){ err.textContent='Marca al menos un artículo para enviar por garantías.'; return; }
+  for(var i=0;i<S.dispDraft.length;i++){ var a=S.dispDraft[i], n=i+1; if(!(a._send&&artEstado(a)==='Pendiente')) continue;
     if(!a.tipoGarantia){ err.textContent='Artículo '+n+': selecciona el tipo de garantía.'; return; }
-    if(!a.disposicion){ err.textContent='Artículo '+n+': selecciona la disposición.'; return; }
+    if(a.tipoGarantia==='Proveedor'){
+      var r=Number(a.cantRecuperada)||0, nr=Number(a.cantNoRecuperada)||0, cant=Number(a.cantidad);
+      if(r+nr<=0){ err.textContent='Artículo '+n+': captura las piezas recuperadas y/o no recuperadas.'; return; }
+      if(!isNaN(cant) && cant>0 && (r+nr)!==cant){ err.textContent='Artículo '+n+': recuperadas + no recuperadas ('+(r+nr)+') debe ser igual a la cantidad ('+cant+').'; return; }
+      a.disposicion=dispProvCalc(a);
+    } else if(!a.disposicion){ err.textContent='Artículo '+n+': selecciona la disposición.'; return; }
   }
-  var esExtra=(t.tipoOrigen==='Extranjera'), hayChatarra=S.dispDraft.some(function(a){ return a.disposicion==='Chatarra'; });
-  if(esExtra && hayChatarra && !S.dispFotoDraft.length && !(t.fotosDestruccion||[]).length){ err.textContent='Adjunta la evidencia de destrucción (Extranjera + Chatarra).'; return; }
+  var esExtra=(t.tipoOrigen==='Extranjera'), hayChatarraSel=sel.some(function(a){ return a.tipoGarantia!=='Proveedor' && a.disposicion==='Chatarra'; });
+  if(esExtra && hayChatarraSel && !S.dispFotoDraft.length && !(t.fotosDestruccion||[]).length){ err.textContent='Adjunta la evidencia de destrucción (Extranjera + Chatarra).'; return; }
   var btn=document.getElementById('disp-ok'); btn.disabled=true; btn.textContent='Guardando…';
   try{
     var refs=(t.fotosDestruccion||[]).slice();
     if(S.dispFotoDraft.length){ btn.textContent='Subiendo evidencia…'; for(var fi=0;fi<S.dispFotoDraft.length;fi++){ try{ var rf=await subirArchivo('GAR_Fotos',t.id,S.dispFotoDraft[fi],'DEST_'+(fi+1)+'_'); if(rf) refs.push(rf); }catch(ef){} } }
     var docRefs=(t.docsDisposicion||[]).slice();
     if(S.dispDocDraft.length){ btn.textContent='Subiendo documentos…'; for(var di=0;di<S.dispDocDraft.length;di++){ try{ var rd=await subirArchivo('GAR_Documentos',t.id,S.dispDocDraft[di],'DISP_'+(di+1)+'_'); if(rd) docRefs.push(rd); }catch(ed){} } }
+    // Marcar enviados
+    S.dispDraft.forEach(function(a){ if(a._send && artEstado(a)==='Pendiente'){ a.estadoArt='Enviado'; a.fechaEnvioArt=nowISO(); } delete a._send; });
+    var nuevoEst=rollupEstatus(t, S.dispDraft);
     var dComent=(S._dispComent||'').trim();
-    var fields={ GrArticulos:JSON.stringify(S.dispDraft), GrEstatus:'Enviado por garantías', GrFechaEnvioGarantias:nowISO() };
+    var fields={ GrArticulos:JSON.stringify(S.dispDraft), GrEstatus:nuevoEst, GrFechaEnvioGarantias:(t.fechaEnvioGarantias||nowISO()) };
     if(refs.length) fields.GrFotosDestruccion=JSON.stringify(refs);
     if(docRefs.length) fields.GrDocsDisposicion=JSON.stringify(docRefs);
     if(dComent) fields.GrComentarioDisposicion=dComent;
     await listUpdate(L_FOLIOS,t.id,fields);
-    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:'Enviado por garantías', fotosDestruccion:refs, docsDisposicion:docRefs, comentDisposicion:(dComent||t.comentDisposicion), fechaEnvioGarantias:nowISO() });
-    cerrar('m-disp'); pintarDetalle(); render(); toast('Disposición guardada → Enviado por garantías');
-  }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Guardar y enviar por garantías'; }
+    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:nuevoEst, fotosDestruccion:refs, docsDisposicion:docRefs, comentDisposicion:(dComent||t.comentDisposicion), fechaEnvioGarantias:(t.fechaEnvioGarantias||nowISO()) });
+    cerrar('m-disp'); pintarDetalle(); render();
+    var pend=S.dispDraft.filter(function(a){return artEstado(a)==='Pendiente';}).length;
+    toast('Enviado por garantías'+(pend?(' · quedan '+pend+' artículo(s) por enviar'):''));
+  }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Enviar seleccionados por garantías'; }
+}
+
+/* ---------- cierre por artículo (recepción en almacén) ---------- */
+function abrirCierre(){
+  var t=S.curFolio; if(!t) return;
+  S.dispDraft=(t.articulos||[]).map(function(a){ var c=Object.assign({},a); c._recv=false; return c; });
+  S.cierreDocDraft=[]; S._cierreComent='';
+  document.getElementById('cierre-sub').textContent=t.folio+' · confirma la recepción de los artículos enviados por garantías';
+  document.getElementById('cierre-err').textContent='';
+  cierreRender(); abrir('m-cierre');
+}
+function cierreRender(){
+  var h=S.dispDraft.map(function(a,i){
+    var est=artEstado(a);
+    var head='<div class="t" style="color:var(--accent-l);font-weight:700;margin-bottom:4px;">Artículo '+(i+1)+' — '+esc(a.num)+' <span class="st" style="font-size:.66rem;background:'+hex2rgba(ARTEST_COLOR[est],.16)+';color:'+(ARTEST_COLOR[est]||'#888')+'">'+esc(est)+'</span></div>';
+    var info='<div style="font-size:.8rem;color:var(--muted);margin-bottom:4px;">'+dispResumen(a)+'</div>';
+    if(est==='Enviado'){ return '<div class="art-block">'+head+info+'<label class="chk-lbl"><input type="checkbox" '+(a._recv?'checked':'')+' onchange="S.dispDraft['+i+']._recv=this.checked;"> Confirmar recepción de este artículo</label></div>'; }
+    if(est==='Confirmado'){ return '<div class="art-block" style="opacity:.8;">'+head+info+'<div style="font-size:.76rem;color:var(--green-l);">✔ Recibido</div></div>'; }
+    return '<div class="art-block" style="opacity:.7;">'+head+'<div style="font-size:.76rem;color:var(--dim);">Aún no enviado por garantías.</div></div>';
+  }).join('');
+  h+='<div class="fld" style="margin-top:6px;"><label>Evidencia de recepción (PDF) <span style="color:var(--dim);font-weight:400;">(opcional)</span></label>'
+    +'<input type="file" id="cierre-docs" accept="application/pdf,.pdf" multiple onchange="cierreDocsChange()" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:rgba(255,255,255,.04);font-size:.82rem;cursor:pointer;">'
+    +'<div id="cierre-docs-lista" style="font-size:.76rem;color:var(--dim);margin-top:4px;">'+(S.cierreDocDraft.length?('📎 '+S.cierreDocDraft.map(function(f){return esc(f.name);}).join(', ')):'')+'</div></div>';
+  h+='<div class="fld"><label>Comentarios <span style="color:var(--dim);font-weight:400;">(opcional)</span></label><textarea class="inp" id="cierre-coment" rows="2" oninput="S._cierreComent=this.value;">'+esc(S._cierreComent||'')+'</textarea></div>';
+  document.getElementById('cierre-bd').innerHTML=h;
+}
+function cierreDocsChange(){ var inp=document.getElementById('cierre-docs'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ if(/\.pdf$/i.test(f.name)) S.cierreDocDraft.push(f); }); try{ inp.value=''; }catch(e){} var l=document.getElementById('cierre-docs-lista'); if(l) l.innerHTML=S.cierreDocDraft.length?('📎 '+S.cierreDocDraft.map(function(f){return esc(f.name);}).join(', ')):''; }
+async function cierreGuardar(){
+  var t=S.curFolio; if(!t) return; var err=document.getElementById('cierre-err'); err.textContent='';
+  var sel=S.dispDraft.filter(function(a){ return a._recv && artEstado(a)==='Enviado'; });
+  if(!sel.length){ err.textContent='Marca al menos un artículo para confirmar su recepción.'; return; }
+  var btn=document.getElementById('cierre-ok'); btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    var docRefs=(t.docsCierre||[]).slice();
+    if(S.cierreDocDraft.length){ btn.textContent='Subiendo documentos…'; for(var di=0;di<S.cierreDocDraft.length;di++){ try{ var rd=await subirArchivo('GAR_Documentos',t.id,S.cierreDocDraft[di],'CIERRE_'+(di+1)+'_'); if(rd) docRefs.push(rd); }catch(ed){} } }
+    S.dispDraft.forEach(function(a){ if(a._recv && artEstado(a)==='Enviado'){ a.estadoArt='Confirmado'; a.fechaConfArt=nowISO(); } delete a._recv; });
+    var nuevoEst=rollupEstatus(t, S.dispDraft);
+    var cComent=(S._cierreComent||'').trim();
+    var fields={ GrArticulos:JSON.stringify(S.dispDraft), GrEstatus:nuevoEst };
+    if(docRefs.length) fields.GrDocsCierre=JSON.stringify(docRefs);
+    if(cComent) fields.GrComentarioCierre=cComent;
+    if(nuevoEst==='Cerrado') fields.GrFechaCierre=nowISO();
+    await listUpdate(L_FOLIOS,t.id,fields);
+    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:nuevoEst, docsCierre:docRefs, comentCierre:(cComent||t.comentCierre), fechaCierre:(nuevoEst==='Cerrado'?nowISO():t.fechaCierre) });
+    cerrar('m-cierre'); pintarDetalle(); render();
+    var pend=S.dispDraft.filter(function(a){return artEstado(a)!=='Confirmado';}).length;
+    toast(nuevoEst==='Cerrado'?'Folio cerrado ✅':('Recepción confirmada · quedan '+pend+' artículo(s)'));
+  }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Confirmar recepción'; }
 }
 
 /* init */
@@ -785,6 +886,7 @@ window.setView=setView; window.abrirNuevo=abrirNuevo; window.crearFolio=crearFol
 window.artAdd=artAdd; window.artRender=artRender; window.artLookup=artLookup; window.cliLookup=cliLookup; window.abrirFolio=abrirFolio; window.render=render; window.enviarChange=enviarChange;
 window.fotosChange=fotosChange; window.accPedir=accPedir; window.accConfirmar=accConfirmar; window.autorizar=autorizar; window.abrirConfig=abrirConfig; window.guardarConfig=guardarConfig; window.verArchivo=verArchivo;
 window.abrirDisposicion=abrirDisposicion; window.dispRender=dispRender; window.dispFotosChange=dispFotosChange; window.dispGuardar=dispGuardar; window.accFilesChange=accFilesChange; window.dispDocsChange=dispDocsChange;
+window.abrirCierre=abrirCierre; window.cierreRender=cierreRender; window.cierreDocsChange=cierreDocsChange; window.cierreGuardar=cierreGuardar;
 </script>
 </body>
 </html>

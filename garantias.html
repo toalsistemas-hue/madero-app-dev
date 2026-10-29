@@ -226,6 +226,7 @@ function abrir(id){ document.getElementById(id).classList.add('show'); }
 function cerrar(id){ document.getElementById(id).classList.remove('show'); if(id==='m-det') S.curFolio=null; }
 function _pj(s,def){ try{ var v=JSON.parse(s||''); return v==null?def:v; }catch(e){ return def; } }
 function nowISO(){ return new Date().toISOString(); }
+function stampComent(txt){ txt=(txt||'').trim(); if(!txt) return ''; return '['+fmtDT(nowISO())+'] '+txt; }
 function lc(s){ return (s||'').toLowerCase(); }
 function fmtD(s){ if(!s) return '—'; var d=new Date(s); if(isNaN(d)) return esc(s); return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}); }
 function fmtDT(s){ if(!s) return '—'; var d=new Date(s); if(isNaN(d)) return '—'; return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }
@@ -680,7 +681,8 @@ async function accConfirmar(){
   if(ACC_MODE==='rechazar'){
     var txt=document.getElementById('acc-txt').value.trim(); if(!txt){ err.textContent='Escribe el motivo.'; return; }
     btn.disabled=true; btn.textContent='Guardando…';
-    try{ await listUpdate(L_FOLIOS,t.id,{ GrEstatus:'Rechazado', GrComentarioRechazo:txt }); Object.assign(t,{estatus:'Rechazado',comentarioRechazo:txt}); cerrar('m-acc'); pintarDetalle(); render(); toast('Solicitud rechazada'); }
+    var txtStamp=stampComent(txt);
+    try{ await listUpdate(L_FOLIOS,t.id,{ GrEstatus:'Rechazado', GrComentarioRechazo:txtStamp }); Object.assign(t,{estatus:'Rechazado',comentarioRechazo:txtStamp}); cerrar('m-acc'); pintarDetalle(); render(); toast('Solicitud rechazada'); }
     catch(e){ err.textContent='No se pudo. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Rechazar'; }
     return;
   }
@@ -692,12 +694,13 @@ async function accConfirmar(){
   try{
     var refs=(t[cfg.k]||[]).slice();
     for(var i=0;i<files.length;i++){ try{ var rf=await subirArchivo(cfg.carpeta,t.id,files[i],cfg.pref+(i+1)+'_'); if(rf) refs.push(rf); }catch(ef){} }
+    var comentStamp=coment?stampComent(coment):'';
     var fields={ GrEstatus:cfg.estatus };
     fields[cfg.docsField]=JSON.stringify(refs);
-    if(cfg.komentField && coment) fields[cfg.komentField]=coment;
+    if(cfg.komentField && comentStamp) fields[cfg.komentField]=comentStamp;
     if(cfg.fecha) fields[cfg.fecha]=nowISO();
     await listUpdate(L_FOLIOS,t.id,fields);
-    var patch={ estatus:cfg.estatus }; patch[cfg.k]=refs; if(cfg.kComent && coment) patch[cfg.kComent]=coment;
+    var patch={ estatus:cfg.estatus }; patch[cfg.k]=refs; if(cfg.kComent && comentStamp) patch[cfg.kComent]=comentStamp;
     Object.assign(t,patch);
     cerrar('m-acc'); pintarDetalle(); render(); toast('Etapa actualizada: '+cfg.estatus);
   }catch(e){ err.textContent='No se pudo. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent=cfg.ok; }
@@ -819,13 +822,13 @@ async function dispGuardar(){
     // Marcar enviados
     S.dispDraft.forEach(function(a){ if(a._send && artEstado(a)==='Pendiente'){ a.estadoArt='Enviado'; a.fechaEnvioArt=nowISO(); } delete a._send; });
     var nuevoEst=rollupEstatus(t, S.dispDraft);
-    var dComent=(S._dispComent||'').trim();
+    var dComent=(S._dispComent||'').trim(); var dComentStamp=dComent?stampComent(dComent):'';
     var fields={ GrArticulos:JSON.stringify(S.dispDraft), GrEstatus:nuevoEst, GrFechaEnvioGarantias:(t.fechaEnvioGarantias||nowISO()) };
     if(refs.length) fields.GrFotosDestruccion=JSON.stringify(refs);
     if(docRefs.length) fields.GrDocsDisposicion=JSON.stringify(docRefs);
-    if(dComent) fields.GrComentarioDisposicion=dComent;
+    if(dComentStamp) fields.GrComentarioDisposicion=dComentStamp;
     await listUpdate(L_FOLIOS,t.id,fields);
-    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:nuevoEst, fotosDestruccion:refs, docsDisposicion:docRefs, comentDisposicion:(dComent||t.comentDisposicion), fechaEnvioGarantias:(t.fechaEnvioGarantias||nowISO()) });
+    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:nuevoEst, fotosDestruccion:refs, docsDisposicion:docRefs, comentDisposicion:(dComentStamp||t.comentDisposicion), fechaEnvioGarantias:(t.fechaEnvioGarantias||nowISO()) });
     cerrar('m-disp'); pintarDetalle(); render();
     var pend=S.dispDraft.filter(function(a){return artEstado(a)==='Pendiente';}).length;
     toast('Enviado por garantías'+(pend?(' · quedan '+pend+' artículo(s) por enviar'):''));
@@ -867,13 +870,13 @@ async function cierreGuardar(){
     if(S.cierreDocDraft.length){ btn.textContent='Subiendo documentos…'; for(var di=0;di<S.cierreDocDraft.length;di++){ try{ var rd=await subirArchivo('GAR_Documentos',t.id,S.cierreDocDraft[di],'CIERRE_'+(di+1)+'_'); if(rd) docRefs.push(rd); }catch(ed){} } }
     S.dispDraft.forEach(function(a){ if(a._recv && artEstado(a)==='Enviado'){ a.estadoArt='Confirmado'; a.fechaConfArt=nowISO(); } delete a._recv; });
     var nuevoEst=rollupEstatus(t, S.dispDraft);
-    var cComent=(S._cierreComent||'').trim();
+    var cComent=(S._cierreComent||'').trim(); var cComentStamp=cComent?stampComent(cComent):'';
     var fields={ GrArticulos:JSON.stringify(S.dispDraft), GrEstatus:nuevoEst };
     if(docRefs.length) fields.GrDocsCierre=JSON.stringify(docRefs);
-    if(cComent) fields.GrComentarioCierre=cComent;
+    if(cComentStamp) fields.GrComentarioCierre=cComentStamp;
     if(nuevoEst==='Cerrado') fields.GrFechaCierre=nowISO();
     await listUpdate(L_FOLIOS,t.id,fields);
-    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:nuevoEst, docsCierre:docRefs, comentCierre:(cComent||t.comentCierre), fechaCierre:(nuevoEst==='Cerrado'?nowISO():t.fechaCierre) });
+    Object.assign(t,{ articulos:S.dispDraft.slice(), estatus:nuevoEst, docsCierre:docRefs, comentCierre:(cComentStamp||t.comentCierre), fechaCierre:(nuevoEst==='Cerrado'?nowISO():t.fechaCierre) });
     cerrar('m-cierre'); pintarDetalle(); render();
     var pend=S.dispDraft.filter(function(a){return artEstado(a)!=='Confirmado';}).length;
     toast(nuevoEst==='Cerrado'?'Folio cerrado ✅':('Recepción confirmada · quedan '+pend+' artículo(s)'));

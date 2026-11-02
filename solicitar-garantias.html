@@ -89,6 +89,7 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
     <nav class="tabs" id="nav-tabs">
       <button class="nav-item active" id="tab-folios" onclick="setView('folios')">📋 Folios</button>
       <button class="nav-item" id="tab-solicitudes" onclick="setView('solicitudes')">📨 Solicitudes <span class="badge" id="sol-badge" style="display:none;">0</span></button>
+      <button class="nav-item" id="tab-rechazadas" onclick="setView('rechazadas')">🚫 Rechazadas</button>
       <button class="nav-item" id="tab-kpis" onclick="setView('kpis')">📊 KPIs y Reportes</button>
     </nav>
     <div class="tb-tools">
@@ -335,17 +336,18 @@ function debRender(fn, focusId){
   _debT=setTimeout(function(){ fn(); if(_debFocus){ var el=document.getElementById(_debFocus); if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){} } } }, 280);
 }
 function setView(v){ S.view=v;
-  var a=document.getElementById('tab-folios'), b=document.getElementById('tab-solicitudes'), c=document.getElementById('tab-kpis');
-  if(a)a.classList.toggle('active',v==='folios'); if(b)b.classList.toggle('active',v==='solicitudes'); if(c)c.classList.toggle('active',v==='kpis');
+  var a=document.getElementById('tab-folios'), b=document.getElementById('tab-solicitudes'), c=document.getElementById('tab-kpis'), d=document.getElementById('tab-rechazadas');
+  if(a)a.classList.toggle('active',v==='folios'); if(b)b.classList.toggle('active',v==='solicitudes'); if(c)c.classList.toggle('active',v==='kpis'); if(d)d.classList.toggle('active',v==='rechazadas');
   render();
 }
 function updBadge(){ var b=document.getElementById('sol-badge'); if(!b) return; var n=S.folios.filter(function(t){return t.origen==='Solicitud'&&t.estatus==='En proceso';}).length; if(n>0){ b.textContent=n; b.style.display='inline-block'; } else b.style.display='none'; }
 function render(){
   updBadge();
   if(MODO==='solicitar') return renderTabla('mis');
-  var ht=document.getElementById('h-ttl'); if(ht) ht.textContent=(S.view==='kpis'?'KPIs y Reportes':(S.view==='solicitudes'?'Solicitudes':'Folios'));
+  var ht=document.getElementById('h-ttl'); if(ht) ht.textContent=(S.view==='kpis'?'KPIs y Reportes':(S.view==='solicitudes'?'Solicitudes':(S.view==='rechazadas'?'Solicitudes rechazadas':'Folios')));
   if(S.view==='kpis') return renderKPIs();
   if(S.view==='solicitudes') return renderTabla('solicitudes');
+  if(S.view==='rechazadas') return renderTabla('rechazadas');
   return renderTabla('folios');
 }
 function renderTabla(tipo){
@@ -353,12 +355,13 @@ function renderTabla(tipo){
   var items;
   if(tipo==='mis') items=S.folios.filter(function(t){ return !!me && ((t.solicitaCorreo && t.solicitaCorreo===me) || (t.enviarACorreo && t.enviarACorreo===me)); });
   else if(tipo==='solicitudes') items=S.folios.filter(function(t){ return t.origen==='Solicitud' && t.estatus==='En proceso'; });
+  else if(tipo==='rechazadas') items=S.folios.filter(function(t){ return t.estatus==='Rechazado'; });
   else items=S.folios.filter(function(t){ return t.estatus!=='En proceso' && t.estatus!=='Rechazado'; }); // folios
   if(f.q){ var q=lc(f.q); items=items.filter(function(t){ return lc(t.folio+' '+t.solicita+' '+t.sucursal+' '+t.clienteNombre+' '+t.numDoc+' '+t.numCliente+' '+t.departamento).indexOf(q)>=0; }); }
   items.sort(function(a,b){ return (new Date(b.fechaRegistro||0))-(new Date(a.fechaRegistro||0)); });
-  document.getElementById('h-sub').textContent=items.length+(tipo==='solicitudes'?' solicitud(es)':' folio(s)');
+  document.getElementById('h-sub').textContent=items.length+(tipo==='solicitudes'?' solicitud(es)':(tipo==='rechazadas'?' rechazada(s)':' folio(s)'));
   var h='<div class="flt"><input class="inp" id="flt-q" placeholder="🔎 Buscar folio, cliente, documento…" value="'+esc(f.q||'')+'" oninput="S.filtros.q=this.value;debRender(render,\'flt-q\')" style="min-width:260px;"><button class="btn btn-sm btn-ghost" onclick="S.filtros={};render();">Limpiar</button></div>';
-  if(!items.length){ h+='<div class="empty">No hay '+(tipo==='solicitudes'?'solicitudes pendientes':'folios')+'.</div>'; body.innerHTML=h; return; }
+  if(!items.length){ h+='<div class="empty">No hay '+(tipo==='solicitudes'?'solicitudes pendientes':(tipo==='rechazadas'?'solicitudes rechazadas':'folios'))+'.</div>'; body.innerHTML=h; return; }
   h+='<div class="tbl-wrap"><table class="gtab"><tr>'
     +'<th>Folio</th><th>Fecha</th><th>Estatus</th><th>Solicita</th><th>Sucursal</th><th>Cliente</th><th>Tipo doc.</th><th>Nº doc.</th><th>Artículos</th><th>Técnico</th></tr>';
   h+=items.map(function(t){

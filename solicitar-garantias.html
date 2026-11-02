@@ -329,6 +329,11 @@ function mapFolio(i){ var f=i.fields||{}; return {
 }; }
 
 /* ---------- navegación / render ---------- */
+var _debT=null, _debFocus=null;
+function debRender(fn, focusId){
+  _debFocus=focusId; if(_debT) clearTimeout(_debT);
+  _debT=setTimeout(function(){ fn(); if(_debFocus){ var el=document.getElementById(_debFocus); if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){} } } }, 280);
+}
 function setView(v){ S.view=v;
   var a=document.getElementById('tab-folios'), b=document.getElementById('tab-solicitudes'), c=document.getElementById('tab-kpis');
   if(a)a.classList.toggle('active',v==='folios'); if(b)b.classList.toggle('active',v==='solicitudes'); if(c)c.classList.toggle('active',v==='kpis');
@@ -352,7 +357,7 @@ function renderTabla(tipo){
   if(f.q){ var q=lc(f.q); items=items.filter(function(t){ return lc(t.folio+' '+t.solicita+' '+t.sucursal+' '+t.clienteNombre+' '+t.numDoc+' '+t.numCliente+' '+t.departamento).indexOf(q)>=0; }); }
   items.sort(function(a,b){ return (new Date(b.fechaRegistro||0))-(new Date(a.fechaRegistro||0)); });
   document.getElementById('h-sub').textContent=items.length+(tipo==='solicitudes'?' solicitud(es)':' folio(s)');
-  var h='<div class="flt"><input class="inp" placeholder="🔎 Buscar folio, cliente, documento…" value="'+esc(f.q||'')+'" oninput="S.filtros.q=this.value;render();" style="min-width:260px;"><button class="btn btn-sm btn-ghost" onclick="S.filtros={};render();">Limpiar</button></div>';
+  var h='<div class="flt"><input class="inp" id="flt-q" placeholder="🔎 Buscar folio, cliente, documento…" value="'+esc(f.q||'')+'" oninput="S.filtros.q=this.value;debRender(render,\'flt-q\')" style="min-width:260px;"><button class="btn btn-sm btn-ghost" onclick="S.filtros={};render();">Limpiar</button></div>';
   if(!items.length){ h+='<div class="empty">No hay '+(tipo==='solicitudes'?'solicitudes pendientes':'folios')+'.</div>'; body.innerHTML=h; return; }
   h+='<div class="tbl-wrap"><table class="gtab"><tr>'
     +'<th>Folio</th><th>Fecha</th><th>Estatus</th><th>Solicita</th><th>Sucursal</th><th>Cliente</th><th>Tipo doc.</th><th>Nº doc.</th><th>Artículos</th><th>Técnico</th></tr>';
@@ -925,9 +930,9 @@ function renderKPIs(){
   var selAnio='<option value="">Año: todos</option>'+anios.map(function(y){return '<option'+(String(f.anio)===y?' selected':'')+'>'+y+'</option>';}).join('');
   var selMes='<option value="">Mes: todos</option>'+MESES.map(function(nm,i){ var v=String(i+1); return '<option value="'+v+'"'+(String(f.mes)===v?' selected':'')+'>'+nm+'</option>'; }).join('');
   var h='<div class="flt" style="flex-wrap:wrap;gap:8px;">'
-    +'<input class="inp" placeholder="🔎 Cliente" value="'+esc(f.cliente||'')+'" oninput="S.kfiltros.cliente=this.value;renderKPIs();" style="min-width:150px;">'
-    +'<input class="inp" placeholder="🏠 Establo" value="'+esc(f.establo||'')+'" oninput="S.kfiltros.establo=this.value;renderKPIs();" style="min-width:140px;">'
-    +'<input class="inp" placeholder="📦 Nº artículo" value="'+esc(f.articulo||'')+'" oninput="S.kfiltros.articulo=this.value;renderKPIs();" style="min-width:140px;">'
+    +'<input class="inp" id="kf-cliente" placeholder="🔎 Cliente" value="'+esc(f.cliente||'')+'" oninput="S.kfiltros.cliente=this.value;debRender(renderKPIs,\'kf-cliente\')" style="min-width:150px;">'
+    +'<input class="inp" id="kf-establo" placeholder="🏠 Establo" value="'+esc(f.establo||'')+'" oninput="S.kfiltros.establo=this.value;debRender(renderKPIs,\'kf-establo\')" style="min-width:140px;">'
+    +'<input class="inp" id="kf-articulo" placeholder="📦 Nº artículo" value="'+esc(f.articulo||'')+'" oninput="S.kfiltros.articulo=this.value;debRender(renderKPIs,\'kf-articulo\')" style="min-width:140px;">'
     +'<select class="inp" onchange="S.kfiltros.anio=this.value;renderKPIs();" style="min-width:120px;">'+selAnio+'</select>'
     +'<select class="inp" onchange="S.kfiltros.mes=this.value;renderKPIs();" style="min-width:130px;">'+selMes+'</select>'
     +'<button class="btn btn-sm btn-ghost" onclick="S.kfiltros={};renderKPIs();">Limpiar</button>'
@@ -1070,7 +1075,7 @@ window.artAdd=artAdd; window.artRender=artRender; window.artLookup=artLookup; wi
 window.fotosChange=fotosChange; window.accPedir=accPedir; window.accConfirmar=accConfirmar; window.autorizar=autorizar; window.abrirConfig=abrirConfig; window.guardarConfig=guardarConfig; window.verArchivo=verArchivo;
 window.abrirDisposicion=abrirDisposicion; window.dispRender=dispRender; window.dispFotosChange=dispFotosChange; window.dispGuardar=dispGuardar; window.accFilesChange=accFilesChange; window.dispDocsChange=dispDocsChange;
 window.abrirCierre=abrirCierre; window.cierreRender=cierreRender; window.cierreDocsChange=cierreDocsChange; window.cierreGuardar=cierreGuardar;
-window.renderKPIs=renderKPIs; window.descargarReporte=descargarReporte;
+window.renderKPIs=renderKPIs; window.descargarReporte=descargarReporte; window.debRender=debRender;
 </script>
 </body>
 </html>

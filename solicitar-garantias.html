@@ -89,6 +89,7 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
     <nav class="tabs" id="nav-tabs">
       <button class="nav-item active" id="tab-folios" onclick="setView('folios')">📋 Folios</button>
       <button class="nav-item" id="tab-solicitudes" onclick="setView('solicitudes')">📨 Solicitudes <span class="badge" id="sol-badge" style="display:none;">0</span></button>
+      <button class="nav-item" id="tab-kpis" onclick="setView('kpis')">📊 KPIs y Reportes</button>
     </nav>
     <div class="tb-tools">
       <button class="btn btn-sm" id="btn-cfg" onclick="abrirConfig()" style="display:none;">⚙️ Configuración</button>
@@ -217,7 +218,7 @@ var EVALUACION=['Pruebas en sitio','Panel de pruebas','Visual'];
 var TIPOGARANTIA=['Equipo','Departamento','Proveedor'];
 var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Documento enviado por solicitante':'#a855f7','Aplicado por mostrador':'#a855f7','Aplicado por almacén':'#a855f7','En almacén de garantías':'#58a6ff','Nota de crédito':'#a855f7','Enviado por garantías':'#f59e0b','Atendido':'#2ea043','Cerrado':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
 
-var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{calidad:'',mostrador:'',almacen:'',almacenJefe:'',cc:''}, cfgId:null, filtros:{}, artDraft:[], fotoDraft:[], dispDraft:[], dispFotoDraft:[], dispDocDraft:[], accFileDraft:[], cierreDocDraft:[], _cierreComent:'', _dispComent:'', curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
+var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{calidad:'',mostrador:'',almacen:'',almacenJefe:'',cc:''}, cfgId:null, filtros:{}, kfiltros:{}, artDraft:[], fotoDraft:[], dispDraft:[], dispFotoDraft:[], dispDocDraft:[], accFileDraft:[], cierreDocDraft:[], _cierreComent:'', _dispComent:'', curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
 var DISP_EQUIPO=['Chatarra','Reparación'], DISP_PROV=['Garantía recuperada','Garantía no recuperada'];
 
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -329,15 +330,16 @@ function mapFolio(i){ var f=i.fields||{}; return {
 
 /* ---------- navegación / render ---------- */
 function setView(v){ S.view=v;
-  var a=document.getElementById('tab-folios'), b=document.getElementById('tab-solicitudes');
-  if(a)a.classList.toggle('active',v==='folios'); if(b)b.classList.toggle('active',v==='solicitudes');
+  var a=document.getElementById('tab-folios'), b=document.getElementById('tab-solicitudes'), c=document.getElementById('tab-kpis');
+  if(a)a.classList.toggle('active',v==='folios'); if(b)b.classList.toggle('active',v==='solicitudes'); if(c)c.classList.toggle('active',v==='kpis');
   render();
 }
 function updBadge(){ var b=document.getElementById('sol-badge'); if(!b) return; var n=S.folios.filter(function(t){return t.origen==='Solicitud'&&t.estatus==='En proceso';}).length; if(n>0){ b.textContent=n; b.style.display='inline-block'; } else b.style.display='none'; }
 function render(){
   updBadge();
   if(MODO==='solicitar') return renderTabla('mis');
-  var ht=document.getElementById('h-ttl'); if(ht) ht.textContent=(S.view==='solicitudes'?'Solicitudes':'Folios');
+  var ht=document.getElementById('h-ttl'); if(ht) ht.textContent=(S.view==='kpis'?'KPIs y Reportes':(S.view==='solicitudes'?'Solicitudes':'Folios'));
+  if(S.view==='kpis') return renderKPIs();
   if(S.view==='solicitudes') return renderTabla('solicitudes');
   return renderTabla('folios');
 }
@@ -883,6 +885,147 @@ async function cierreGuardar(){
   }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Confirmar recepción'; }
 }
 
+/* ---------- KPIs y Reportes ---------- */
+function artResumenTexto(arts){ arts=arts||[]; return arts.map(function(a){ return (a.num||'')+(a.cantidad?(' x'+a.cantidad):'')+(a.tipoGarantia?(' ['+a.tipoGarantia+(a.disposicion?(' / '+a.disposicion):'')+']'):''); }).join('  |  '); }
+function kpiBase(){ return (S.folios||[]).filter(function(t){ return t.estatus!=='En proceso' && t.estatus!=='Rechazado'; }); }
+function kpiAnio(t){ var d=new Date(t.fechaRegistro||0); return isNaN(d)?'':String(d.getFullYear()); }
+function kpiMes(t){ var d=new Date(t.fechaRegistro||0); return isNaN(d)?'':String(d.getMonth()+1); }
+function kpiFiltrar(list){
+  var f=S.kfiltros||{};
+  return list.filter(function(t){
+    if(f.cliente){ var q=lc(f.cliente); if(lc((t.clienteNombre||'')+' '+(t.numCliente||'')).indexOf(q)<0) return false; }
+    if(f.establo){ if(lc(t.establo||'').indexOf(lc(f.establo))<0) return false; }
+    if(f.articulo){ var qa=lc(f.articulo); var hay=(t.articulos||[]).some(function(a){ return lc((a.num||'')+' '+(a.desc||'')).indexOf(qa)>=0; }); if(!hay) return false; }
+    if(f.anio){ if(kpiAnio(t)!==String(f.anio)) return false; }
+    if(f.mes){ if(kpiMes(t)!==String(f.mes)) return false; }
+    return true;
+  });
+}
+var MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+function kpiConteos(list){
+  var m={}; list.forEach(function(t){ var e=t.estatus||'(sin estatus)'; m[e]=(m[e]||0)+1; });
+  var arr=Object.keys(m).map(function(k){ return { label:k, value:m[k], color:EST_COLOR[k]||'#888' }; });
+  arr.sort(function(a,b){ return b.value-a.value; });
+  return arr;
+}
+function renderKPIs(){
+  var body=document.getElementById('body'), f=S.kfiltros||{};
+  var base=kpiBase();
+  var anios=Array.from(new Set(base.map(kpiAnio).filter(Boolean))).sort().reverse();
+  var list=kpiFiltrar(base);
+  var counts=kpiConteos(list), total=list.length;
+  document.getElementById('h-sub').textContent=total+' folio(s)'+(Object.keys(f).some(function(k){return f[k];})?' (filtrado)':'');
+  var selAnio='<option value="">Año: todos</option>'+anios.map(function(y){return '<option'+(String(f.anio)===y?' selected':'')+'>'+y+'</option>';}).join('');
+  var selMes='<option value="">Mes: todos</option>'+MESES.map(function(nm,i){ var v=String(i+1); return '<option value="'+v+'"'+(String(f.mes)===v?' selected':'')+'>'+nm+'</option>'; }).join('');
+  var h='<div class="flt" style="flex-wrap:wrap;gap:8px;">'
+    +'<input class="inp" placeholder="🔎 Cliente" value="'+esc(f.cliente||'')+'" oninput="S.kfiltros.cliente=this.value;renderKPIs();" style="min-width:150px;">'
+    +'<input class="inp" placeholder="🏠 Establo" value="'+esc(f.establo||'')+'" oninput="S.kfiltros.establo=this.value;renderKPIs();" style="min-width:140px;">'
+    +'<input class="inp" placeholder="📦 Nº artículo" value="'+esc(f.articulo||'')+'" oninput="S.kfiltros.articulo=this.value;renderKPIs();" style="min-width:140px;">'
+    +'<select class="inp" onchange="S.kfiltros.anio=this.value;renderKPIs();" style="min-width:120px;">'+selAnio+'</select>'
+    +'<select class="inp" onchange="S.kfiltros.mes=this.value;renderKPIs();" style="min-width:130px;">'+selMes+'</select>'
+    +'<button class="btn btn-sm btn-ghost" onclick="S.kfiltros={};renderKPIs();">Limpiar</button>'
+    +'<button class="btn btn-sm btn-primary" onclick="descargarReporte()">⬇️ Descargar reporte</button>'
+    +'</div>';
+  // Tarjetas resumen
+  var cerrados=list.filter(function(t){return t.estatus==='Cerrado';}).length;
+  var enProc=total-cerrados;
+  h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin:14px 0;">'
+    +'<div class="art-block" style="flex:1;min-width:150px;text-align:center;"><div style="font-size:2rem;font-weight:800;color:var(--accent-l);">'+total+'</div><div style="color:var(--dim);font-size:.8rem;">Total de folios</div></div>'
+    +'<div class="art-block" style="flex:1;min-width:150px;text-align:center;"><div style="font-size:2rem;font-weight:800;color:var(--green-l);">'+cerrados+'</div><div style="color:var(--dim);font-size:.8rem;">Cerrados</div></div>'
+    +'<div class="art-block" style="flex:1;min-width:150px;text-align:center;"><div style="font-size:2rem;font-weight:800;color:#f59e0b;">'+enProc+'</div><div style="color:var(--dim);font-size:.8rem;">En proceso</div></div>'
+    +'</div>';
+  if(!total){ body.innerHTML=h+'<div class="empty">No hay folios para los filtros seleccionados.</div>'; return; }
+  // Gráfica + leyenda
+  h+='<div class="art-block"><div class="k" style="margin-bottom:10px;">Distribución por estatus</div>'
+    +'<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;">'
+    +'<canvas id="kpi-pie" width="260" height="260" style="max-width:260px;"></canvas>'
+    +'<div style="flex:1;min-width:220px;">'+counts.map(function(c){ var pct=total?Math.round(c.value/total*100):0; return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.85rem;"><span style="width:14px;height:14px;border-radius:3px;background:'+c.color+';display:inline-block;"></span><span style="flex:1;">'+esc(c.label)+'</span><b>'+c.value+'</b> <span style="color:var(--dim);">('+pct+'%)</span></div>'; }).join('')+'</div>'
+    +'</div></div>';
+  body.innerHTML=h;
+  dibujarPie('kpi-pie', counts, total);
+}
+function dibujarPie(id, counts, total){
+  var cv=document.getElementById(id); if(!cv||!cv.getContext) return; var ctx=cv.getContext('2d');
+  var cx=cv.width/2, cy=cv.height/2, r=Math.min(cx,cy)-6; ctx.clearRect(0,0,cv.width,cv.height);
+  if(!total){ return; }
+  var ang=-Math.PI/2;
+  counts.forEach(function(c){ var slice=c.value/total*Math.PI*2; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,ang,ang+slice); ctx.closePath(); ctx.fillStyle=c.color; ctx.fill(); ang+=slice; });
+  // dona
+  ctx.beginPath(); ctx.arc(cx,cy,r*0.55,0,Math.PI*2); ctx.fillStyle='#0d1117'; ctx.fill();
+  ctx.fillStyle='#e6edf3'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 30px sans-serif'; ctx.fillText(String(total),cx,cy-6);
+  ctx.font='12px sans-serif'; ctx.fillStyle='#8b949e'; ctx.fillText('folios',cx,cy+16);
+}
+function cargarExcelJS(){ return new Promise(function(res,rej){ if(window.ExcelJS) return res(); var sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'; sc.onload=function(){ res(); }; sc.onerror=function(){ rej(new Error('No se pudo cargar ExcelJS')); }; document.head.appendChild(sc); }); }
+async function descargarReporte(){
+  var base=kpiBase(), list=kpiFiltrar(base), counts=kpiConteos(list), total=list.length;
+  if(!total){ toast('No hay folios para el reporte'); return; }
+  toast('Generando reporte…');
+  try{ await cargarExcelJS(); }catch(e){ toast('No se pudo cargar la librería de Excel'); return; }
+  try{
+    var wb=new ExcelJS.Workbook(); wb.creator='Garantías'; wb.created=new Date();
+    var f=S.kfiltros||{};
+    // ---- Hoja Resumen ----
+    var ws=wb.addWorksheet('Resumen');
+    ws.columns=[{width:28},{width:16},{width:14}];
+    ws.mergeCells('A1:C1'); ws.getCell('A1').value='Reporte de Garantías'; ws.getCell('A1').font={bold:true,size:16};
+    ws.getCell('A2').value='Generado:'; ws.getCell('B2').value=fmtDT(nowISO());
+    var filtrosTxt=[]; if(f.cliente)filtrosTxt.push('Cliente: '+f.cliente); if(f.establo)filtrosTxt.push('Establo: '+f.establo); if(f.articulo)filtrosTxt.push('Artículo: '+f.articulo); if(f.anio)filtrosTxt.push('Año: '+f.anio); if(f.mes)filtrosTxt.push('Mes: '+MESES[Number(f.mes)-1]);
+    ws.getCell('A3').value='Filtros:'; ws.getCell('B3').value=filtrosTxt.length?filtrosTxt.join('  ·  '):'Todos';
+    ws.getCell('A5').value='Total de folios:'; ws.getCell('A5').font={bold:true}; ws.getCell('B5').value=total; ws.getCell('B5').font={bold:true};
+    var hr=7; ws.getRow(hr).values=['Estatus','Cantidad','%']; ws.getRow(hr).font={bold:true};
+    ws.getRow(hr).eachCell(function(c){ c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F4E79'}}; c.font={bold:true,color:{argb:'FFFFFFFF'}}; });
+    counts.forEach(function(c,i){ var r=ws.getRow(hr+1+i); r.values=[c.label, c.value, Math.round(c.value/total*100)/100]; r.getCell(3).numFmt='0%'; });
+    // imagen de la gráfica
+    var cv=document.getElementById('kpi-pie');
+    if(cv && cv.toDataURL){ try{ var b64=cv.toDataURL('image/png'); var imgId=wb.addImage({ base64:b64, extension:'png' }); ws.addImage(imgId, { tl:{ col:4, row:1 }, ext:{ width:260, height:260 } }); }catch(ei){} }
+    // ---- Hoja Folios ----
+    var ws2=wb.addWorksheet('Folios');
+    var cols=[
+      ['Folio', function(t){return t.folio;}, 16],
+      ['Fecha de registro', function(t){return fmtDT(t.fechaRegistro);}, 18],
+      ['Fecha autorización', function(t){return fmtDT(t.fechaAutorizacion);}, 18],
+      ['Tipo', function(t){return t.tipoOrigen;}, 12],
+      ['Técnico de Garantías', function(t){return t.tecnicoNombre;}, 20],
+      ['Usuario que solicita', function(t){return t.usuarioSolicitaNombre;}, 20],
+      ['Solicitante', function(t){return t.solicita;}, 18],
+      ['Sucursal', function(t){return t.sucursal;}, 14],
+      ['Departamento', function(t){return t.departamento;}, 16],
+      ['Tipo de documento', function(t){return t.tipoDoc;}, 16],
+      ['Número de documento', function(t){return t.numDoc;}, 16],
+      ['Número Cliente', function(t){return t.numCliente;}, 14],
+      ['Cliente', function(t){return t.clienteNombre;}, 24],
+      ['Establo', function(t){return t.establo;}, 16],
+      ['Artículos', function(t){return artResumenTexto(t.articulos);}, 40],
+      ['Origen', function(t){return t.origen;}, 12],
+      ['Estatus', function(t){return t.estatus;}, 20],
+      ['Enviado a', function(t){return t.enviarANombre;}, 18],
+      ['Comentarios Rechazo', function(t){return t.comentarioRechazo;}, 24],
+      ['Fecha envío garantías', function(t){return fmtDT(t.fechaEnvioGarantias);}, 18],
+      ['Fecha Cierre', function(t){return fmtDT(t.fechaCierre);}, 18],
+      ['Comentarios Solicitante', function(t){return t.comentSolicitante;}, 24],
+      ['Comentarios Mostrador', function(t){return t.comentMostrador;}, 24],
+      ['Comentarios Almacén', function(t){return t.comentAlmacen;}, 24],
+      ['Comentarios Garantías', function(t){return t.comentGarantias;}, 24],
+      ['Comentarios Cierre', function(t){return t.comentCierre;}, 24]
+    ];
+    ws2.columns=cols.map(function(c){ return { header:c[0], width:c[2] }; });
+    ws2.getRow(1).font={bold:true,color:{argb:'FFFFFFFF'}};
+    ws2.getRow(1).eachCell(function(c){ c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F4E79'}}; });
+    list.sort(function(a,b){ return (new Date(b.fechaRegistro||0))-(new Date(a.fechaRegistro||0)); });
+    list.forEach(function(t){ ws2.addRow(cols.map(function(c){ var v=c[1](t); return (v==='—'||v==null)?'':v; })); });
+    ws2.autoFilter={ from:{row:1,column:1}, to:{row:1,column:cols.length} };
+    // ---- Descargar ----
+    var buf=await wb.xlsx.writeBuffer();
+    var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var url=URL.createObjectURL(blob); var a=document.createElement('a');
+    var fecha=new Date().toISOString().slice(0,10);
+    a.href=url; a.download='Reporte_Garantias_'+fecha+'.xlsx'; document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 3000);
+    toast('Reporte descargado');
+  }catch(e){ toast('No se pudo generar el reporte'); console.warn('[reporte]', e&&e.message); }
+}
+
 /* init */
 document.addEventListener('DOMContentLoaded', boot); boot();
 window.setView=setView; window.abrirNuevo=abrirNuevo; window.crearFolio=crearFolio; window.cerrar=cerrar; window.refrescar=refrescar;
@@ -890,6 +1033,7 @@ window.artAdd=artAdd; window.artRender=artRender; window.artLookup=artLookup; wi
 window.fotosChange=fotosChange; window.accPedir=accPedir; window.accConfirmar=accConfirmar; window.autorizar=autorizar; window.abrirConfig=abrirConfig; window.guardarConfig=guardarConfig; window.verArchivo=verArchivo;
 window.abrirDisposicion=abrirDisposicion; window.dispRender=dispRender; window.dispFotosChange=dispFotosChange; window.dispGuardar=dispGuardar; window.accFilesChange=accFilesChange; window.dispDocsChange=dispDocsChange;
 window.abrirCierre=abrirCierre; window.cierreRender=cierreRender; window.cierreDocsChange=cierreDocsChange; window.cierreGuardar=cierreGuardar;
+window.renderKPIs=renderKPIs; window.descargarReporte=descargarReporte;
 </script>
 </body>
 </html>

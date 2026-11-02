@@ -273,9 +273,15 @@ function onAuth(d){
   applyModo();
   var bc=document.getElementById('btn-cfg'); if(bc) bc.style.display=(MODO!=='solicitar'&&S.completo)?'inline-block':'none';
   if(!S._loaded){
-    S._loaded=true;
+    S._loaded=true; S._lastLoad=Date.now();
     loadData().catch(function(e){ document.getElementById('body').innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existe la lista GAR_Folios?<br><small>'+esc(e.message||e)+'</small></div>'; });
     if(!S._autoT){ S._autoT=setInterval(function(){ if(S.user && !document.querySelector('.modal-bg.show')){ loadData(true).catch(function(){}); } }, 60000); }
+  } else {
+    // Re-entrada a la pantalla: refrescar en automático (con throttle para evitar cargas dobles)
+    if(!document.querySelector('.modal-bg.show') && (Date.now()-(S._lastLoad||0))>4000){
+      S._lastLoad=Date.now();
+      loadData(true).catch(function(){});
+    }
   }
 }
 function applyModo(){
@@ -1085,6 +1091,11 @@ async function descargarReporte(){
     toast('Reporte descargado');
   }catch(e){ toast('No se pudo generar el reporte'); console.warn('[reporte]', e&&e.message); }
 }
+
+/* refresco automático al volver el foco / mostrarse la pantalla */
+function _autoRefrescar(){ if(S.user && S._loaded && !document.querySelector('.modal-bg.show') && (Date.now()-(S._lastLoad||0))>4000){ S._lastLoad=Date.now(); loadData(true).catch(function(){}); } }
+window.addEventListener('focus', _autoRefrescar);
+document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') _autoRefrescar(); });
 
 /* init */
 document.addEventListener('DOMContentLoaded', boot); boot();

@@ -886,7 +886,14 @@ async function cierreGuardar(){
 }
 
 /* ---------- KPIs y Reportes ---------- */
-function artResumenTexto(arts){ arts=arts||[]; return arts.map(function(a){ return (a.num||'')+(a.cantidad?(' x'+a.cantidad):'')+(a.tipoGarantia?(' ['+a.tipoGarantia+(a.disposicion?(' / '+a.disposicion):'')+']'):''); }).join('  |  '); }
+function artResumenTexto(arts){ arts=arts||[]; return arts.map(function(a){
+  var s=(a.num||'');
+  if(a.desc) s+=' - '+a.desc;
+  if(a.cantidad) s+=' x'+a.cantidad;
+  if(a.tipoGarantia||a.disposicion) s+=' ['+(a.tipoGarantia||'')+(a.disposicion?(' / '+a.disposicion):'')+']';
+  if(a.tipoGarantia==='Proveedor' && (a.cantRecuperada!=null||a.cantNoRecuperada!=null)) s+=' (Recuperadas: '+(Number(a.cantRecuperada)||0)+' / No recuperadas: '+(Number(a.cantNoRecuperada)||0)+')';
+  return s;
+}).join('  |  '); }
 function kpiBase(){ return (S.folios||[]).filter(function(t){ return t.estatus!=='En proceso' && t.estatus!=='Rechazado'; }); }
 function kpiAnio(t){ var d=new Date(t.fechaRegistro||0); return isNaN(d)?'':String(d.getFullYear()); }
 function kpiMes(t){ var d=new Date(t.fechaRegistro||0); return isNaN(d)?'':String(d.getMonth()+1); }
@@ -1015,6 +1022,36 @@ async function descargarReporte(){
     list.sort(function(a,b){ return (new Date(b.fechaRegistro||0))-(new Date(a.fechaRegistro||0)); });
     list.forEach(function(t){ ws2.addRow(cols.map(function(c){ var v=c[1](t); return (v==='—'||v==null)?'':v; })); });
     ws2.autoFilter={ from:{row:1,column:1}, to:{row:1,column:cols.length} };
+    // ---- Hoja Artículos (un artículo por fila) ----
+    var dd=function(x){ return x?fmtD(x):''; };
+    var ws3=wb.addWorksheet('Artículos');
+    var acols=[
+      ['Folio',16],['Fecha de registro',18],['Estatus folio',18],['Tipo',12],
+      ['Cliente',24],['Nº Cliente',14],['Establo',16],['Sucursal',14],
+      ['Número de artículo',16],['Descripción',30],['Número de proveedor',18],['Proveedor',20],['Tipo de proveedor',16],
+      ['Cantidad',10],['Número de serie',16],['Modelo',16],['Tipo de evaluación',18],
+      ['Descripción de la falla',36],['Comentarios',30],
+      ['Fecha de compra',16],['Fecha de venta/instalación',20],['Fecha de falla',16],['Fecha de reclamación',18],
+      ['Tipo de garantía',16],['Disposición',20],['Piezas recuperadas',14],['Piezas no recuperadas',16],['Pedimento',16],['RMA',16],['Estado del artículo',16]
+    ];
+    ws3.columns=acols.map(function(c){ return { header:c[0], width:c[1] }; });
+    list.forEach(function(t){ (t.articulos||[]).forEach(function(a){
+      ws3.addRow([
+        t.folio, fmtDT(t.fechaRegistro), t.estatus, t.tipoOrigen,
+        t.clienteNombre||'', t.numCliente||'', t.establo||'', t.sucursal||'',
+        a.num||'', a.desc||'', a.numProv||'', a.proveedor||'', a.tipoProv||'',
+        a.cantidad||'', a.serie||'', a.modelo||'', a.evaluacion||'',
+        a.falla||'', a.comentarios||'',
+        dd(a.fCompra), dd(a.fVenta), dd(a.fFalla), dd(a.fReclamacion),
+        a.tipoGarantia||'', a.disposicion||'',
+        (a.cantRecuperada!=null&&a.cantRecuperada!==''?Number(a.cantRecuperada):''),
+        (a.cantNoRecuperada!=null&&a.cantNoRecuperada!==''?Number(a.cantNoRecuperada):''),
+        a.pedimento||'', a.rma||'', a.estadoArt||''
+      ]);
+    }); });
+    ws3.getRow(1).font={bold:true,color:{argb:'FFFFFFFF'}};
+    ws3.getRow(1).eachCell(function(c){ c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1F4E79'}}; });
+    ws3.autoFilter={ from:{row:1,column:1}, to:{row:1,column:acols.length} };
     // ---- Descargar ----
     var buf=await wb.xlsx.writeBuffer();
     var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});

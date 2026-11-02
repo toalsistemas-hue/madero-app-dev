@@ -509,6 +509,9 @@
         <div class="det">
           <label>¿Qué debe corregir el solicitado?</label>
           <textarea id="atc-seg-coment" rows="3" placeholder="Describe los ajustes necesarios. Se enviarán al solicitado y la solicitud volverá a «En seguimiento»."></textarea>
+          <label style="margin-top:10px;">Documento(s) para el solicitado <span style="color:#8a94a2;font-weight:400;">(opcional — se enviarán para que los descargue y los vuelva a llenar)</span></label>
+          <input type="file" id="atc-seg-file" multiple onchange="atcSegFiles()" style="display:block;width:100%;box-sizing:border-box;padding:8px 10px;border:1px dashed #b7c4d4;border-radius:8px;background:#f7fafc;font-size:13px;cursor:pointer;">
+          <div id="atc-seg-file-lista" style="font-size:12px;color:#667;margin-top:5px;"></div>
         </div>
       </label>
 
@@ -867,7 +870,13 @@ async function atcAplicarCambio(s, fields, accion, detalle){
 /* ============================================================
    MODAL: REVISAR SEGUIMIENTO (documentos devueltos por el solicitado)
    ============================================================ */
-var ATC_SEG_IDX=-1;
+var ATC_SEG_IDX=-1, ATC_SEG_FILES=[];
+function atcSegFiles(){
+  var inp=document.getElementById('atc-seg-file'); var n=inp.files?Array.prototype.slice.call(inp.files):[];
+  n.forEach(function(f){ ATC_SEG_FILES.push(f); }); try{ inp.value=''; }catch(e){}
+  var l=document.getElementById('atc-seg-file-lista');
+  if(l) l.innerHTML=ATC_SEG_FILES.length?('📎 '+ATC_SEG_FILES.map(function(f){return atcEsc(f.name);}).join(', ')+' <a href="#" onclick="ATC_SEG_FILES=[];atcSegFiles();return false;" style="color:#c0392b;">quitar</a>'):'';
+}
 function atcSegAbrir(idx){
   ATC_SEG_IDX=idx; var s=ATC_VISIBLE[idx]; if(!s) return;
   document.getElementById('atc-seg-info').innerHTML =
@@ -888,6 +897,7 @@ function atcSegAbrir(idx){
   }
   var radOk=document.querySelector('#atc-seg-modal input[value="liberar"]'); if(radOk) radOk.checked=true;
   document.getElementById('atc-seg-coment').value='';
+  ATC_SEG_FILES=[]; var _afl=document.getElementById('atc-seg-file-lista'); if(_afl)_afl.innerHTML=''; var _aff=document.getElementById('atc-seg-file'); if(_aff){try{_aff.value='';}catch(e){}}
   document.getElementById('atc-seg-error').textContent='';
   atcSegSel();
   document.getElementById('atc-seg-modal').classList.add('activo');
@@ -916,6 +926,25 @@ async function atcSegConfirmar(){
     if(!c){ err.textContent='Escribe los ajustes que debe hacer el solicitado.'; return; }
     fields={ Estatus:'En seguimiento', Comentarios_Analista:c, Analista_Asignado:u.nombre||'', Analista_Correo:u.correo||'', Evento_Notificacion:'SEGUIMIENTO_AJUSTES' };
     accion='Solicitar ajustes (seguimiento)';
+    // Subir documento(s) que el analista envía al solicitado y agregarlos a los adjuntos
+    if(ATC_SEG_FILES.length && atcEmbebido()){
+      btn.disabled=true; btn.textContent='Subiendo documento(s)…';
+      try{
+        var nuevos=[];
+        for(var fi=0; fi<ATC_SEG_FILES.length; fi++){
+          var f=ATC_SEG_FILES[fi];
+          var b64f=await atcFileB64(f);
+          var safe=(f.name||('ajuste_'+(fi+1))).replace(/[^\w.\- áéíóúÁÉÍÓÚñÑ]/g,'_');
+          var upf=await window.SGD.sp('uploadAttachment', { carpeta:'SGD_Adjuntos_Seguimiento', itemId:s.id, fileName:'AJUSTE_'+Date.now()+'_'+(fi+1)+'_'+safe, contentBase64:b64f });
+          if(upf && upf.id) nuevos.push({ id:upf.id, nombre:(f.name||safe)+' (ajuste)' });
+        }
+        if(nuevos.length){
+          var todosAdj=(s.adjuntos||[]).concat(nuevos);
+          fields.Adjuntos_JSON=JSON.stringify(todosAdj);
+          fields.Tiene_Adjuntos='Sí';
+        }
+      }catch(e){ err.textContent='No se pudo subir el documento. Intenta de nuevo.'; btn.disabled=false; btn.textContent='Guardar'; return; }
+    }
   } else {
     fields={ Estatus:'En liberación', Analista_Asignado:u.nombre||'', Analista_Correo:u.correo||'', Evento_Notificacion:'PROCESADO' };
     accion='Seguimiento correcto → En liberación';

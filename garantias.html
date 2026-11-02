@@ -319,7 +319,7 @@ function mapFolio(i){ var f=i.fields||{}; return {
   usuarioSolicitaNombre:f.GrUsuarioSolicitaNombre||'', usuarioSolicitaCorreo:lc(f.GrUsuarioSolicitaCorreo||''),
   fotosDestruccion:_pj(f.GrFotosDestruccion,[]),
   fechaEnvioGarantias:f.GrFechaEnvioGarantias||'', fechaCierre:f.GrFechaCierre||'',
-  comentarioRechazo:f.GrComentarioRechazo||'', fechaAutorizacion:f.GrFechaAutorizacion||'',
+  comentarioRechazo:f.GrComentarioRechazo||'', docsRechazo:_pj(f.GrDocsRechazo,[]), fechaAutorizacion:f.GrFechaAutorizacion||'',
   sucursal:f.GrSucursal||'', departamento:f.GrDepartamento||'', establo:f.GrEstablo||'',
   tipoDoc:f.GrTipoDocumento||'', numDoc:f.GrNumeroDocumento||'',
   numCliente:f.GrNumeroCliente||'', clienteNombre:f.GrClienteNombre||'',
@@ -542,7 +542,10 @@ function pintarDetalle(){
   document.getElementById('det-ttl').textContent=t.folio;
   document.getElementById('det-sub').textContent=(t.estatus)+' · registrado '+fmtDT(t.fechaRegistro);
   var h='';
-  if(t.estatus==='Rechazado'){ h+='<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:.84rem;"><b>Solicitud rechazada</b>'+(t.comentarioRechazo?('<br>Motivo: '+esc(t.comentarioRechazo)):'')+'</div>'; }
+  if(t.estatus==='Rechazado'){
+    var rdocs=(t.docsRechazo||[]).map(function(fdoc){ return '<button class="btn btn-sm" style="margin-top:6px;" onclick="verArchivo(\''+esc(fdoc.id)+'\',\''+esc(String(fdoc.nombre||"doc").replace(/\x27/g,""))+'\')">📄 '+esc(fdoc.nombre||'Ver')+'</button>'; }).join(' ');
+    h+='<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:.84rem;"><b>Solicitud rechazada</b>'+(t.comentarioRechazo?('<br>Motivo: '+esc(t.comentarioRechazo)):'')+(rdocs?('<br>'+rdocs):'')+'</div>';
+  }
   h+='<div class="d-sec">'
     +'<div class="d-field"><span class="lbl">Estatus</span><span class="val"><span class="st" style="background:'+hex2rgba(EST_COLOR[t.estatus],.16)+';color:'+(EST_COLOR[t.estatus]||'#888')+'">'+esc(t.estatus)+'</span></span></div>'
     +dF('Técnico', t.tecnicoNombre||'— (sin asignar)')
@@ -659,20 +662,24 @@ function accCfg(t){
     cerrar:{ ttl:'Confirmar recepción y cerrar', flbl:'Evidencia de recepción (PDF, opcional)', req:false, multi:true, coment:true, carpeta:'GAR_Documentos', pref:'CIERRE_', docsField:'GrDocsCierre', komentField:'GrComentarioCierre', k:'docsCierre', kComent:'comentCierre', estatus:'Cerrado', fecha:'GrFechaCierre', ok:'Cerrar folio', note:'El almacén confirma la recepción de lo enviado por garantías. El folio quedará Cerrado.' }
   };
 }
-function accFilesChange(){ var inp=document.getElementById('acc-file'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ if(/\.pdf$/i.test(f.name)) S.accFileDraft.push(f); }); try{ inp.value=''; }catch(e){} var l=document.getElementById('acc-file-lista'); if(l) l.innerHTML=S.accFileDraft.length?('📎 '+S.accFileDraft.map(function(f){return esc(f.name);}).join(', ')+' <button class="btn btn-sm btn-ghost" onclick="S.accFileDraft=[];accFilesChange();">limpiar</button>'):''; }
+function accFilesChange(){ var inp=document.getElementById('acc-file'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ if(/\.(pdf|png|jpe?g|gif|webp)$/i.test(f.name)) S.accFileDraft.push(f); }); try{ inp.value=''; }catch(e){} var l=document.getElementById('acc-file-lista'); if(l) l.innerHTML=S.accFileDraft.length?('📎 '+S.accFileDraft.map(function(f){return esc(f.name);}).join(', ')+' <button class="btn btn-sm btn-ghost" onclick="S.accFileDraft=[];accFilesChange();">limpiar</button>'):''; }
 function accPedir(modo){
   ACC_MODE=modo; S.accFileDraft=[];
   var t=S.curFolio;
   var tw=document.getElementById('acc-txt-wrap'), fw=document.getElementById('acc-file-wrap'), nt=document.getElementById('acc-note');
   document.getElementById('acc-err').textContent=''; nt.style.display='none'; nt.textContent='';
   document.getElementById('acc-file').value=''; var l=document.getElementById('acc-file-lista'); if(l) l.innerHTML='';
+  var fileInp=document.getElementById('acc-file');
   if(modo==='rechazar'){
     document.getElementById('acc-ttl').textContent='Rechazar solicitud';
     document.getElementById('acc-lbl').innerHTML='Motivo del rechazo <span class="req">*</span>';
-    tw.style.display=''; fw.style.display='none'; document.getElementById('acc-txt').value='';
+    tw.style.display=''; document.getElementById('acc-txt').value='';
+    fw.style.display=''; if(fileInp) fileInp.setAttribute('accept','application/pdf,.pdf,image/*');
+    document.getElementById('acc-file-lbl').innerHTML='Archivos <span style="color:var(--dim);font-weight:400;">(opcional — PDF o imágenes)</span>';
     document.getElementById('acc-ok').textContent='Rechazar';
     abrir('m-acc'); return;
   }
+  if(fileInp) fileInp.setAttribute('accept','application/pdf,.pdf');
   var cfg=accCfg(t)[modo]; if(!cfg) return;
   document.getElementById('acc-ttl').textContent=cfg.ttl;
   fw.style.display=''; document.getElementById('acc-file-lbl').innerHTML=cfg.flbl+(cfg.req?' <span class="req">*</span>':' <span style="color:var(--dim);font-weight:400;">(opcional)</span>');
@@ -687,9 +694,17 @@ async function accConfirmar(){
   var btn=document.getElementById('acc-ok');
   if(ACC_MODE==='rechazar'){
     var txt=document.getElementById('acc-txt').value.trim(); if(!txt){ err.textContent='Escribe el motivo.'; return; }
-    btn.disabled=true; btn.textContent='Guardando…';
+    var files=S.accFileDraft.slice();
+    btn.disabled=true; btn.textContent=files.length?'Subiendo…':'Guardando…';
     var txtStamp=stampComent(txt);
-    try{ await listUpdate(L_FOLIOS,t.id,{ GrEstatus:'Rechazado', GrComentarioRechazo:txtStamp }); Object.assign(t,{estatus:'Rechazado',comentarioRechazo:txtStamp}); cerrar('m-acc'); pintarDetalle(); render(); toast('Solicitud rechazada'); }
+    try{
+      var refs=(t.docsRechazo||[]).slice();
+      for(var ri=0;ri<files.length;ri++){ try{ var rf=await subirArchivo('GAR_Documentos',t.id,files[ri],'RECHAZO_'+(ri+1)+'_'); if(rf) refs.push(rf); }catch(ef){} }
+      var fRech={ GrEstatus:'Rechazado', GrComentarioRechazo:txtStamp };
+      if(refs.length) fRech.GrDocsRechazo=JSON.stringify(refs);
+      await listUpdate(L_FOLIOS,t.id,fRech);
+      Object.assign(t,{estatus:'Rechazado',comentarioRechazo:txtStamp,docsRechazo:refs}); cerrar('m-acc'); pintarDetalle(); render(); toast('Solicitud rechazada');
+    }
     catch(e){ err.textContent='No se pudo. '+((e&&e.message)||''); } finally{ btn.disabled=false; btn.textContent='Rechazar'; }
     return;
   }

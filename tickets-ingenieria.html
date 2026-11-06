@@ -11,6 +11,33 @@
   --green:#2ea043; --green-l:#4ade80; --yellow:#d4a017; --red:#ef4444; --purple:#a855f7; --orange:#f59e0b;
   --r:12px;
 }
+html[data-theme="claro"]{
+  --bg:#ffffff; --panel:#f5f7f9; --card:#ffffff; --border:#d7dee6;
+  --text:#1b2733; --dim:#5a6b7b; --muted:#8a97a5; --accent:#00528b; --accent-l:#00528b;
+  --green:#007a33; --green-l:#007a33; --yellow:#9a7400; --red:#b4303a; --purple:#5a4a86; --orange:#b5760b;
+}
+html[data-theme="claro"] .btn{ background:#eef2f6; }
+html[data-theme="claro"] .inp{ background:#ffffff; }
+html[data-theme="claro"] .part-chk,
+html[data-theme="claro"] .d-box{ background:#f7f9fb; }
+html[data-theme="claro"] #toast{ background:#1b2733; color:#fff; }
+html[data-theme="claro"] .spin{ border-color:rgba(0,0,0,.15); border-top-color:var(--accent); }
+/* Barra superior (pestañas), encabezados de tabla y modales en azul */
+html[data-theme="claro"] .topbar{ background:#00528b; border-bottom-color:#004074; }
+html[data-theme="claro"] .tb-brand .ttl{ color:#fff; }
+html[data-theme="claro"] .tb-brand .sub{ color:rgba(255,255,255,.8); }
+html[data-theme="claro"] .rolechip{ background:rgba(255,255,255,.2); color:#fff; }
+html[data-theme="claro"] .nav-item{ color:rgba(255,255,255,.85); }
+html[data-theme="claro"] .nav-item:hover{ background:rgba(255,255,255,.14); color:#fff; }
+html[data-theme="claro"] .nav-item.active{ background:#fff; color:#00528b; border-color:#fff; font-weight:700; }
+html[data-theme="claro"] .topbar .btn{ background:rgba(255,255,255,.15); color:#fff; border-color:rgba(255,255,255,.35); }
+html[data-theme="claro"] .topbar .btn-primary{ background:#fff; color:#00528b; border-color:#fff; }
+html[data-theme="claro"] table.rtab th{ background:#00528b; color:#fff; }
+html[data-theme="claro"] .modal-hd{ background:#00528b; border-bottom-color:#004074; }
+html[data-theme="claro"] .modal-hd h3{ color:#fff; }
+html[data-theme="claro"] .modal-hd .h-sub,
+html[data-theme="claro"] .modal-hd #det-folio{ color:rgba(255,255,255,.82)!important; }
+html[data-theme="claro"] .modal-hd .x{ color:#fff; }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;}
 button{font-family:inherit;cursor:pointer;}
@@ -285,8 +312,10 @@ function _parent(){ return (window.parent && window.parent!==window) ? window.pa
 window.addEventListener('message', function(e){
   var d=e.data||{};
   if(d.type==='SGD_AUTH'){ onAuth(d); return; }
+  if(d.type==='SET_THEME'){ aplicarTemaLocal(d.tema); return; }
   if(d.type==='SP_BRIDGE_RESPONSE'){ var p=_bridge.pend[d.callId]; if(!p) return; delete _bridge.pend[d.callId]; if(d.error) p.rej(new Error(d.error)); else p.res(d.result); }
 });
+function aplicarTemaLocal(t){ try{ if(t==='claro') document.documentElement.setAttribute('data-theme','claro'); else document.documentElement.removeAttribute('data-theme'); }catch(e){} }
 function spCall(op,args){
   return new Promise(function(res,rej){
     var par=_parent(); if(!par){ rej(new Error('sin_portal')); return; }
@@ -304,6 +333,7 @@ function boot(){
   var par=_parent();
   if(!par){ document.getElementById('body').innerHTML='<div class="empty">Esta pantalla se abre embebida desde el portal. Entra desde el módulo de Ingeniería.</div>'; return; }
   par.postMessage({ type:'TKT_READY' }, '*');
+  try{ par.postMessage({ type:'GET_THEME' }, '*'); }catch(e){}
   setTimeout(function(){ if(!S.user){ par.postMessage({ type:'TKT_READY' }, '*'); } }, 1200);
   setTimeout(function(){ if(!S.user){ par.postMessage({ type:'TKT_READY' }, '*'); } }, 3000);
 }

@@ -10,6 +10,34 @@
   --text:#e6edf3; --dim:#8b949e; --muted:#6e7681; --accent:#1f6feb; --accent-l:#58a6ff;
   --green:#2ea043; --green-l:#4ade80; --yellow:#d4a017; --red:#ef4444; --purple:#a855f7; --orange:#f59e0b;
 }
+html[data-theme="claro"]{
+  --bg:#ffffff; --panel:#f5f7f9; --card:#ffffff; --border:#d7dee6;
+  --text:#1b2733; --dim:#5a6b7b; --muted:#8a97a5; --accent:#00528b; --accent-l:#00528b;
+  --green:#007a33; --green-l:#007a33; --yellow:#9a7400; --red:#b4303a; --purple:#5a4a86; --orange:#b5760b;
+}
+html[data-theme="claro"] .btn{ background:#eef2f6; }
+html[data-theme="claro"] .inp{ background:#ffffff; }
+html[data-theme="claro"] .art-block{ background:#f7f9fb; }
+html[data-theme="claro"] #toast{ background:#1b2733; color:#fff; }
+html[data-theme="claro"] .spin{ border-color:rgba(0,0,0,.15); border-top-color:var(--accent); }
+/* Tema claro: barra superior (pestañas) y encabezados de tabla en azul */
+html[data-theme="claro"] .topbar{ background:#00528b; border-bottom-color:#004074; }
+html[data-theme="claro"] .tb-brand .ttl{ color:#fff; }
+html[data-theme="claro"] .tb-brand .sub{ color:rgba(255,255,255,.8); }
+html[data-theme="claro"] .nav-item{ color:rgba(255,255,255,.85); }
+html[data-theme="claro"] .nav-item:hover{ background:rgba(255,255,255,.14); color:#fff; }
+html[data-theme="claro"] .nav-item.active{ background:#fff; color:#00528b; border-color:#fff; font-weight:700; }
+html[data-theme="claro"] .topbar .btn{ background:rgba(255,255,255,.15); color:#fff; border-color:rgba(255,255,255,.35); }
+html[data-theme="claro"] .topbar .btn-primary{ background:#fff; color:#00528b; border-color:#fff; }
+html[data-theme="claro"] table.gtab th{ background:#00528b; color:#fff; }
+/* Encabezado de modales en azul */
+html[data-theme="claro"] .modal-hd{ background:#00528b; border-bottom-color:#004074; }
+html[data-theme="claro"] .modal-hd h3{ color:#fff; }
+html[data-theme="claro"] .modal-hd .h-sub,
+html[data-theme="claro"] .modal-hd #det-sub,
+html[data-theme="claro"] .modal-hd #disp-sub,
+html[data-theme="claro"] .modal-hd #cierre-sub{ color:rgba(255,255,255,.82)!important; }
+html[data-theme="claro"] .modal-hd .x{ color:#fff; }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;}
 button{font-family:inherit;cursor:pointer;}
@@ -240,8 +268,10 @@ function _parent(){ return (window.parent && window.parent!==window) ? window.pa
 window.addEventListener('message', function(e){
   var d=e.data||{};
   if(d.type==='SGD_AUTH'){ onAuth(d); return; }
+  if(d.type==='SET_THEME'){ aplicarTemaLocal(d.tema); return; }
   if(d.type==='SP_BRIDGE_RESPONSE'){ var p=_bridge.pend[d.callId]; if(!p) return; delete _bridge.pend[d.callId]; if(d.error) p.rej(new Error(d.error)); else p.res(d.result); }
 });
+function aplicarTemaLocal(t){ try{ if(t==='claro') document.documentElement.setAttribute('data-theme','claro'); else document.documentElement.removeAttribute('data-theme'); }catch(e){} }
 function spCall(op,args){
   return new Promise(function(res,rej){
     var par=_parent(); if(!par){ rej(new Error('sin_portal')); return; }
@@ -262,8 +292,22 @@ function boot(){
   var par=_parent();
   if(!par){ document.getElementById('body').innerHTML='<div class="empty">Esta pantalla se abre embebida desde el portal. Entra desde el módulo de Ingeniería.</div>'; return; }
   par.postMessage({ type:'GAR_READY' }, '*');
+  try{ par.postMessage({ type:'GET_THEME' }, '*'); }catch(e){}
   setTimeout(function(){ if(!S.user){ par.postMessage({ type:'GAR_READY' }, '*'); } }, 1200);
   setTimeout(function(){ if(!S.user){ par.postMessage({ type:'GAR_READY' }, '*'); } }, 3000);
+}
+function cargarConReintentos(n){
+  var bb=document.getElementById('body');
+  if(bb && !S._everLoaded) bb.innerHTML='<div class="empty"><span class="spin"></span> Cargando…</div>';
+  loadData().catch(function(e){
+    var msg=((e&&e.message)||String(e)||'').toLowerCase();
+    var transitorio=(msg.indexOf('token')>=0 || msg.indexOf('auth')>=0 || msg.indexOf('timeout')>=0 || msg.indexOf('network')>=0 || msg==='');
+    if(n<8 && (transitorio || !S._everLoaded)){
+      setTimeout(function(){ cargarConReintentos(n+1); }, 1500);
+    } else if(bb){
+      bb.innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existe la lista GAR_Folios?<br><small>'+esc((e&&e.message)||e)+'</small></div>';
+    }
+  });
 }
 function onAuth(d){
   var u=(d&&d.user)||{};
@@ -274,7 +318,7 @@ function onAuth(d){
   var bc=document.getElementById('btn-cfg'); if(bc) bc.style.display=(MODO!=='solicitar'&&S.completo)?'inline-block':'none';
   if(!S._loaded){
     S._loaded=true; S._lastLoad=Date.now();
-    loadData().catch(function(e){ document.getElementById('body').innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existe la lista GAR_Folios?<br><small>'+esc(e.message||e)+'</small></div>'; });
+    cargarConReintentos(0);
     if(!S._autoT){ S._autoT=setInterval(function(){ if(S.user && !document.querySelector('.modal-bg.show')){ loadData(true).catch(function(){}); } }, 60000); }
   } else {
     // Re-entrada a la pantalla: refrescar en automático (con throttle para evitar cargas dobles)
@@ -986,11 +1030,12 @@ function dibujarPie(id, counts, total){
   if(!total){ return; }
   var ang=-Math.PI/2;
   counts.forEach(function(c){ var slice=c.value/total*Math.PI*2; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,ang,ang+slice); ctx.closePath(); ctx.fillStyle=c.color; ctx.fill(); ang+=slice; });
-  // dona
-  ctx.beginPath(); ctx.arc(cx,cy,r*0.55,0,Math.PI*2); ctx.fillStyle='#0d1117'; ctx.fill();
-  ctx.fillStyle='#e6edf3'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  // dona (respeta tema)
+  var claro=(document.documentElement.getAttribute('data-theme')==='claro');
+  ctx.beginPath(); ctx.arc(cx,cy,r*0.55,0,Math.PI*2); ctx.fillStyle=claro?'#ffffff':'#0d1117'; ctx.fill();
+  ctx.fillStyle=claro?'#1b2733':'#e6edf3'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.font='bold 30px sans-serif'; ctx.fillText(String(total),cx,cy-6);
-  ctx.font='12px sans-serif'; ctx.fillStyle='#8b949e'; ctx.fillText('folios',cx,cy+16);
+  ctx.font='12px sans-serif'; ctx.fillStyle=claro?'#5a6b7b':'#8b949e'; ctx.fillText('folios',cx,cy+16);
 }
 function cargarExcelJS(){ return new Promise(function(res,rej){ if(window.ExcelJS) return res(); var sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'; sc.onload=function(){ res(); }; sc.onerror=function(){ rej(new Error('No se pudo cargar ExcelJS')); }; document.head.appendChild(sc); }); }
 async function descargarReporte(){

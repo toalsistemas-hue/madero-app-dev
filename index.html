@@ -41,6 +41,61 @@
   --radius:       10px;
 }
 
+/* ===== TEMA CLARO (colores institucionales) ===== */
+html[data-theme="claro"] {
+  --bg:           #ffffff;
+  --bg-card:      #f5f7f9;
+  --bg-hover:     #e9eef3;
+  --border-color: #d7dee6;
+  --text:         #1b2733;
+  --text-dim:     #8a97a5;
+  --text-mid:     #5a6b7b;
+  --accent:       #00528b;
+  --accent-dim:   rgba(0,82,139,0.10);
+  --green:        #007a33;
+  --green-dim:    rgba(0,122,51,0.10);
+  --red:          #b4303a;
+  --red-dim:      rgba(180,48,58,0.10);
+  --yellow:       #9a7400;
+  --yellow-dim:   rgba(154,116,0,0.12);
+  --purple:       #5a4a86;
+  --purple-dim:   rgba(90,74,134,0.10);
+}
+/* En tema claro, íconos/emojis del menú sin color (monocromáticos) */
+html[data-theme="claro"] .nav-icon,
+html[data-theme="claro"] .nav-mod-icon,
+html[data-theme="claro"] .nav-modulo-icon { filter: grayscale(1) brightness(1.6); }
+
+/* ===== TEMA CLARO: cromo en azul institucional ===== */
+html[data-theme="claro"] #sidebar{ background:#00528b; border-right-color:#004074; }
+html[data-theme="claro"] .sidebar-brand{ border-bottom-color:rgba(255,255,255,.18); }
+html[data-theme="claro"] .sidebar-brand-text{ color:#fff; }
+html[data-theme="claro"] .sidebar-brand-sub{ color:rgba(255,255,255,.72); }
+html[data-theme="claro"] .sidebar-icon{ background:#fff; filter:grayscale(1); }
+html[data-theme="claro"] .sidebar-section-label{ color:rgba(255,255,255,.58); }
+html[data-theme="claro"] .nav-item,
+html[data-theme="claro"] .nav-modulo-header,
+html[data-theme="claro"] .nav-pantalla{ color:rgba(255,255,255,.85); }
+html[data-theme="claro"] .nav-item:hover,
+html[data-theme="claro"] .nav-modulo-header:hover,
+html[data-theme="claro"] .nav-pantalla:hover{ background:rgba(255,255,255,.12); color:#fff; }
+html[data-theme="claro"] .nav-item.active,
+html[data-theme="claro"] .nav-pantalla.active{ background:rgba(255,255,255,.2); color:#fff; }
+html[data-theme="claro"] .nav-modulo{ border-bottom-color:rgba(255,255,255,.1); }
+html[data-theme="claro"] .nav-chevron{ color:rgba(255,255,255,.6); }
+html[data-theme="claro"] .nav-submodulo-header{ color:rgba(255,255,255,.6); }
+html[data-theme="claro"] .sidebar-user{ border-top-color:rgba(255,255,255,.18); }
+html[data-theme="claro"] .user-name{ color:#fff; }
+html[data-theme="claro"] .user-role{ color:rgba(255,255,255,.68); }
+html[data-theme="claro"] .user-avatar{ background:#fff; color:#00528b; }
+html[data-theme="claro"] .btn-logout{ color:rgba(255,255,255,.72); }
+/* Barra de bienvenida en azul (con círculo de iniciales invertido) */
+html[data-theme="claro"] .welcome-hero{ background:#00528b; border-color:#004074; color:#fff; }
+html[data-theme="claro"] .welcome-title{ color:#fff; }
+html[data-theme="claro"] .welcome-sub{ color:rgba(255,255,255,.85); }
+html[data-theme="claro"] .welcome-puesto{ color:rgba(255,255,255,.72); }
+html[data-theme="claro"] .welcome-avatar{ background:#fff; color:#00528b; }
+
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text); display:flex; min-height:100vh; }
 
@@ -581,8 +636,24 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 
     <div id="nav-config-item" style="display:none;">
       <div class="sidebar-section-label">Sistema</div>
-      <div class="nav-item" id="nav-config" onclick="showPage('config'); setTimeout(()=>{ if(typeof cfgShowTab==='function') cfgShowTab(typeof CFG!=='undefined'?CFG.currentTab:'usuarios'); },120);">
-        <span class="nav-icon">⚙️</span> Configuración
+      <div class="nav-modulo-header" onclick="toggleConfigMenu('admin')">
+        <span class="nav-icon">⚙️</span><span style="flex:1;">Configuración</span>
+        <span class="nav-chevron" id="cfg-chev-admin">▶</span>
+      </div>
+      <div id="cfg-sub-admin" style="display:none;">
+        <div class="nav-pantalla" id="nav-config" onclick="showPage('config'); setTimeout(()=>{ if(typeof cfgShowTab==='function') cfgShowTab(typeof CFG!=='undefined'?CFG.currentTab:'usuarios'); },120);"><span class="nav-icon">🗂️</span> Accesos</div>
+        <div class="nav-pantalla" onclick="showPage('config-pantalla')"><span class="nav-icon">🎨</span> Pantalla</div>
+      </div>
+    </div>
+
+    <div id="nav-config-user-item" style="display:none;">
+      <div class="sidebar-section-label">Preferencias</div>
+      <div class="nav-modulo-header" onclick="toggleConfigMenu('user')">
+        <span class="nav-icon">⚙️</span><span style="flex:1;">Configuración</span>
+        <span class="nav-chevron" id="cfg-chev-user">▶</span>
+      </div>
+      <div id="cfg-sub-user" style="display:none;">
+        <div class="nav-pantalla" onclick="showPage('config-pantalla')"><span class="nav-icon">🎨</span> Pantalla</div>
       </div>
     </div>
 
@@ -1887,10 +1958,26 @@ tr:last-child td{border-bottom:none;}
 
     </div><!-- page-Fabricaciones -->
 
+    <!-- PAGE: Tema / Pantalla (todos) -->
+    <div class="page" id="page-config-pantalla">
+      <div class="page-header">
+        <div class="page-title">🎨 Pantalla</div>
+        <div class="page-sub">Preferencias de apariencia de tu cuenta</div>
+      </div>
+      <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:20px;max-width:520px;">
+        <div style="font-weight:700;font-size:1rem;margin-bottom:4px;">🎨 Tema de la plataforma</div>
+        <div style="color:var(--text-mid);font-size:.84rem;margin-bottom:16px;">Elige cómo se ve la plataforma. Se aplica a todas las pantallas y se guarda en tu perfil.</div>
+        <div class="tema-opts" style="display:flex;gap:12px;flex-wrap:wrap;">
+          <button type="button" class="btn-tema" data-t="oscuro" onclick="guardarTema('oscuro')" style="flex:1;min-width:150px;padding:16px;border:2px solid var(--border-color);border-radius:10px;background:transparent;color:var(--text-mid);cursor:pointer;font-size:.92rem;font-weight:700;">🌙 Oscuro</button>
+          <button type="button" class="btn-tema" data-t="claro" onclick="guardarTema('claro')" style="flex:1;min-width:150px;padding:16px;border:2px solid var(--border-color);border-radius:10px;background:transparent;color:var(--text-mid);cursor:pointer;font-size:.92rem;font-weight:700;">☀️ Claro</button>
+        </div>
+      </div>
+    </div>
+
     <!-- PAGE: Configuración -->
     <div class="page" id="page-config">
       <div class="page-header">
-        <div class="page-title">⚙️ Configuración</div>
+        <div class="page-title">🗂️ Configuración — Accesos</div>
         <div class="page-sub">Administración del sistema — solo Administrador General</div>
       </div>
 
@@ -2601,12 +2688,14 @@ async function loadUserFromSharePoint(email) {
       puesto:    pFields.NombrePuesto || pFields.Title || uFields.PuestoID,
       esAdmin:   pFields.EsAdministrador === true || pFields.EsAdministrador === 'true',
       pantallas: pantallasMap,
+      tema:      uFields.TemaPreferido || '',
       _spItemId: usuarioItem.id,  // ID del item en SP — necesario para heartbeat/sesiones
     };
     window._cachedSiteId  = siteId;       // cachear para beforeunload
     window.CURRENT_USER_NAME = state.currentUser.nombre || email;
     state.isDemoMode = false;
     console.log('[Auth] _spItemId:', usuarioItem.id);
+    try{ aplicarTema(state.currentUser.tema || (localStorage.getItem('gar_tema')||'oscuro')); }catch(e){}
     enterApp();
     markSessionLogin(); // registrar hora de login en SP
     startSessionWatch(); // iniciar vigilancia de sesión periódica
@@ -3191,6 +3280,7 @@ function enterApp() {
 
   // Config visible solo para admins
   document.getElementById('nav-config-item').style.display = u.esAdmin ? 'block' : 'none';
+  var _ncu=document.getElementById('nav-config-user-item'); if(_ncu) _ncu.style.display = u.esAdmin ? 'none' : 'block';
 
   // Marcar la página de Fabricaciones con clase de nivel de acceso ANTES de mostrar nada
   var _fabPage = document.getElementById('page-Fabricaciones');
@@ -3320,7 +3410,34 @@ function buildWelcomeModules() {
 // ═══════════════════════════════════════════════════════
 // NAVEGACIÓN
 // ═══════════════════════════════════════════════════════
+/* ═══════════════ TEMA (claro / oscuro) ═══════════════ */
+window._temaActual = 'oscuro';
+function aplicarTema(t){
+  t=(t==='claro')?'claro':'oscuro'; window._temaActual=t;
+  try{ if(t==='claro') document.documentElement.setAttribute('data-theme','claro'); else document.documentElement.removeAttribute('data-theme'); }catch(e){}
+  try{ document.querySelectorAll('iframe').forEach(function(f){ try{ f.contentWindow.postMessage({type:'SET_THEME',tema:t},'*'); }catch(e){} }); }catch(e){}
+  temaActualizarUI();
+}
+function temaActualizarUI(){
+  try{ document.querySelectorAll('.btn-tema').forEach(function(b){ var on=(b.getAttribute('data-t')===window._temaActual); b.style.background=on?'var(--accent)':'transparent'; b.style.color=on?'#fff':'var(--text-mid)'; b.style.borderColor=on?'var(--accent)':'var(--border-color)'; }); }catch(e){}
+}
+async function guardarTema(t){
+  aplicarTema(t);
+  try{ localStorage.setItem('gar_tema',t); }catch(e){}
+  try{ var sid=window._cachedSiteId, iid=(state.currentUser&&state.currentUser._spItemId); if(sid&&iid) await graphPatch('sites/'+sid+'/lists/Usuarios/items/'+iid+'/fields',{ TemaPreferido:t }); }catch(e){ console.warn('[tema] no se pudo guardar',e&&e.message); }
+}
+// Pre-aplicar el tema guardado localmente (evita parpadeo antes de iniciar sesión)
+(function(){ try{ var t=localStorage.getItem('gar_tema'); if(t==='claro'){ document.documentElement.setAttribute('data-theme','claro'); window._temaActual='claro'; } }catch(e){} })();
+// Si un iframe pide el tema, respondérselo
+window.addEventListener('message', function(e){ if(e&&e.data&&e.data.type==='GET_THEME'){ try{ e.source.postMessage({type:'SET_THEME',tema:window._temaActual},'*'); }catch(_){} } });
+
+function toggleConfigMenu(which){
+  var sub=document.getElementById('cfg-sub-'+which), chev=document.getElementById('cfg-chev-'+which);
+  if(!sub) return; var abierto=(sub.style.display!=='none');
+  sub.style.display=abierto?'none':'block'; if(chev) chev.style.transform=abierto?'':'rotate(90deg)';
+}
 function showPage(name) {
+  if(name==='config-pantalla'){ setTimeout(temaActualizarUI,80); }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item,.nav-pantalla').forEach(n=>n.classList.remove('active'));
   const page = document.getElementById('page-'+name);
